@@ -1,9 +1,9 @@
-name: Build Multiplatform App
+name: Build Multiplatform App (Onedir ZIP)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Te permite ejecutarlo manualmente cuando quieras
+  workflow_dispatch:
 
 jobs:
   build:
@@ -31,13 +31,11 @@ jobs:
       with:
         python-version: '3.11'
 
-    # Usa la acción oficial de UV (Rápida, segura y multiplataforma)
     - name: Set up uv
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
 
-    # Instalamos las dependencias usando la instalación global del sistema de la máquina virtual
     - name: Install dependencies
       run: |
         uv pip install --system pyinstaller pillow
@@ -63,14 +61,11 @@ jobs:
             iconutil -c icns icon.iconset
             rm -rf icon.iconset
           fi
-        else
-          echo "⚠️ No se encontró icon.png. Se compilará con el icono por defecto."
         fi
 
-    - name: Run PyInstaller
+    - name: Run PyInstaller (Onedir Mode)
       shell: bash
       run: |
-        # Crear la carpeta static si por alguna razón no se subió a Git (a veces carpetas vacías no se suben)
         mkdir -p static
         
         ICON_CMD=""
@@ -83,10 +78,17 @@ jobs:
           WINDOWED_CMD="--windowed"
         fi
 
-        pyinstaller --onefile $WINDOWED_CMD --add-data "static${{ matrix.sep }}static" $ICON_CMD --name "NLP-Flow" main.py
+        # Usamos --onedir en lugar de --onefile para evitar falsos positivos
+        pyinstaller --onedir $WINDOWED_CMD --add-data "static${{ matrix.sep }}static" $ICON_CMD --name "NLP-Flow" main.py
 
-    - name: Upload Artifacts
+    - name: Compress folder to ZIP
+      shell: bash
+      run: |
+        # Este script en Python comprime la carpeta de la app de forma idéntica en Windows, Mac y Linux
+        python -c "import shutil; shutil.make_archive('NLP-Flow-${{ matrix.os }}', 'zip', 'dist', 'NLP-Flow')"
+
+    - name: Upload ZIP Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: NLP-Flow-${{ matrix.os }}
-        path: dist/
+        name: NLP-Flow-ZIP-${{ matrix.os }}
+        path: NLP-Flow-${{ matrix.os }}.zip
