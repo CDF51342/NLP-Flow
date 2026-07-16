@@ -3,7 +3,7 @@ name: Build Multiplatform App
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Te permite ejecutarlo manualmente desde la pestaña Actions
+  workflow_dispatch: # Te permite ejecutarlo manualmente cuando quieras
 
 jobs:
   build:
@@ -31,42 +31,53 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install UV and dependencies
+    # Usa la acción oficial de UV (Rápida, segura y multiplataforma)
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    # Instalamos las dependencias usando la instalación global del sistema de la máquina virtual
+    - name: Install dependencies
       run: |
-        curl -sSf https://astral.sh/uv/install.sh | sh
-        # Añadir uv al path según el sistema operativo
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-        else
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-        fi
         uv pip install --system pyinstaller pillow
 
     - name: Convert Icons (macOS and Windows)
       shell: bash
       run: |
-        if [ "$RUNNER_OS" == "Windows" ] && [ -f "icon.png" ]; then
-          python -c "from PIL import Image; img = Image.open('icon.png'); img.save('icon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])"
-        elif [ "$RUNNER_OS" == "macOS" ] && [ -f "icon.png" ]; then
-          mkdir -p icon.iconset
-          sips -z 16 16     icon.png --out icon.iconset/icon_16x16.png
-          sips -z 32 32     icon.png --out icon.iconset/icon_16x16@2x.png
-          sips -z 128 128   icon.png --out icon.iconset/icon_128x128.png
-          sips -z 256 256   icon.png --out icon.iconset/icon_128x128@2x.png
-          sips -z 256 256   icon.png --out icon.iconset/icon_256x256.png
-          sips -z 512 512   icon.png --out icon.iconset/icon_256x256@2x.png
-          iconutil -c icns icon.iconset
+        if [ -f "icon.png" ]; then
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            python -c "from PIL import Image; img = Image.open('icon.png'); img.save('icon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])"
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            mkdir -p icon.iconset
+            sips -z 16 16     icon.png --out icon.iconset/icon_16x16.png
+            sips -z 32 32     icon.png --out icon.iconset/icon_16x16@2x.png
+            sips -z 32 32     icon.png --out icon.iconset/icon_32x32.png
+            sips -z 64 64     icon.png --out icon.iconset/icon_32x32@2x.png
+            sips -z 128 128   icon.png --out icon.iconset/icon_128x128.png
+            sips -z 256 256   icon.png --out icon.iconset/icon_128x128@2x.png
+            sips -z 256 256   icon.png --out icon.iconset/icon_256x256.png
+            sips -z 512 512   icon.png --out icon.iconset/icon_256x256@2x.png
+            sips -z 512 512   icon.png --out icon.iconset/icon_512x512.png
+            sips -z 1024 1024 icon.png --out icon.iconset/icon_512x512@2x.png
+            iconutil -c icns icon.iconset
+            rm -rf icon.iconset
+          fi
+        else
+          echo "⚠️ No se encontró icon.png. Se compilará con el icono por defecto."
         fi
 
     - name: Run PyInstaller
       shell: bash
       run: |
+        # Crear la carpeta static si por alguna razón no se subió a Git (a veces carpetas vacías no se suben)
+        mkdir -p static
+        
         ICON_CMD=""
         if [ -n "${{ matrix.icon }}" ] && [ -f "${{ matrix.icon }}" ]; then
           ICON_CMD="--icon=${{ matrix.icon }}"
         fi
         
-        # El flag --windowed no se suele usar en Linux puro de consola, pero sí en macOS/Windows
         WINDOWED_CMD=""
         if [ "$RUNNER_OS" != "Linux" ]; then
           WINDOWED_CMD="--windowed"
