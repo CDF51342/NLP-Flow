@@ -1,0 +1,81 @@
+name: Build Multiplatform App
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Te permite ejecutarlo manualmente desde la pestaña Actions
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            icon: icon.ico
+            sep: ";"
+          - os: macos-latest
+            icon: icon.icns
+            sep: ":"
+          - os: ubuntu-latest
+            icon: ""
+            sep: ":"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install UV and dependencies
+      run: |
+        curl -sSf https://astral.sh/uv/install.sh | sh
+        # Añadir uv al path según el sistema operativo
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        else
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        fi
+        uv pip install --system pyinstaller pillow
+
+    - name: Convert Icons (macOS and Windows)
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ] && [ -f "icon.png" ]; then
+          python -c "from PIL import Image; img = Image.open('icon.png'); img.save('icon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])"
+        elif [ "$RUNNER_OS" == "macOS" ] && [ -f "icon.png" ]; then
+          mkdir -p icon.iconset
+          sips -z 16 16     icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32     icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 128 128   icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256   icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512   icon.png --out icon.iconset/icon_256x256@2x.png
+          iconutil -c icns icon.iconset
+        fi
+
+    - name: Run PyInstaller
+      shell: bash
+      run: |
+        ICON_CMD=""
+        if [ -n "${{ matrix.icon }}" ] && [ -f "${{ matrix.icon }}" ]; then
+          ICON_CMD="--icon=${{ matrix.icon }}"
+        fi
+        
+        # El flag --windowed no se suele usar en Linux puro de consola, pero sí en macOS/Windows
+        WINDOWED_CMD=""
+        if [ "$RUNNER_OS" != "Linux" ]; then
+          WINDOWED_CMD="--windowed"
+        fi
+
+        pyinstaller --onefile $WINDOWED_CMD --add-data "static${{ matrix.sep }}static" $ICON_CMD --name "NLP-Flow" main.py
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: NLP-Flow-${{ matrix.os }}
+        path: dist/
