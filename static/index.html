@@ -555,12 +555,12 @@ var META = {
   classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP" }
 };
 var ALLOWED = {
-  // Exploración de datos
+  // Exploración de datos — cualquier bloque de exploración puede recibir desde datos o desde preprocesado
   data:         ["inspect","plots","preprocess","imbalance"],
   inspect:      [],
   plots:        [],
-  // Preprocesado → clasificador o regresión o NLP
-  preprocess:   ["classifier","regression","training","topicmodel","classify"],
+  // Preprocesado → exploración (para ver datos transformados) O → modelos
+  preprocess:   ["inspect","plots","classifier","regression","training","topicmodel","classify"],
   // Clasificación
   classifier:   ["evaluation","confmatrix","scatter"],
   evaluation:   ["confmatrix"],
@@ -1103,6 +1103,10 @@ function openModal(node) {
   // Always reset inline styles so previous modal customisations don't leak
   mBody.style.cssText = "";
   moEl.classList.remove("hidden"); moEl.classList.add("visible");
+  // Widen modal for blocks that benefit from extra horizontal space
+  var wideTypes = ["preprocess"];
+  var modalEl = document.getElementById("modal");
+  if (modalEl) modalEl.classList.toggle("modal-wide", wideTypes.indexOf(node.type) !== -1);
   if      (node.type === "data")          renderData(node);
   else if (node.type === "inspect")       renderInspect(node);
   else if (node.type === "plots")         renderPlots(node);
@@ -1155,14 +1159,39 @@ function upstreamDataNode(nid) {
   return null;
 }
 
+// Walk upward and return the nearest node that is a DATA SOURCE —
+// either a 'data' node or a 'preprocess' node that has already been applied
+// (server-side it has raw_rows written into its slot).
+// This is the node whose ID should be sent to the API.
+function upstreamSourceNode(nid) {
+  var visited = {};
+  var queue = [nid];
+  while (queue.length) {
+    var cur = queue.shift();
+    if (visited[cur]) continue;
+    visited[cur] = true;
+    for (var i = 0; i < edges.length; i++) {
+      if (edges[i].to === cur) {
+        var fromN = nodeById(edges[i].from);
+        if (!fromN) continue;
+        // A preprocess node acts as a data source once it has been applied
+        if (fromN.type === "data") return fromN;
+        if (fromN.type === "preprocess" && fromN.data && fromN.data.applied) return fromN;
+        queue.push(fromN.id);
+      }
+    }
+  }
+  return null;
+}
+
 // Returns the node_id string to include in API calls.
 // If there's a connected data node, use its ID.
 // If no data node is connected but there IS at least one data node on canvas,
 // block the call and show an error.
 // If there's only one data node anywhere on canvas, allow it (backwards-compat).
 function resolveDataNode(currentNodeId) {
-  // Walk upstream first
-  var dn = upstreamDataNode(currentNodeId);
+  // Walk upstream — prefer a preprocess node that has been applied, else raw data node
+  var dn = upstreamSourceNode(currentNodeId);
   if (dn) return { ok: true, nodeId: String(dn.id) };
 
   // Count data nodes on canvas
@@ -1249,11 +1278,17 @@ async function renderInspect(node) {
     var fs = rf;    // feature_stats response (may have error)
 
     var typeIcon = function(t) {
-      return t === "numeric"
-        ? '<span class="badge badge-ok" style="font-size:10px">int/float</span>&nbsp;<span style="font-size:10px;color:var(--sec)">numérico</span>'
-        : t === "categorical"
-        ? '<span class="badge badge-info" style="font-size:10px">str/List</span>&nbsp;<span style="font-size:10px;color:var(--sec)">categórico</span>'
-        : '<span class="badge" style="font-size:10px">str</span>&nbsp;<span style="font-size:10px;color:var(--sec)">texto</span>';
+      var map = {
+        "int":         ['badge-ok',   'int',   'entero'],
+        "float":       ['badge-ok',   'float', 'decimal'],
+        "numeric":     ['badge-ok',   'num',   'numérico'],   // legacy fallback
+        "categorical": ['badge-info', 'str',   'categórico'],
+        "list":        ['badge-warn', 'List',  'lista'],
+        "text":        ['badge',      'text',  'texto libre'],
+      };
+      var m = map[t] || ['badge', t, t];
+      return '<span class="badge ' + m[0] + '" style="font-size:10px">' + m[1] + '</span>' +
+             '&nbsp;<span style="font-size:10px;color:var(--sec)">' + m[2] + '</span>';
     };
     var missingBadge = function(pct) {
       if (pct === 0) return '<span style="color:var(--accent);font-size:11px">✓ 0%</span>';
@@ -1287,7 +1322,7 @@ async function renderInspect(node) {
           '</div>' +
           d.columns.map(function(c) {
             var st  = statMap[c.name] || c;
-            var isNum = c.type === "numeric";
+            var isNum = c.type === "int" || c.type === "float" || c.type === "numeric";
             var statsHtml = isNum
               ? '<span style="font-size:11px">' + (st.mean ?? c.mean ?? '—') + '</span>' +
                 '<span style="font-size:11px">' + (st.std  ?? c.std  ?? '—') + '</span>' +
@@ -1351,11 +1386,17 @@ async function renderDataInfo(node) {
     if (d.error) { mBody.innerHTML = '<div style="padding:20px;color:#ff6b6b">' + d.error + '</div>'; return; }
 
     var typeIcon = function(t) {
-      return t === "numeric"
-           ? '<span class="badge badge-ok" style="font-size:10px">int / float</span> <span style="font-size:10px;color:var(--sec)">numérico</span>'
-           : t === "categorical"
-           ? '<span class="badge badge-info" style="font-size:10px">str / List</span> <span style="font-size:10px;color:var(--sec)">categórico</span>'
-           : '<span class="badge" style="font-size:10px">str</span> <span style="font-size:10px;color:var(--sec)">texto</span>';
+      var map = {
+        "int":         ['badge-ok',   'int',   'entero'],
+        "float":       ['badge-ok',   'float', 'decimal'],
+        "numeric":     ['badge-ok',   'num',   'numérico'],
+        "categorical": ['badge-info', 'str',   'categórico'],
+        "list":        ['badge-warn', 'List',  'lista'],
+        "text":        ['badge',      'text',  'texto libre'],
+      };
+      var m = map[t] || ['badge', t, t];
+      return '<span class="badge ' + m[0] + '" style="font-size:10px">' + m[1] + '</span>' +
+             ' <span style="font-size:10px;color:var(--sec)">' + m[2] + '</span>';
     };
 
     var missingBadge = function(pct) {
@@ -3529,33 +3570,65 @@ var STEPS_DEF = [
 ];
 
 async function renderPre(node) {
-  // ── 0. Guard: need a loaded dataset ──────────────────────────────────────
-  var inf = await fetch("/api/dataset_info").then(function(r){ return r.json(); }).catch(function(){ return {}; });
-  if (!inf.loaded) {
+  showModalLoading("Detectando tipo de datos…");
+
+  // ── 0. Resolve upstream data node ────────────────────────────────────────
+  var dataSrc    = upstreamDataNode(node.id);
+  var dataNodeId = dataSrc ? String(dataSrc.id) : "";
+  var prepNodeId = String(node.id);
+
+  // ── 1. Detect tabular vs NLP from upstream node ──────────────────────────
+  var qTab = nq(node, "/api/tabular_info");
+  var inf  = await fetch("/api/dataset_info").then(function(r){ return r.json(); }).catch(function(){ return {}; });
+  var tabInfo = {};
+  if (!qTab.err) {
+    tabInfo = await fetch(qTab.url).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+  }
+  var hasTabular = tabInfo && !tabInfo.error && tabInfo.cols > 0;
+  var hasNLP     = inf.n && inf.n > 0 && (inf.avg_words > 0 || (inf.samples && inf.samples.length > 0));
+
+  if (!hasTabular && !hasNLP) {
     mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">Carga primero un dataset en el bloque Datos.</div>';
     return;
   }
 
-  // ── 1. Detect tabular vs NLP ─────────────────────────────────────────────
-  var tabInfo = await fetch("/api/tabular_info").then(function(r){ return r.json(); }).catch(function(){ return {}; });
-  var hasTabular = tabInfo && !tabInfo.error && tabInfo.cols > 0;
-  var hasNLP     = inf.n && inf.n > 0 && (inf.avg_words > 0 || inf.samples && inf.samples.length > 0);
-
-  // Decide default tab: prefer tabular if that's what was just loaded
-  var activeTab = node.data.preTab || (hasTabular && !hasNLP ? "tabular" : "text");
+  // ── Auto-select mode (no tabs if only one type) ──────────────────────────
+  var activeTab = node.data.preTab ||
+    (hasTabular && !hasNLP ? "tabular" : (!hasTabular && hasNLP ? "text" : "tabular"));
   node.data.preTab = activeTab;
 
   // ── 2. Saved NLP steps ───────────────────────────────────────────────────
   var sel = node.data.steps || [];
 
-  // ── 3. Build skeleton: tabbar + two panels ───────────────────────────────
+  // ── 3. Build skeleton ─────────────────────────────────────────────────────
+  // Si el dataset es tabular → solo panel tabular, sección NLP desaparace.
+  // Si el dataset es NLP puro → solo panel texto.
+  // Solo mostramos tabs si hay ambos tipos (caso mixto, raro pero posible).
+  var showTabs = hasTabular && hasNLP;
+  // Forzar modo según datos reales — no dejar que el usuario cambie a un modo incompatible
+  if (hasTabular && !hasNLP) activeTab = "tabular";
+  if (!hasTabular && hasNLP) activeTab = "text";
+  node.data.preTab = activeTab;
+
+  var textDisplay    = (activeTab === "text")    ? "flex"  : "none";
+  var tabularDisplay = (activeTab === "tabular") ? "block" : "none";
+
   mBody.innerHTML =
-    '<div class="tm-tabs" style="margin-bottom:0;border-radius:0;flex-shrink:0">' +
-      '<button class="tm-tab' + (activeTab==="text"   ?" active":"") + '" id="pre-tab-text">🔤 Texto / NLP</button>' +
-      '<button class="tm-tab' + (activeTab==="tabular"?" active":"") + '" id="pre-tab-tabular">📊 Tabular</button>' +
-    '</div>' +
-    '<div id="pre-panel-text" style="flex:1;overflow:hidden;display:' + (activeTab==="text"?"flex":"none") + ';flex-direction:column"></div>' +
-    '<div id="pre-panel-tabular" style="flex:1;overflow:hidden;display:' + (activeTab==="tabular"?"block":"none") + ';height:100%"></div>';
+    // Tabs solo si ambos tipos coexisten
+    (showTabs
+      ? '<div class="tm-tabs" style="margin-bottom:0;border-radius:0;flex-shrink:0">' +
+          '<button class="tm-tab' + (activeTab==="text"   ?" active":"") + '" id="pre-tab-text">🔤 Texto / NLP</button>' +
+          '<button class="tm-tab' + (activeTab==="tabular"?" active":"") + '" id="pre-tab-tabular">📊 Tabular</button>' +
+        '</div>'
+      : '') +
+    // Aviso si dataset tabular (solo info, no hay panel NLP)
+    (hasTabular && !hasNLP
+      ? '<div style="padding:6px 16px;background:var(--tinted);border-bottom:1px solid var(--border);font-size:11px;color:var(--sec);flex-shrink:0">' +
+          '📊 Dataset tabular detectado — preprocesado NLP no disponible para este tipo de datos.' +
+        '</div>'
+      : '') +
+    '<div id="pre-panel-text" style="flex:1;overflow:hidden;display:'+textDisplay+';flex-direction:column"></div>' +
+    '<div id="pre-panel-tabular" style="flex:1;overflow:auto;display:'+tabularDisplay+';padding:0"></div>';
 
   // ── 4. Fill TEXT panel ───────────────────────────────────────────────────
   var textPanel = document.getElementById("pre-panel-text");
@@ -3690,12 +3763,8 @@ async function renderPre(node) {
 
   // ── 5. Fill TABULAR panel ────────────────────────────────────────────────
   var tabPanel = document.getElementById("pre-panel-tabular");
-  if (tabPanel) {
-    var tc   = tabInfo.columns || [];
-    var numC = tc.filter(function(c){ return c.type==="numeric"; });
-    var allC = tc.map(function(c){ return c.name; });
-    tabPanel.innerHTML = _tabPreprocHTML(numC, allC);
-    _bindTabPreprocEvents(node, numC);
+  if (tabPanel && hasTabular) {
+    _renderTabPreV2(tabPanel, tabInfo, node, dataNodeId, prepNodeId);
   }
 
   // ── 6. Tab switching ─────────────────────────────────────────────────────
@@ -3713,82 +3782,602 @@ async function renderPre(node) {
   });
 }
 
-// ── Tabular preprocessing HTML builder (shared by renderPre + renderTabPreprocess) ──
-function _tabPreprocHTML(numCols, allColNames) {
-  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;height:100%">' +
-    '<div style="padding:14px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--border);overflow-y:auto">' +
-      '<div class="psec">' +
-        '<div class="ptitle">✂️ Data Sampler (Partición)</div>' +
-        '<div class="fg"><div class="fl">Proporción entrenamiento</div>' +
-          '<div class="rrow"><input type="range" id="tp-ratio" min="0.5" max="0.95" step="0.05" value="0.7">' +
-            '<input type="number" class="inp rinp" id="tp-ratiov" value="0.7" min="0.5" max="0.95" step="0.05"></div></div>' +
-        '<div class="fg"><div class="fl">Modo</div>' +
-          '<select class="inp" id="tp-mode"><option value="random">Aleatorio</option><option value="stratified">Estratificado</option></select></div>' +
-        '<div class="fg"><div class="fl">Variable objetivo</div>' +
-          '<select class="inp" id="tp-target"><option value="">— ninguno —</option>' +
-            allColNames.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join("") +
-          '</select></div>' +
-        '<button class="btn btn-ghost btn-sm" id="btn-tp-split" style="width:100%">✂️ Partir datos</button>' +
-        '<div id="tp-split-res" style="margin-top:8px"></div>' +
-      '</div>' +
-      '<div class="psec">' +
-        '<div class="ptitle">🩹 Imputación</div>' +
-        '<select class="inp" id="tp-impute">' +
-          '<option value="mean">Media / Moda</option>' +
-          '<option value="median">Mediana / Moda</option>' +
-          '<option value="mode">Moda siempre</option>' +
-          '<option value="zero">Cero</option>' +
-          '<option value="drop">Eliminar filas con ausentes</option>' +
-        '</select>' +
-      '</div>' +
-      '<div class="psec">' +
-        '<div class="ptitle">📐 Normalización</div>' +
-        '<select class="inp" id="tp-norm">' +
-          '<option value="none">Sin normalización</option>' +
-          '<option value="minmax">Min-Max  →  [0, 1]</option>' +
-          '<option value="zscore">Z-score  →  μ=0, σ=1</option>' +
-        '</select>' +
-        '<div class="fg" style="flex-direction:row;align-items:center;gap:8px;margin-top:6px">' +
-          '<input type="checkbox" id="tp-fittrain" checked>' +
-          '<label for="tp-fittrain" style="font-size:12px">Ajustar solo en train (evitar data leakage)</label>' +
-        '</div>' +
-      '</div>' +
-      '<div class="psec">' +
-        '<div class="ptitle">🔠 Limpieza de categorías</div>' +
-        '<div class="fg" style="flex-direction:row;align-items:center;gap:8px">' +
-          '<input type="checkbox" id="tp-catfix" checked>' +
-          '<label for="tp-catfix" style="font-size:12px">Estandarizar (lowercase+strip)</label>' +
-        '</div>' +
-      '</div>' +
-      '<button class="btn btn-black" id="btn-tp-run" style="width:100%">🧹 Aplicar preprocesado</button>' +
-    '</div>' +
-    '<div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">' +
-      '<div class="fl">Resultados</div>' +
-      '<div id="tp-results"><div style="color:var(--sec);font-size:12px">Configura y pulsa Aplicar.</div></div>' +
-      '<div id="tp-plots" style="display:none">' +
-        '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Box plots</div>' +
-        '<div id="tp-box-chart"></div>' +
-        '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Distribución</div>' +
-        '<select class="inp" id="tp-before-col">' +
-          numCols.map(function(c){ return '<option value="'+c.name+'">'+c.name+'</option>'; }).join("") +
-        '</select>' +
-        '<button class="btn btn-ghost btn-sm" id="btn-tp-dist" style="margin-bottom:6px">Ver</button>' +
-        '<div id="tp-dist-chart"></div>' +
-      '</div>' +
-    '</div>' +
-  '</div>';
-}
+// ── NEW tabular preprocess UI — per-variable table ────────────────────────────
+function _renderTabPreV2(container, tabInfo, node, dataNodeId, prepNodeId) {
+  var cols      = tabInfo.columns || [];
+  var isNumType = function(t){ return t==="int"||t==="float"||t==="numeric"; };
 
-function _bindTabPreprocEvents(node, numCols) {
-  var rangeEl = document.getElementById("tp-ratio");
-  var numEl   = document.getElementById("tp-ratiov");
-  if (rangeEl && numEl) {
-    rangeEl.oninput = function() { numEl.value = rangeEl.value; };
-    numEl.oninput   = function() { rangeEl.value = numEl.value; };
+  // ── Help content ─────────────────────────────────────────────────────────
+  var ALL_HELP = [
+    { group:"🩹 Imputación numérica", items:[
+      {v:"impute_mean",       title:"Media",                  txt:"Sustituye los nulos por la media aritmética. Ideal cuando los datos son simétricos y sin muchos outliers."},
+      {v:"impute_median",     title:"Mediana",                txt:"Más robusta que la media cuando hay valores extremos (outliers)."},
+      {v:"impute_zero",       title:"Cero",                   txt:"Rellena con 0. Úsalo cuando el nulo significa «ninguno» y no es un dato perdido al azar."},
+      {v:"impute_knn",        title:"KNN (k vecinos próximos)",txt:"Busca las k filas más similares (sin nulos) y promedia sus valores para estimar el dato ausente. Más preciso que media/mediana, pero más lento."},
+      {v:"impute_regression", title:"Regresión lineal",       txt:"Entrena un modelo lineal con las demás columnas numéricas para predecir el valor ausente. Captura relaciones entre variables."},
+      {v:"impute_drop",       title:"Eliminar fila",          txt:"Borra las filas con nulos en esta columna. Solo recomendado cuando el porcentaje de ausentes es muy bajo (< 2%)."},
+    ]},
+    { group:"🔡 Imputación categórica", items:[
+      {v:"impute_mode",   title:"Moda",           txt:"Rellena con el valor más frecuente. Método estándar para variables categóricas."},
+      {v:"impute_drop",   title:"Eliminar fila",  txt:"Borra las filas con nulos en esta columna."},
+    ]},
+    { group:"📐 Normalización", items:[
+      {v:"normalize_minmax",title:"Min-Max [0,1]",txt:"Escala al rango [0,1]. Necesario para KNN, SVM, redes neuronales. Sensible a outliers."},
+      {v:"normalize_zscore",title:"Z-score",      txt:"Media 0 y desviación estándar 1. Habitual en regresión lineal, PCA y modelos estadísticos."},
+    ]},
+    { group:"🔠 Variables categóricas", items:[
+      {v:"catfix",        title:"Limpiar texto",  txt:"Minúsculas y elimina espacios. Evita que «Madrid» y «madrid» sean categorías distintas."},
+      {v:"encode_label",  title:"Label Encoding", txt:"Entero por categoría (0,1,2…). Introduce orden implícito. Adecuado para variables ordinales o árboles."},
+      {v:"encode_onehot", title:"One-Hot",        txt:"Columna 0/1 por cada categoría. Sin orden artificial. Aumenta dimensionalidad. Habitual en regresión y redes."},
+    ]},
+    { group:"✂️ Partición de datos", items:[
+      {v:"split_random",     title:"Aleatoria",          txt:"Divide los datos al azar en train y test según la proporción elegida. Rápida y válida cuando las clases están balanceadas."},
+      {v:"split_stratified", title:"Estratificada",      txt:"Garantiza que cada clase tenga la misma proporción en train y test. Fundamental con clases desbalanceadas."},
+      {v:"split_cv",         title:"Validación cruzada (k-fold)", txt:"Divide los datos en k grupos. Cada grupo actúa una vez como test y el resto como train. No genera una partición fija, sirve para evaluar la estabilidad del modelo. Usa StratifiedKFold si hay etiqueta de clase."},
+    ]},
+  ];
+
+  function openHelpOverlay() {
+    var ov = document.createElement("div");
+    ov.className = "pre-help-overlay";
+    ov.innerHTML =
+      '<div class="pre-help-panel">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">' +
+          '<div style="font-size:15px;font-weight:800">Guía de operaciones</div>' +
+          '<button id="pre-help-close" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--sec);line-height:1">✕</button>' +
+        '</div>' +
+        ALL_HELP.map(function(grp){
+          return '<div style="margin-bottom:14px">' +
+            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:8px">'+grp.group+'</div>' +
+            grp.items.map(function(it){
+              return '<div class="pre-help-entry">' +
+                '<div class="pre-help-entry-title">'+it.title+'</div>' +
+                '<div class="pre-help-entry-txt">'+it.txt+'</div>' +
+              '</div>';
+            }).join("") +
+          '</div>';
+        }).join("") +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function(e){ if(e.target===ov) ov.remove(); });
+    document.getElementById("pre-help-close").onclick = function(){ ov.remove(); };
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function missingBadge(pct) {
+    if (!pct) return '<span style="color:var(--accent);font-size:11px">✓ sin nulos</span>';
+    if (pct < 5) return '<span style="color:#f59e0b;font-size:11px">⚠ '+pct+'% nulos</span>';
+    return '<span style="color:#ef4444;font-size:11px">✗ '+pct+'% nulos</span>';
+  }
+  function typeBadge(t) {
+    var map={"int":["badge-ok","int"],"float":["badge-ok","float"],"numeric":["badge-ok","num"],
+             "categorical":["badge-info","str"],"list":["badge-warn","List"],"text":["badge","text"]};
+    var m=map[t]||["badge",t];
+    return '<span class="badge '+m[0]+'" style="font-size:9px;padding:1px 5px">'+m[1]+'</span>';
+  }
+  function selVal(id){ var el=document.getElementById(id); return el?el.value:"none"; }
+
+  // ── Build select rows per column ──────────────────────────────────────────
+  // For numeric: show imputación row only if missing_pct > 0; always show normalización.
+  // For categorical: one select with all cat ops; impute options hidden if no nulls.
+
+  function buildSelectsNum(col, missing_pct, saved) {
+    var cid     = col.replace(/[^a-zA-Z0-9]/g,"_");
+    var impVal  = (saved && saved.impute) || "none";
+    var normVal = (saved && saved.norm)   || "normalize_none";
+    var hasNull = missing_pct > 0;
+    var rows = "";
+    if (hasNull) {
+      rows +=
+        '<div class="pre-sel-row">' +
+          '<label class="pre-sel-lbl">Imputar nulos</label>' +
+          '<select class="inp pre-sel" id="imp-'+cid+'" data-col="'+col+'" data-kind="imp">' +
+            '<option value="none">— sin imputar —</option>' +
+            '<option value="impute_mean"'      +(impVal==="impute_mean"      ?" selected":"")+'>Media</option>' +
+            '<option value="impute_median"'    +(impVal==="impute_median"    ?" selected":"")+'>Mediana</option>' +
+            '<option value="impute_zero"'      +(impVal==="impute_zero"      ?" selected":"")+'>Cero</option>' +
+            '<option value="impute_knn"'       +(impVal==="impute_knn"       ?" selected":"")+'>KNN (k vecinos)</option>' +
+            '<option value="impute_regression"'+(impVal==="impute_regression"?" selected":"")+'>Regresión lineal</option>' +
+            '<option value="impute_drop"'      +(impVal==="impute_drop"      ?" selected":"")+'>Eliminar fila</option>' +
+          '</select>' +
+        '</div>';
+    }
+    rows +=
+      '<div class="pre-sel-row">' +
+        '<label class="pre-sel-lbl">Normalizar</label>' +
+        '<select class="inp pre-sel" id="norm-'+cid+'" data-col="'+col+'" data-kind="norm">' +
+          '<option value="normalize_none"  '+(normVal==="normalize_none"  ?" selected":"")+'>— sin normalizar —</option>' +
+          '<option value="normalize_minmax"'+(normVal==="normalize_minmax"?" selected":"")+'>Min-Max [0, 1]</option>' +
+          '<option value="normalize_zscore"'+(normVal==="normalize_zscore"?" selected":"")+'>Z-score (μ=0, σ=1)</option>' +
+        '</select>' +
+      '</div>';
+    return rows;
+  }
+
+  function buildSelectsCat(col, missing_pct, saved) {
+    var cid    = col.replace(/[^a-zA-Z0-9]/g,"_");
+    var catVal = (saved && saved.op) || "none";
+    var hasNull= missing_pct > 0;
+    return '<div class="pre-sel-row">' +
+      '<label class="pre-sel-lbl">Operación</label>' +
+      '<select class="inp pre-sel" id="cat-'+cid+'" data-col="'+col+'" data-kind="cat">' +
+        '<option value="none">— sin cambios —</option>' +
+        '<option value="catfix"'       +(catVal==="catfix"       ?" selected":"")+'>Limpiar texto (minúsc. + trim)</option>' +
+        (hasNull
+          ? '<option value="impute_mode"'+(catVal==="impute_mode"?" selected":"")+'>Imputar — moda</option>' +
+            '<option value="impute_drop"'+(catVal==="impute_drop"?" selected":"")+'>Eliminar filas con nulos</option>'
+          : "") +
+        '<option value="encode_label"' +(catVal==="encode_label" ?" selected":"")+'>Label Encoding (entero por cat.)</option>' +
+        '<option value="encode_onehot"'+(catVal==="encode_onehot"?" selected":"")+'>One-Hot Encoding (columna por cat.)</option>' +
+      '</select>' +
+    '</div>';
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  container.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg)">' +
+      '<div style="font-size:13px;font-weight:700">Variables — '+cols.length+' columnas</div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<button class="btn btn-ghost btn-sm" id="btn-pre-help">❓ Guía</button>' +
+        '<button class="btn btn-ghost btn-sm" id="btn-pre-apply-all">✓ Aplicar todo</button>' +
+        '<button class="btn btn-ghost btn-sm" id="btn-pre-reset">↺ Resetear</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div style="display:grid;grid-template-columns:1fr 380px;height:calc(100% - 49px);overflow:hidden">' +
+
+      // LEFT — variable table + split section stacked
+      '<div style="overflow-y:auto;border-right:1px solid var(--border);display:flex;flex-direction:column">' +
+      '<div style="flex:1;min-height:0;overflow-y:auto">' +
+        cols.map(function(c) {
+          var cid   = c.name.replace(/[^a-zA-Z0-9]/g,"_");
+          var saved = (node.data.colOps||{})[c.name]||null;
+          var pct   = c.missing_pct||0;
+          var selHtml = isNumType(c.type)
+            ? buildSelectsNum(c.name, pct, saved)
+            : buildSelectsCat(c.name, pct, saved);
+          return '<div class="pre-var-row" id="pre-row-'+cid+'" data-col="'+c.name+'" ' +
+            'style="padding:12px 16px;border-bottom:1px solid var(--hair);transition:background .15s">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+              '<span style="font-size:12px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+c.name+'">'+c.name+'</span>' +
+              typeBadge(c.type) +
+              '<span id="mb-'+cid+'" style="white-space:nowrap">'+missingBadge(pct)+'</span>' +
+              '<button class="btn btn-ghost btn-sm pre-apply-one" data-col="'+c.name+'" ' +
+                'style="margin-left:auto;font-size:12px;padding:4px 14px;min-height:30px;white-space:nowrap">▶ Aplicar</button>' +
+            '</div>' +
+            selHtml +
+          '</div>';
+        }).join("") +
+      '</div>' +
+
+      '</div>' +   // end variable-table scroll div
+      // Split section pinned at bottom of left column
+      '<div id="pre-split-section" style="flex-shrink:0;border-top:2px solid var(--border);background:var(--bg);padding:14px 16px 16px">' +
+        // Header
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+          '<div style="font-size:12px;font-weight:700">✂️ Partición de datos</div>' +
+          (tabInfo.target
+            ? '<span class="badge badge-ok" style="font-size:10px">objetivo: '+tabInfo.target+'</span>'
+            : '<span style="font-size:10px;color:var(--sec)">Define la clase objetivo en el bloque Datos</span>') +
+        '</div>' +
+        // Mode buttons
+        '<div style="display:flex;gap:6px;margin-bottom:14px">' +
+          '<button class="btn btn-ghost btn-sm split-mode-btn active" data-mode="random" style="font-size:11px">Aleatoria</button>' +
+          '<button class="btn btn-ghost btn-sm split-mode-btn" data-mode="stratified" style="font-size:11px">Estratificada</button>' +
+          '<button class="btn btn-ghost btn-sm split-mode-btn" data-mode="cv" style="font-size:11px">Validación cruzada</button>' +
+        '</div>' +
+        // ── Config panel: random / stratified ───────────────────────────────
+        '<div id="split-cfg-traintest">' +
+          '<div class="pre-sel-row" style="margin-bottom:10px">' +
+            '<label class="pre-sel-lbl" style="width:80px">% Train</label>' +
+            '<input type="range" id="split-ratio" min="0.5" max="0.95" step="0.05" value="0.8" ' +
+              'style="flex:1;accent-color:var(--accent);height:4px;cursor:pointer">' +
+            '<span id="split-ratio-lbl" style="font-size:13px;font-weight:700;width:42px;text-align:right;flex-shrink:0">80%</span>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;font-size:11px;color:var(--sec);margin-bottom:2px;padding-left:88px">' +
+            '<span>50%</span><span style="flex:1;text-align:center">—</span><span>95%</span>' +
+          '</div>' +
+        '</div>' +
+        // ── Config panel: CV ─────────────────────────────────────────────────
+        '<div id="split-cfg-cv" style="display:none">' +
+          '<div class="pre-sel-row" style="margin-bottom:10px">' +
+            '<label class="pre-sel-lbl" style="width:80px">Nº folds</label>' +
+            '<select class="inp pre-sel" id="split-folds" style="max-width:120px">' +
+              '<option value="3">3 folds</option>' +
+              '<option value="5" selected>5 folds</option>' +
+              '<option value="10">10 folds</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="pre-sel-row" style="margin-bottom:6px">' +
+            '<label class="pre-sel-lbl" style="width:80px">Tipo de fold</label>' +
+            '<div style="display:flex;gap:6px">' +
+              '<button class="btn btn-ghost btn-sm cv-fold-btn active" data-fold="stratified" style="font-size:11px">Estratificado</button>' +
+              '<button class="btn btn-ghost btn-sm cv-fold-btn" data-fold="random" style="font-size:11px">Aleatorio</button>' +
+            '</div>' +
+          '</div>' +
+          '<div style="font-size:10px;color:var(--sec);padding-left:88px;line-height:1.4">' +
+            'Estratificado mantiene la proporción de clases en cada fold. Aleatorio divide sin tener en cuenta la clase.' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn btn-black" id="btn-split-run" style="margin-top:14px;width:100%;font-size:12px;min-height:34px">▶ Calcular partición</button>' +
+        '<div id="split-result" style="margin-top:10px"></div>' +
+      '</div>' +
+      '</div>' +  // end left column flex
+
+      '<div id="pre-detail" style="overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">' +
+        '<div class="pre-detail-empty">Configura las operaciones y pulsa ▶ Aplicar en cada variable.</div>' +
+      '</div>' +
+
+    '</div>';
+
+  // ── applyOne ──────────────────────────────────────────────────────────────
+  async function applyOne(colName) {
+    var cid  = colName.replace(/[^a-zA-Z0-9]/g,"_");
+    var btn  = container.querySelector('.pre-apply-one[data-col="'+colName+'"]');
+    var impV = selVal("imp-"+cid);
+    var nrmV = selVal("norm-"+cid);
+    var catV = selVal("cat-"+cid);
+
+    var ops = [];
+    if (impV && impV !== "none")           ops.push(impV);
+    if (nrmV && nrmV !== "normalize_none") ops.push(nrmV);
+    if (catV && catV !== "none")           ops.push(catV);
+
+    if (!ops.length) {
+      document.getElementById("pre-detail").innerHTML =
+        '<div class="pre-detail-empty">Selecciona al menos una operación para «'+colName+'».</div>';
+      return;
+    }
+
+    if (!node.data.colOps) node.data.colOps = {};
+    node.data.colOps[colName] = {impute: impV, norm: nrmV, op: catV};
+
+    if (btn) { btn.textContent = "…"; btn.disabled = true; }
+
+    var lastD = null;
+    for (var i = 0; i < ops.length; i++) {
+      var resp = await fetch("/api/preprocess_column", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({node_id: dataNodeId, preprocess_node_id: prepNodeId,
+                              col: colName, operation: ops[i]})
+      });
+      var d = await resp.json();
+      if (d.error) { toast("Error: "+d.error); if(btn){btn.textContent="▶ Aplicar";btn.disabled=false;} return; }
+      lastD = d;
+    }
+    if (btn) { btn.textContent = "▶ Aplicar"; btn.disabled = false; }
+
+    var mb = document.getElementById("mb-"+cid);
+    if (mb && lastD) mb.innerHTML = missingBadge(
+      lastD.missing_after > 0 ? Math.round(lastD.missing_after/Math.max(lastD.n_rows,1)*100) : 0
+    );
+
+    var row = document.getElementById("pre-row-"+cid);
+    if (row) { row.classList.add("applied-ok"); setTimeout(function(){ row.classList.remove("applied-ok"); }, 1600); }
+
+    node.data.applied = true;
+    setNB(node.id, "Modificado", "badge-ok");
+    setOK(node.id, true);
+
+    showDetail(colName, lastD, ops);
+    toast("✓ "+colName+" — "+ops.map(function(o){return o.replace(/_/g," ");}).join(" + "));
+  }
+
+  // ── showDetail — acumula tarjetas por variable aplicada ──────────────────
+  // appliedCards: array of {colName, d, ops} for all applied operations this session
+  var appliedCards = [];
+
+  function opLabel(o) {
+    var found = null;
+    ALL_HELP.forEach(function(g){ g.items.forEach(function(it){ if(it.v===o) found=it.title; }); });
+    return found || o.replace(/_/g," ");
+  }
+
+  function renderDetailPanel() {
+    var detail = document.getElementById("pre-detail"); if (!detail) return;
+    if (!appliedCards.length) {
+      detail.innerHTML = '<div class="pre-detail-empty">Configura las operaciones y pulsa ▶ Aplicar en cada variable.</div>';
+      return;
+    }
+
+    // Header: resumen de cuántas variables modificadas
+    var html =
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ter);margin-bottom:10px">' +
+        appliedCards.length + ' variable' + (appliedCards.length>1?'s':'') + ' modificada' + (appliedCards.length>1?'s':'') +
+      '</div>';
+
+    appliedCards.forEach(function(entry) {
+      var d   = entry.d;
+      var ops = entry.ops;
+      var col = entry.colName;
+      var opsStr = ops.map(opLabel).join(" → ");
+
+      // Utility assessment
+      var useful = false, usefulMsg = "", usefulColor = "";
+      var nRows = Math.max(d.n_rows || 1, 1);
+      var pctBefore = Math.round(d.missing_before / nRows * 100);
+      var pctAfter  = Math.round(d.missing_after  / nRows * 100);
+
+      if (d.missing_before > 0 && d.missing_after === 0) {
+        useful = true; usefulMsg = "✓ Todos los nulos resueltos"; usefulColor = "#19e68c";
+      } else if (d.missing_before > 0 && d.missing_after < d.missing_before) {
+        useful = true; usefulMsg = "↓ Nulos reducidos"; usefulColor = "#f59e0b";
+      } else if (d.missing_before > 0 && d.missing_after >= d.missing_before) {
+        useful = false; usefulMsg = "⚠ Sin cambio en nulos"; usefulColor = "#ef4444";
+      } else if (d.changed > 0 && ops.some(function(o){ return o.startsWith("normalize_")||o==="catfix"||o.startsWith("encode_"); })) {
+        useful = true; usefulMsg = "✓ Transformación aplicada"; usefulColor = "#19e68c";
+      } else if (d.changed === 0) {
+        useful = false; usefulMsg = "— Sin cambios efectivos"; usefulColor = "#909090";
+      } else {
+        useful = true; usefulMsg = "✓ Cambios aplicados"; usefulColor = "#19e68c";
+      }
+
+      // Numeric stats comparison (compact, no table)
+      var statsHtml = "";
+      if (d.stats_before && d.stats_before.mean !== undefined && d.stats_after && d.stats_after.mean !== undefined) {
+        // Show as two-row compact stat strip
+        var fields = [["Media", "mean"], ["Std", "std"], ["Mín", "min"], ["Máx", "max"]];
+        statsHtml =
+          '<div style="display:grid;grid-template-columns:36px repeat(4,1fr);gap:3px 6px;font-size:10px;margin-top:8px;margin-bottom:6px">' +
+            '<span></span>' + fields.map(function(f){ return '<span style="color:var(--ter);font-weight:700;text-align:right">'+f[0]+'</span>'; }).join("") +
+            '<span style="color:var(--sec)">Antes</span>' + fields.map(function(f){ return '<span style="text-align:right;color:var(--sec)">'+d.stats_before[f[1]]+'</span>'; }).join("") +
+            '<span style="color:var(--accent);font-weight:700">Desp.</span>' + fields.map(function(f){ return '<span style="text-align:right;color:var(--accent);font-weight:600">'+d.stats_after[f[1]]+'</span>'; }).join("") +
+          '</div>';
+      } else if (d.stats_before && d.stats_before.top) {
+        statsHtml = '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px">' +
+          d.stats_before.top.slice(0,4).map(function(x){
+            return '<span class="badge badge-info" style="font-size:9px">'+x.v+' ('+x.n+')</span>';
+          }).join("") + '</div>';
+      }
+
+      // Nulos bar (visual before/after)
+      var nullBarHtml = "";
+      if (d.missing_before > 0 || d.missing_after > 0) {
+        var barBefore = Math.max(pctBefore, 1);
+        var barAfter  = pctAfter;
+        nullBarHtml =
+          '<div style="margin-top:8px;margin-bottom:4px">' +
+            '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sec);margin-bottom:3px">' +
+              '<span>Nulos</span><span>'+pctBefore+'% → '+pctAfter+'%</span>' +
+            '</div>' +
+            '<div style="position:relative;height:6px;background:var(--border);border-radius:3px;overflow:hidden">' +
+              '<div style="position:absolute;left:0;top:0;height:100%;width:'+barBefore+'%;background:#ef4444;opacity:.35;border-radius:3px"></div>' +
+              '<div style="position:absolute;left:0;top:0;height:100%;width:'+barAfter+'%;background:#ef4444;border-radius:3px"></div>' +
+            '</div>' +
+          '</div>';
+      }
+
+      // Plot thumb (small)
+      var thumbHtml = d.img
+        ? '<img src="data:image/png;base64,'+d.img+'" style="width:100%;border-radius:6px;margin-top:8px;cursor:zoom-in;display:block" onclick="expandImg(this.src)">'
+        : '';
+
+      html +=
+        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;border-left:3px solid '+usefulColor+'">' +
+          // Top row: name + badge
+          '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px">' +
+            '<div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="'+col+'">'+col+'</div>' +
+            '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--pill);background:'+usefulColor+';color:'+(usefulColor==='#f59e0b'?'#000':'#fff')+';white-space:nowrap;flex-shrink:0">'+usefulMsg+'</span>' +
+          '</div>' +
+          // Op chain
+          '<div style="font-size:10px;color:var(--sec);margin-bottom:4px">'+opsStr+'</div>' +
+          // Changed count
+          '<div style="font-size:10px;color:var(--ter)">'+(d.changed||0)+' filas modificadas'+(d.dropped?' · '+d.dropped+' eliminadas':'')+' · '+d.n_rows+' total</div>' +
+          nullBarHtml +
+          statsHtml +
+          thumbHtml +
+        '</div>';
+    });
+
+    detail.innerHTML = html;
+  }
+
+  function showDetail(colName, d, ops) {
+    if (!d) { renderDetailPanel(); return; }
+    // Remove any previous entry for this column (re-apply replaces it)
+    appliedCards = appliedCards.filter(function(e){ return e.colName !== colName; });
+    appliedCards.push({colName: colName, d: d, ops: ops});
+    renderDetailPanel();
+  }
+
+  // ── Events ────────────────────────────────────────────────────────────────
+  container.querySelectorAll(".pre-apply-one").forEach(function(btn){
+    btn.addEventListener("click", function(e){ e.stopPropagation(); applyOne(btn.dataset.col); });
+  });
+
+  document.getElementById("btn-pre-help").onclick = openHelpOverlay;
+
+  var applyAllBtn = document.getElementById("btn-pre-apply-all");
+  if (applyAllBtn) applyAllBtn.onclick = async function() {
+    var toApply = cols.filter(function(c){
+      var cid=c.name.replace(/[^a-zA-Z0-9]/g,"_");
+      return (selVal("imp-"+cid)!=="none")||(selVal("norm-"+cid)!=="normalize_none")||(selVal("cat-"+cid)!=="none");
+    }).map(function(c){return c.name;});
+    if (!toApply.length){ toast("Ninguna operación configurada"); return; }
+    applyAllBtn.disabled=true; applyAllBtn.textContent="Aplicando…";
+    for (var i=0;i<toApply.length;i++) await applyOne(toApply[i]);
+    applyAllBtn.disabled=false; applyAllBtn.textContent="✓ Aplicar todo";
+    toast("✓ "+toApply.length+" variable(s) procesadas");
+    setNS(node.id, toApply.length+" ops");
+  };
+
+  var resetBtn = document.getElementById("btn-pre-reset");
+  if (resetBtn) resetBtn.onclick = function(){
+    node.data.colOps={}; node.data.applied=false;
+    appliedCards = [];
+    container.querySelectorAll(".pre-sel").forEach(function(s){
+      s.value = s.id.startsWith("norm-") ? "normalize_none" : "none";
+    });
+    container.querySelectorAll(".pre-var-row").forEach(function(r){r.classList.remove("applied-ok");});
+    renderDetailPanel();
+    setNB(node.id,"",""); setOK(node.id,false);
+    toast("↺ Configuración borrada");
+  };
+
+  // ── Partición de datos ─────────────────────────────────────────────────────
+  var splitMode   = "random";
+  var cvFoldType  = "stratified";   // "stratified" | "random"
+  // Target comes from the Data node, not from a selector here
+  var splitTarget = tabInfo.target || "";
+
+  // Range label sync
+  var ratioEl  = document.getElementById("split-ratio");
+  var ratioLbl = document.getElementById("split-ratio-lbl");
+  if (ratioEl && ratioLbl) {
+    ratioEl.oninput = function(){ ratioLbl.textContent = Math.round(ratioEl.value*100)+"%"; };
+  }
+
+  // Mode tab switching (Aleatoria / Estratificada / Validación cruzada)
+  container.querySelectorAll(".split-mode-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      container.querySelectorAll(".split-mode-btn").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      splitMode = btn.dataset.mode;
+      var isCv = splitMode === "cv";
+      var ttEl = document.getElementById("split-cfg-traintest");
+      var cvEl = document.getElementById("split-cfg-cv");
+      if (ttEl) ttEl.style.display = isCv ? "none" : "block";
+      if (cvEl) cvEl.style.display = isCv ? "block" : "none";
+    });
+  });
+
+  // CV fold type buttons (Estratificado / Aleatorio)
+  container.querySelectorAll(".cv-fold-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      container.querySelectorAll(".cv-fold-btn").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      cvFoldType = btn.dataset.fold;
+    });
+  });
+
+  // Run split / CV
+  var splitBtn = document.getElementById("btn-split-run");
+  if (splitBtn) splitBtn.onclick = async function(){
+    var resEl = document.getElementById("split-result"); if (!resEl) return;
+    resEl.innerHTML = '<div style="font-size:11px;color:var(--sec);padding:4px 0">Calculando…</div>';
+    splitBtn.disabled = true;
+
+    var isCv   = splitMode === "cv";
+    var ratio  = parseFloat((ratioEl||{}).value||"0.8");
+    var nFolds = parseInt((document.getElementById("split-folds")||{}).value||"5");
+
+    // For CV, send the fold type as a sub-mode
+    var serverMode = isCv
+      ? (cvFoldType === "stratified" ? "cv_stratified" : "cv_random")
+      : splitMode;
+
+    var resp = await fetch("/api/data_split", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        node_id: dataNodeId, preprocess_node_id: prepNodeId,
+        mode: serverMode, ratio: ratio, n_folds: nFolds, target_col: splitTarget
+      })
+    });
+    var d = await resp.json();
+    splitBtn.disabled = false;
+
+    if (d.error){ resEl.innerHTML='<div style="color:#ef4444;font-size:11px;padding:4px 0">'+d.error+'</div>'; return; }
+
+    var html = "";
+    if (isCv) {
+      var foldType = d.stratified ? "StratifiedKFold" : "KFold";
+      html =
+        '<div style="font-size:11px;font-weight:700;margin-bottom:8px">'+d.n_folds+' folds · '+foldType+' · '+d.n_total+' filas</div>' +
+        '<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+          '<div style="display:grid;grid-template-columns:44px 56px 56px 1fr;gap:0;padding:6px 10px;background:var(--tinted);border-bottom:1px solid var(--border)">' +
+            '<span style="font-size:10px;font-weight:700;color:var(--ter)">Fold</span>' +
+            '<span style="font-size:10px;font-weight:700;color:var(--ter)">Train</span>' +
+            '<span style="font-size:10px;font-weight:700;color:var(--ter)">Test</span>' +
+            '<span style="font-size:10px;font-weight:700;color:var(--ter)">Clases en test</span>' +
+          '</div>' +
+          d.folds.map(function(f, i){
+            var distStr = Object.keys(f.test_pct_dist).slice(0,5).map(function(k){
+              return '<span class="badge badge-info" style="font-size:9px;margin-right:3px">'+k+' '+f.test_pct_dist[k]+'%</span>';
+            }).join("");
+            return '<div style="display:grid;grid-template-columns:44px 56px 56px 1fr;gap:0;padding:6px 10px;border-top:'+(i>0?'1px solid var(--hair)':'none')+';align-items:center">' +
+              '<span style="font-size:12px;font-weight:700;color:var(--accent)">'+f.fold+'</span>' +
+              '<span style="font-size:11px">'+f.n_train+'</span>' +
+              '<span style="font-size:11px">'+f.n_test+'</span>' +
+              '<span>'+distStr+'</span>' +
+            '</div>';
+          }).join("") +
+        '</div>' +
+        (d.img ? '<img src="data:image/png;base64,'+d.img+'" style="width:100%;border-radius:6px;margin-top:10px;cursor:zoom-in" onclick="expandImg(this.src)">' : '');
+    } else {
+      // Summary cards
+      html =
+        '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center">' +
+            '<div class="mval" style="font-size:18px">'+d.n_train+'</div>' +
+            '<div class="mlbl">Train — '+d.train_pct+'%</div>' +
+          '</div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center">' +
+            '<div class="mval" style="font-size:18px">'+d.n_test+'</div>' +
+            '<div class="mlbl">Test — '+d.test_pct+'%</div>' +
+          '</div>' +
+        '</div>';
+
+      // Class distribution per partition
+      var origDist  = d.orig_pct  || {};
+      var trainDist = d.train_pct_dist || {};
+      var testDist  = d.test_pct_dist  || {};
+      var classes   = Object.keys(origDist);
+
+      if (classes.length) {
+        html +=
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ter);margin-bottom:6px">Distribución de clases</div>' +
+          '<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+            // Header
+            '<div style="display:grid;grid-template-columns:1fr 60px 60px 60px;gap:0;padding:5px 10px;background:var(--tinted);border-bottom:1px solid var(--border)">' +
+              '<span style="font-size:10px;font-weight:700;color:var(--ter)">Clase</span>' +
+              '<span style="font-size:10px;font-weight:700;color:var(--ter);text-align:right">Original</span>' +
+              '<span style="font-size:10px;font-weight:700;color:var(--ter);text-align:right">Train</span>' +
+              '<span style="font-size:10px;font-weight:700;color:var(--ter);text-align:right">Test</span>' +
+            '</div>' +
+            classes.slice(0, 10).map(function(cls, i) {
+              var op = origDist[cls]  || 0;
+              var tp = trainDist[cls] || 0;
+              var ep = testDist[cls]  || 0;
+              // Color-code train vs orig difference
+              var diff = Math.abs(tp - op);
+              var tColor = diff < 2 ? 'var(--accent)' : diff < 5 ? '#f59e0b' : '#ef4444';
+              var eColor = Math.abs(ep - op) < 2 ? 'var(--accent)' : Math.abs(ep-op) < 5 ? '#f59e0b' : '#ef4444';
+              return '<div style="display:grid;grid-template-columns:1fr 60px 60px 60px;gap:0;padding:5px 10px;border-top:'+(i>0?'1px solid var(--hair)':'none')+';align-items:center">' +
+                '<span style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cls+'</span>' +
+                '<span style="font-size:11px;text-align:right;color:var(--sec)">'+op+'%</span>' +
+                '<span style="font-size:11px;text-align:right;font-weight:700;color:'+tColor+'">'+tp+'%</span>' +
+                '<span style="font-size:11px;text-align:right;font-weight:700;color:'+eColor+'">'+ep+'%</span>' +
+              '</div>';
+            }).join("") +
+            // Legend
+            '<div style="padding:5px 10px;border-top:1px solid var(--hair);font-size:9px;color:var(--ter);display:flex;gap:10px">' +
+              '<span style="color:var(--accent)">■ ±0–2% vs original</span>' +
+              '<span style="color:#f59e0b">■ ±2–5%</span>' +
+              '<span style="color:#ef4444">■ &gt;5% desviación</span>' +
+            '</div>' +
+          '</div>';
+
+        // Plot if available
+        if (d.img) {
+          html += '<img src="data:image/png;base64,'+d.img+'" style="width:100%;border-radius:6px;margin-top:10px;cursor:zoom-in" onclick="expandImg(this.src)">';
+        }
+      } else {
+        // No target — just show the plot or a note
+        if (d.img) {
+          html += '<img src="data:image/png;base64,'+d.img+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)">';
+        } else {
+          html += '<div style="font-size:10px;color:var(--sec);margin-top:4px;line-height:1.5">Define la clase objetivo en el bloque Datos para ver la distribución de clases por partición.</div>';
+        }
+      }
+    }
+
+    resEl.innerHTML = html;
+    toast("✓ Partición calculada — "+splitMode+(isCv?" ("+cvFoldType+")":""));
+  };
+}
+
+// ── Legacy helpers kept for backwards compat (NLP split btn) ─────────────────
+function _bindTabPreprocEvents(node, numCols) {
   var splitBtn = document.getElementById("btn-tp-split");
   if (splitBtn) splitBtn.onclick = async function() {
     var ratio  = parseFloat(document.getElementById("tp-ratio").value);
@@ -3824,9 +4413,14 @@ function _bindTabPreprocEvents(node, numCols) {
     var resEl    = document.getElementById("tp-results");
     var plotsEl  = document.getElementById("tp-plots");
     resEl.innerHTML = '<div class="loading" style="font-size:12px">Procesando…</div>';
+    // Resolve which data node feeds this preprocess node
+    var dataSrc = upstreamDataNode(node.id);
+    var dataNodeId = dataSrc ? String(dataSrc.id) : "";
+    var prepNodeId = String(node.id);
     var resp = await fetch("/api/tabular_preprocess", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({normalize: norm, impute: impute, cat_fix: catfix, use_train: fittrain})
+      body: JSON.stringify({normalize: norm, impute: impute, cat_fix: catfix, use_train: fittrain,
+                            node_id: dataNodeId, preprocess_node_id: prepNodeId})
     });
     var d = await resp.json();
     if (d.error) { resEl.innerHTML = '<div style="color:#ff6b6b;font-size:12px">'+d.error+'</div>'; return; }
@@ -3855,6 +4449,9 @@ function _bindTabPreprocEvents(node, numCols) {
           '<span>Variable</span><span></span><span>Media</span><span>Std</span><span>Min</span><span>Max</span></div>' +
           baHtml + '</div>' : '');
 
+    // Mark this preprocess node as applied so downstream blocks use its processed data
+    node.data.applied = true;
+    node.data.preprocessNodeId = prepNodeId;
     setNS(node.id, (norm!=="none"?norm:"sin norm")+" · "+impute);
     setNB(node.id, d.n_out+" filas", "badge-ok"); setOK(node.id, true);
 

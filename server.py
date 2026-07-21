@@ -497,22 +497,44 @@ def dataset_info(): return jsonify(_dataset_summary())
 
 # ── Tabular Data Info (rich — for the Data Info panel) ────────────────────────
 def _col_type(values):
-    """Return 'numeric', 'categorical', or 'text' for a list of raw string values."""
+    """Return fine-grained type for a list of raw values.
+
+    Returns one of: 'int', 'float', 'categorical', 'list', 'text'.
+    Callers that previously compared == 'numeric' should now use _is_numeric_type().
+    """
     non_empty = [v for v in values if str(v).strip() not in ("", "?", "NA", "NaN", "nan", "None")]
     if not non_empty:
         return "categorical"
-    numeric_ok = 0
+
+    # Check for list values (Python list objects or JSON-array-like strings)
+    list_ok = sum(1 for v in non_empty[:50] if isinstance(v, list) or
+                  (isinstance(v, str) and v.strip().startswith("[") and v.strip().endswith("]")))
+    if list_ok / max(len(non_empty[:50]), 1) >= 0.6:
+        return "list"
+
+    # Check for numeric
+    int_ok = 0; float_ok = 0
     for v in non_empty[:200]:
         try:
-            float(v); numeric_ok += 1
+            f = float(str(v))
+            if str(v).strip().lstrip("-").isdigit():
+                int_ok += 1
+            else:
+                float_ok += 1
         except (ValueError, TypeError):
             pass
-    ratio = numeric_ok / len(non_empty[:200])
-    if ratio >= 0.85:
-        return "numeric"
+    total = len(non_empty[:200])
+    numeric_ratio = (int_ok + float_ok) / total
+    if numeric_ratio >= 0.85:
+        return "int" if int_ok >= float_ok else "float"
+
     if len(set(str(v) for v in non_empty[:500])) <= max(20, len(non_empty) * 0.05):
         return "categorical"
     return "text"
+
+def _is_numeric_type(t):
+    """True for both 'int' and 'float' — replaces == 'numeric' comparisons."""
+    return t in ("int", "float")
 
 def _is_missing(v):
     return str(v).strip() in ("", "?", "NA", "NaN", "nan", "None", "null")
@@ -626,18 +648,451 @@ def data_sampler():
         "orig_dist":  class_dist(rows, target),
     })
 
+@app.route("/api/data_split", methods=["POST"])
+def data_split():
+    """Random / Stratified split or Cross-Validation fold analysis."""
+    body       = request.get_json(force=True, silent=True) or {}
+    node_id    = str(body.get("node_id", ""))
+    pre_node_id= str(body.get("preprocess_node_id", ""))
+    mode       = body.get("mode", "random")   # "random" | "stratified" | "cv" | "cv_stratified" | "cv_random"
+    ratio      = float(body.get("ratio", 0.8))
+    n_folds    = int(body.get("n_folds", 5))
+    target     = body.get("target_col", "")
+    seed       = int(body.get("seed", 42))
+
+    # Resolve data: prefer preprocess slot if populated
+    D = _effective_data(pre_node_id) if (pre_node_id and pre_node_id in _NODE_DATA
+                                          and _NODE_DATA[pre_node_id].get("raw_rows")) \
+        else _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No hay datos cargados"}), 400
+
+    target = target or D.get("target", "")
+
+    import random as _rnd
+    rng = _rnd.Random(seed)
+
+    def class_dist(rws, col):
+        if not col or not rws: return {}
+        return dict(Counter(str(r.get(col,"")) for r in rws))
+
+    def pct_dist(dist, total):
+        return {k: round(v/total*100,1) for k,v in dist.items()}
+
+    # ── Random / Stratified split ─────────────────────────────────────────────
+    if mode in ("random", "stratified"):
+        if mode == "stratified" and target and target in D["columns"]:
+            groups = {}
+            for r in rows:
+                groups.setdefault(str(r.get(target,"")), []).append(r)
+            train_rows, test_rows = [], []
+            for g, grp in groups.items():
+                grp2 = grp[:]
+                rng.shuffle(grp2)
+                n_tr = max(1, round(len(grp2)*ratio))
+                train_rows.extend(grp2[:n_tr])
+                test_rows.extend(grp2[n_tr:])
+            rng.shuffle(train_rows); rng.shuffle(test_rows)
+        else:
+            idx = list(range(len(rows))); rng.shuffle(idx)
+            n_tr = max(1, round(len(rows)*ratio))
+            train_rows = [rows[i] for i in idx[:n_tr]]
+            test_rows  = [rows[i] for i in idx[n_tr:]]
+
+        _TAB["sampled_train"] = train_rows
+        _TAB["sampled_test"]  = test_rows
+        _TAB["split_ratio"]   = ratio
+        _TAB["split_mode"]    = mode
+        _TAB["target_col"]    = target
+
+        orig_dist  = class_dist(rows, target)
+        train_dist = class_dist(train_rows, target)
+        test_dist  = class_dist(test_rows, target)
+        total = len(rows)
+
+        # Class balance plot (bar chart: orig vs train vs test)
+        img_b64 = None
+        try:
+            if target and orig_dist:
+                labels = sorted(orig_dist.keys())
+                orig_pct  = [orig_dist.get(l,0)/total*100  for l in labels]
+                train_pct = [train_dist.get(l,0)/len(train_rows)*100 for l in labels]
+                test_pct  = [test_dist.get(l,0)/len(test_rows)*100   for l in labels]
+                x = np.arange(len(labels)); w = 0.28
+                fig, ax = plt.subplots(figsize=(max(5,len(labels)*1.4), 3.5))
+                ax.bar(x-w, orig_pct,  w, label="Original", color=PALETTE[0], alpha=.85)
+                ax.bar(x,   train_pct, w, label="Train",    color=PALETTE[1], alpha=.85)
+                ax.bar(x+w, test_pct,  w, label="Test",     color=PALETTE[2], alpha=.85)
+                ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=9)
+                ax.set_ylabel("% clase", color=INK, fontsize=9)
+                ax.set_title("Distribución de clases — Original vs Train vs Test", color=INK, fontsize=10, fontweight="bold")
+                ax.legend(fontsize=9); _style_ax(ax)
+                plt.tight_layout(pad=1.2)
+                img_b64 = fig_b64(fig)
+        except Exception:
+            pass
+
+        return jsonify({
+            "mode": mode, "n_train": len(train_rows), "n_test": len(test_rows),
+            "ratio": ratio, "n_total": total,
+            "train_pct": round(len(train_rows)/total*100,1),
+            "test_pct":  round(len(test_rows)/total*100,1),
+            "orig_dist": orig_dist, "train_dist": train_dist, "test_dist": test_dist,
+            "orig_pct":  pct_dist(orig_dist, total),
+            "train_pct_dist": pct_dist(train_dist, max(len(train_rows),1)),
+            "test_pct_dist":  pct_dist(test_dist,  max(len(test_rows),1)),
+            "img": img_b64
+        })
+
+    # ── Cross-Validation analysis ─────────────────────────────────────────────
+    if mode in ("cv", "cv_stratified", "cv_random"):
+        force_stratified = (mode == "cv_stratified")
+        force_random     = (mode == "cv_random")
+    if mode in ("cv", "cv_stratified", "cv_random"):
+        # Fall back to last column if no target configured
+        if not target and D["columns"]:
+            target = D["columns"][-1]
+        if not target or target not in D["columns"]:
+            return jsonify({"error": "No se encontró columna objetivo. Define el target en el bloque Datos."}), 400
+
+        labels_all = [str(r.get(target,"")) for r in rows]
+        unique_cls = sorted(set(labels_all))
+        n = len(rows)
+
+        try:
+            import numpy as _np4
+            idx_arr  = _np4.arange(n)
+            y_arr    = _np4.array(labels_all)
+            # use_skf: stratified if user requested it AND we have class labels
+            use_skf = (not force_random) and len(unique_cls) >= 2
+
+            if use_skf:
+                from sklearn.model_selection import StratifiedKFold
+                kf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+                splits = list(kf.split(idx_arr, y_arr))
+            else:
+                from sklearn.model_selection import KFold
+                kf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
+                splits = list(kf.split(idx_arr))
+
+            folds = []
+            for fi, (tr_idx, te_idx) in enumerate(splits):
+                tr_dist = dict(Counter(y_arr[tr_idx]))
+                te_dist = dict(Counter(y_arr[te_idx]))
+                folds.append({
+                    "fold": fi+1,
+                    "n_train": len(tr_idx),
+                    "n_test":  len(te_idx),
+                    "train_dist": tr_dist,
+                    "test_dist":  te_dist,
+                    "train_pct_dist": {k: round(v/len(tr_idx)*100,1) for k,v in tr_dist.items()},
+                    "test_pct_dist":  {k: round(v/len(te_idx)*100,1)  for k,v in te_dist.items()},
+                })
+
+            # Plot: class balance per fold as grouped bar chart
+            img_b64 = None
+            try:
+                fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
+                fold_nums = [f["fold"] for f in folds]
+                for ci, cls in enumerate(unique_cls[:6]):  # max 6 classes
+                    tr_pcts = [f["train_pct_dist"].get(cls,0) for f in folds]
+                    te_pcts = [f["test_pct_dist"].get(cls,0)  for f in folds]
+                    axes[0].plot(fold_nums, tr_pcts, marker="o", label=cls, color=PALETTE[ci % len(PALETTE)])
+                    axes[1].plot(fold_nums, te_pcts, marker="o", label=cls, color=PALETTE[ci % len(PALETTE)])
+                axes[0].set_title("Train — distribución por fold", color=INK, fontsize=10, fontweight="bold")
+                axes[1].set_title("Test — distribución por fold",  color=INK, fontsize=10, fontweight="bold")
+                for ax in axes:
+                    ax.set_xlabel("Fold", color=INK, fontsize=9)
+                    ax.set_ylabel("% clase", color=INK, fontsize=9)
+                    ax.set_xticks(fold_nums)
+                    ax.legend(fontsize=8, loc="upper right")
+                    _style_ax(ax)
+                plt.tight_layout(pad=1.2)
+                img_b64 = fig_b64(fig)
+            except Exception:
+                pass
+
+            return jsonify({
+                "mode": "cv", "n_folds": n_folds, "n_total": n,
+                "stratified": use_skf, "classes": unique_cls,
+                "folds": folds, "img": img_b64
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"error": f"Modo desconocido: {mode}. Usa random, stratified, cv, cv_stratified o cv_random."}), 400
+
+
 # ── Tabular Preprocessing (normalize + impute) ────────────────────────────────
+@app.route("/api/preprocess_column", methods=["POST"])
+def preprocess_column():
+    """Apply one operation to one column and return before/after stats + plot.
+
+    State model
+    -----------
+    - ``_NODE_DATA[pre_node_id]["raw_rows"]``  → current working state (all cols, some already processed)
+    - ``_NODE_DATA[pre_node_id]["col_snapshots"][col]`` → original values for *col* from the upstream
+      data node, captured the first time that column is touched.  Re-applying an operation always
+      restarts from this snapshot so the user can freely switch strategies.
+    """
+    body        = request.get_json(force=True, silent=True) or {}
+    node_id     = str(body.get("node_id", ""))
+    pre_node_id = str(body.get("preprocess_node_id", ""))
+    col         = body.get("col", "")
+    operation   = body.get("operation", "")
+
+    # ── Resolve upstream (original) data ─────────────────────────────────────
+    D_orig = _effective_data(node_id) if node_id else None
+    if not D_orig or not D_orig["raw_rows"]:
+        return jsonify({"error": "No hay datos cargados en el nodo upstream"}), 400
+
+    # ── Resolve / initialise the preprocess working slot ─────────────────────
+    pslot = _node_slot(pre_node_id)
+    # If the working slot is empty, seed it from the original data
+    if not pslot.get("raw_rows"):
+        pslot.update(
+            raw_rows     = [dict(r) for r in D_orig["raw_rows"]],
+            columns      = list(D_orig["columns"]),
+            dataset_name = D_orig["dataset_name"] + " [preprocesado]",
+            task         = D_orig["task"],
+            target       = D_orig["target"],
+            col_snapshots= {},
+        )
+    if "col_snapshots" not in pslot:
+        pslot["col_snapshots"] = {}
+
+    # ── Snapshot the original column values on first touch ───────────────────
+    # This lets the user re-apply a different strategy without accumulating transforms.
+    if col not in pslot["col_snapshots"]:
+        pslot["col_snapshots"][col] = [r.get(col, "") for r in D_orig["raw_rows"]]
+
+    orig_col_vals = pslot["col_snapshots"][col]   # always the untouched originals
+
+    # ── Build a working copy of *all* rows, replacing only this column
+    #    with its original snapshot values (so we start fresh for this col).
+    rows = [dict(r) for r in pslot["raw_rows"]]
+    for i, r in enumerate(rows):
+        if i < len(orig_col_vals):
+            r[col] = orig_col_vals[i]
+    cols = list(pslot.get("columns", D_orig["columns"]))
+
+    if col not in cols:
+        return jsonify({"error": f"Column '{col}' not found"}), 400
+
+    vals_before = [r.get(col, "") for r in rows]
+    ctype = _col_type(vals_before)
+    missing_before = sum(1 for v in vals_before if _is_missing(v))
+
+    # ── Apply operation ───────────────────────────────────────────────────────
+    changed = 0
+    dropped = 0
+
+    if operation.startswith("impute_"):
+        strategy = operation[len("impute_"):]
+        non_empty = [v for v in vals_before if not _is_missing(v)]
+        fill_val = None
+        if strategy == "drop":
+            rows = [r for r in rows if not _is_missing(r.get(col, ""))]
+            dropped = len(orig_col_vals) - len(rows)
+
+        elif strategy == "knn":
+            # KNN imputation: use all numeric columns as features; k=5
+            if _is_numeric_type(ctype):
+                try:
+                    from sklearn.impute import KNNImputer
+                    num_cols = [c for c in cols if _is_numeric_type(_col_type([r.get(c,"") for r in rows[:50]]))]
+                    if col not in num_cols:
+                        num_cols.append(col)
+                    import numpy as _np2
+                    mat = []
+                    for r in rows:
+                        mat.append([float(r[c]) if (c in r and _try_float(r[c])) else float("nan") for c in num_cols])
+                    arr = _np2.array(mat, dtype=float)
+                    col_idx = num_cols.index(col)
+                    imputer = KNNImputer(n_neighbors=min(5, sum(1 for row in arr if not _np2.isnan(row[col_idx]))))
+                    arr_out = imputer.fit_transform(arr)
+                    for i, r in enumerate(rows):
+                        if _is_missing(r.get(col, "")):
+                            r[col] = str(round(float(arr_out[i, col_idx]), 6)); changed += 1
+                except Exception as e:
+                    return jsonify({"error": f"KNN imputation error: {e}"}), 500
+            else:
+                # fallback for categorical: mode
+                if non_empty:
+                    fill_val = Counter(str(v) for v in non_empty).most_common(1)[0][0]
+
+        elif strategy == "regression":
+            # Regression imputation: train linear regression on rows where col is present,
+            # using all other numeric columns as features.
+            if _is_numeric_type(ctype):
+                try:
+                    from sklearn.linear_model import LinearRegression as _LR
+                    num_cols = [c for c in cols if c != col and _is_numeric_type(_col_type([r.get(c,"") for r in rows[:50]]))]
+                    if not num_cols:
+                        return jsonify({"error": "No hay suficientes columnas numéricas para imputación por regresión"}), 400
+                    import numpy as _np3
+                    known, unknown = [], []
+                    known_y = []
+                    for r in rows:
+                        feats = [float(r.get(c, 0)) if _try_float(r.get(c,"")) else 0.0 for c in num_cols]
+                        if _try_float(r.get(col, "")):
+                            known.append(feats); known_y.append(float(r[col]))
+                        else:
+                            unknown.append((r, feats))
+                    if len(known) < 2:
+                        return jsonify({"error": "Pocos datos conocidos para regresión"}), 400
+                    lr = _LR()
+                    lr.fit(_np3.array(known), _np3.array(known_y))
+                    for r, feats in unknown:
+                        pred = float(lr.predict([feats])[0])
+                        r[col] = str(round(pred, 6)); changed += 1
+                except Exception as e:
+                    return jsonify({"error": f"Regression imputation error: {e}"}), 500
+            else:
+                if non_empty:
+                    fill_val = Counter(str(v) for v in non_empty).most_common(1)[0][0]
+
+        else:
+            if _is_numeric_type(ctype) and non_empty:
+                nums = [float(v) for v in non_empty if _try_float(v)]
+                if strategy == "mean":   fill_val = str(round(float(np.mean(nums)), 6))
+                elif strategy == "median": fill_val = str(round(float(np.median(nums)), 6))
+                elif strategy == "mode":
+                    c2 = Counter(nums); fill_val = str(c2.most_common(1)[0][0])
+                elif strategy == "zero": fill_val = "0"
+            else:
+                if non_empty:
+                    c2 = Counter(str(v) for v in non_empty)
+                    fill_val = c2.most_common(1)[0][0]
+            if fill_val is not None:
+                for r in rows:
+                    if _is_missing(r.get(col, "")):
+                        r[col] = fill_val; changed += 1
+
+    elif operation.startswith("normalize_"):
+        method = operation[len("normalize_"):]
+        if method != "none" and _is_numeric_type(ctype):
+            nums = [float(r.get(col, 0)) for r in rows if _try_float(r.get(col, ""))]
+            if nums:
+                if method == "minmax":
+                    mn, mx = min(nums), max(nums); rng = mx - mn
+                    for r in rows:
+                        v = _try_float(r.get(col, ""))
+                        if v is not None:
+                            r[col] = str(round((v - mn) / rng, 6)) if rng else "0"; changed += 1
+                elif method == "zscore":
+                    mu, sd = float(np.mean(nums)), float(np.std(nums))
+                    for r in rows:
+                        v = _try_float(r.get(col, ""))
+                        if v is not None:
+                            r[col] = str(round((v - mu) / sd, 6)) if sd else "0"; changed += 1
+
+    elif operation == "catfix":
+        for r in rows:
+            v = r.get(col, "")
+            if isinstance(v, str):
+                nv = v.strip().lower()
+                if nv != v: r[col] = nv; changed += 1
+
+    elif operation == "encode_label":
+        uniq = sorted(set(str(r.get(col, "")) for r in rows))
+        mapping = {v: str(i) for i, v in enumerate(uniq)}
+        for r in rows: r[col] = mapping.get(str(r.get(col, "")), "0"); changed += 1
+
+    elif operation == "encode_onehot":
+        uniq = sorted(set(str(r.get(col, "")) for r in rows))
+        new_cols = [col + "__" + v for v in uniq]
+        for r in rows:
+            val = str(r.get(col, ""))
+            for u in uniq:
+                r[col + "__" + u] = "1" if val == u else "0"
+            del r[col]
+        cols = [c for c in cols if c != col] + new_cols
+        changed = len(rows)
+
+    # ── Persist updated rows in preprocess slot (preserve col_snapshots) ────────
+    if pre_node_id:
+        snaps = pslot.get("col_snapshots", {})
+        pslot.update(raw_rows=rows, columns=cols,
+                     dataset_name=D_orig["dataset_name"] + " [preprocesado]",
+                     task=D_orig["task"], target=D_orig["target"])
+        pslot["col_snapshots"] = snaps
+
+    # ── Stats after ───────────────────────────────────────────────────────────
+    vals_after = [r.get(col, "") for r in rows] if col in cols else []
+    missing_after = sum(1 for v in vals_after if _is_missing(v))
+
+    def col_stats(vals):
+        non_e = [v for v in vals if not _is_missing(v)]
+        if not non_e: return {}
+        if _is_numeric_type(_col_type(vals)):
+            nums = [float(v) for v in non_e if _try_float(v)]
+            if nums:
+                return {"mean": round(float(np.mean(nums)), 4),
+                        "std":  round(float(np.std(nums)),  4),
+                        "min":  round(min(nums), 4),
+                        "max":  round(max(nums), 4),
+                        "n_unique": len(set(nums))}
+        return {"n_unique": len(set(str(v) for v in non_e)),
+                "top": [{"v": k, "n": n} for k, n in Counter(str(v) for v in non_e).most_common(5)]}
+
+    stats_before = col_stats(vals_before)
+    stats_after  = col_stats(vals_after)
+
+    # ── Before/after plot ─────────────────────────────────────────────────────
+    img_b64 = None
+    try:
+        fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+        for ax, vals, title, color in [
+            (axes[0], vals_before, "Antes", PALETTE[1]),
+            (axes[1], vals_after,  "Después", PALETTE[0])
+        ]:
+            nums = [float(v) for v in vals if not _is_missing(v) and _try_float(v)]
+            if nums:
+                ax.hist(nums, bins=min(30, len(set(nums))), color=color, edgecolor="none", alpha=0.85)
+                ax.axvline(float(np.mean(nums)), color="#333", lw=1.5, linestyle="--", label="Media")
+                ax.set_xlabel(col, color=INK, fontsize=9)
+            else:
+                cats = Counter(str(v) for v in vals if not _is_missing(v))
+                top  = cats.most_common(8)
+                ax.barh([x[0] for x in top][::-1], [x[1] for x in top][::-1], color=color)
+                ax.set_xlabel("Frecuencia", color=INK, fontsize=9)
+            ax.set_title(title, color=INK, fontsize=10, fontweight="bold")
+            _style_ax(ax)
+        fig.suptitle(col, color=INK, fontsize=11, fontweight="bold")
+        plt.tight_layout(pad=1.2)
+        img_b64 = fig_b64(fig)
+    except Exception:
+        pass
+
+    return jsonify({
+        "col": col, "operation": operation, "changed": changed, "dropped": dropped,
+        "missing_before": missing_before, "missing_after": missing_after,
+        "stats_before": stats_before, "stats_after": stats_after,
+        "n_rows": len(rows), "img": img_b64,
+        "new_cols": [col + "__" + v for v in sorted(set(str(v) for v in orig_col_vals))]
+               if operation == "encode_onehot" else []
+    })
+
+
 @app.route("/api/tabular_preprocess", methods=["POST"])
 def tabular_preprocess():
-    body      = request.get_json(force=True, silent=True) or {}
-    normalize = body.get("normalize", "none")   # "none" | "minmax" | "zscore"
-    impute    = body.get("impute",    "mean")    # "drop" | "mean" | "median" | "mode" | "zero"
-    cat_fix   = body.get("cat_fix",  True)       # standardize text categories (lowercase+strip)
-    use_train = body.get("use_train", False)      # fit on train, apply to all
+    body             = request.get_json(force=True, silent=True) or {}
+    normalize        = body.get("normalize", "none")   # "none" | "minmax" | "zscore"
+    impute           = body.get("impute",    "mean")    # "drop" | "mean" | "median" | "mode" | "zero"
+    cat_fix          = body.get("cat_fix",  True)       # standardize text categories (lowercase+strip)
+    use_train        = body.get("use_train", False)     # fit on train, apply to all
+    node_id          = str(body.get("node_id", ""))     # upstream data node
+    preprocess_node_id = str(body.get("preprocess_node_id", ""))
 
-    source_rows = _TAB["sampled_train"] if (use_train and _TAB["sampled_train"]) else S["raw_rows"]
-    apply_rows  = S["raw_rows"]
-    cols = S["columns"]
+    # Read from the correct data slot (respects selectedCols / targetCol)
+    D = _effective_data(node_id) if node_id else None
+    source_rows = _TAB["sampled_train"] if (use_train and _TAB["sampled_train"]) else (
+                  D["raw_rows"] if D else S["raw_rows"])
+    apply_rows  = D["raw_rows"] if D else S["raw_rows"]
+    cols        = D["columns"]  if D else S["columns"]
+    target_col  = D["target"]   if D else _TAB.get("target_col", "")
     if not apply_rows:
         return jsonify({"error": "No data loaded"}), 400
 
@@ -655,7 +1110,7 @@ def tabular_preprocess():
         vals = [r.get(col, "") for r in source_rows]
         ctype = _col_type(vals)
         non_empty = [v for v in vals if not _is_missing(v)]
-        if ctype == "numeric":
+        if _is_numeric_type(ctype):
             nums = []
             for v in non_empty:
                 try: nums.append(float(v))
@@ -690,7 +1145,7 @@ def tabular_preprocess():
     if normalize != "none":
         for col in cols:
             vals = [r.get(col,"") for r in source_rows]
-            if _col_type(vals) != "numeric": continue
+            if not _is_numeric_type(_col_type(vals)): continue
             nums = []
             for v in vals:
                 try:
@@ -715,14 +1170,27 @@ def tabular_preprocess():
                         r[col] = str(round((v - p["mean"]) / p["std"], 6)) if p["std"] else "0"
                 except: pass
 
+    # ── Persist processed rows in the preprocess node's slot ─────────────────
+    # Downstream blocks (Análisis, Plots) will call _effective_data(preprocess_node_id)
+    # and receive the processed rows transparently.
+    if preprocess_node_id:
+        pslot = _node_slot(preprocess_node_id)
+        pslot.update(
+            raw_rows=result_rows,
+            columns=cols,
+            dataset_name=(D["dataset_name"] if D else S["dataset_name"]) + " [preprocesado]",
+            task=(D["task"] if D else S["task"]),
+            target=target_col,
+        )
+    # Also update global S so legacy endpoints still work
     _TAB["processed_rows"] = result_rows
     _TAB["proc_params"]    = params
 
-    # Summary stats before/after for first numeric column
     before_after = {}
+    orig_rows = D["raw_rows"] if D else S["raw_rows"]
     for col in cols:
-        raw_vals = [r.get(col,"") for r in S["raw_rows"]]
-        if _col_type(raw_vals) != "numeric": continue
+        raw_vals = [r.get(col,"") for r in orig_rows]
+        if not _is_numeric_type(_col_type(raw_vals)): continue
         raw_nums = [float(v) for v in raw_vals if not _is_missing(v) and _try_float(v)]
         proc_nums= [float(v) for v in [r.get(col,"") for r in result_rows] if _try_float(v)]
         if raw_nums and proc_nums:
@@ -762,7 +1230,7 @@ def plot_boxplot():
     if cols_req:
         selected = [c.strip() for c in cols_req.split(",") if c.strip() in S["columns"]]
     else:
-        selected = [c for c in S["columns"] if _col_type([r.get(c,"") for r in rows]) == "numeric"]
+        selected = [c for c in S["columns"] if _is_numeric_type(_col_type([r.get(c,"") for r in rows]))]
     selected = selected[:8]  # max 8
 
     if not selected:
@@ -810,7 +1278,7 @@ def _build_Xy(rows, cols, target_col, normalize="none"):
 
     # Determine which feature cols are numeric vs categorical
     all_vals = {c: [r.get(c, "") for r in rows] for c in feature_cols}
-    num_feat  = [c for c in feature_cols if _col_type(all_vals[c]) == "numeric"]
+    num_feat  = [c for c in feature_cols if _is_numeric_type(_col_type(all_vals[c]))]
     cat_feat  = [c for c in feature_cols if _col_type(all_vals[c]) == "categorical"]
 
     # Build category maps for one-hot encoding (max 10 cats per column)
@@ -821,7 +1289,7 @@ def _build_Xy(rows, cols, target_col, normalize="none"):
 
     # Determine target type
     targ_vals = [r.get(target_col, "") for r in rows]
-    targ_is_numeric = _col_type([v for v in targ_vals if not _is_missing(v)]) == "numeric"
+    targ_is_numeric = _is_numeric_type(_col_type([v for v in targ_vals if not _is_missing(v)]))
 
     X_raw, y_raw = [], []
     for r in rows:
@@ -1466,7 +1934,7 @@ def tabular_info():
         ctype = _col_type(vals)
         info = {"name": col, "type": ctype, "missing": missing,
                 "missing_pct": round(missing / max(total, 1) * 100, 1)}
-        if ctype == "numeric":
+        if _is_numeric_type(ctype):
             nums = []
             for v in non_empty:
                 try: nums.append(float(v))
@@ -1483,7 +1951,7 @@ def tabular_info():
             info.update({"n_unique": len(counts),
                          "top_values": [{"v": k, "n": v} for k, v in counts.most_common(5)]})
         col_info.append(info)
-    n_numeric = sum(1 for c in col_info if c["type"] == "numeric")
+    n_numeric = sum(1 for c in col_info if _is_numeric_type(c["type"]))
     n_cat     = sum(1 for c in col_info if c["type"] == "categorical")
     n_text    = sum(1 for c in col_info if c["type"] == "text")
     total_missing = sum(c["missing"] for c in col_info)
@@ -1492,7 +1960,8 @@ def tabular_info():
         "n_numeric": n_numeric, "n_categorical": n_cat, "n_text": n_text,
         "total_missing": total_missing,
         "columns": col_info,
-        "name": D["dataset_name"]
+        "name": D["dataset_name"],
+        "target": D.get("target", ""),   # expose so frontend knows the target col
     })
 
 # ── Distributions plot ────────────────────────────────────────────────────────
@@ -1513,7 +1982,7 @@ def plot_distribution():
     fig.patch.set_facecolor(LIGHT)
     style_ax(ax)
 
-    if ctype == "numeric":
+    if _is_numeric_type(ctype):
         nums = []
         for v in non_empty:
             try: nums.append(float(v))
@@ -1577,7 +2046,7 @@ def feature_stats():
         row = {"name": col, "type": ctype, "missing": missing,
                "missing_pct": round(missing / max(total, 1) * 100, 1),
                "n_unique": 0}
-        if ctype == "numeric":
+        if _is_numeric_type(ctype):
             nums = []
             for v in non_empty:
                 try: nums.append(float(v))
@@ -3267,51 +3736,69 @@ Trained : {'yes' if S['model'] else 'no'}
     return buf.read()
 
 
-@app.route("/api/pick_save_path", methods=["POST"])
-def pick_save_path():
+def _native_save_dialog(default_name: str, file_types_wv: tuple, filetypes_tk: list) -> str | None:
+    """Open a native Save dialog. Returns chosen path or None if cancelled.
+    Tries pywebview first; falls back to tkinter (always available on macOS/Win/Linux).
+    Raises RuntimeError only if both methods are unavailable.
     """
-    Open a native Save-File dialog via pywebview, write the ZIP to the
-    chosen path, and return {"path": ...} or {"cancelled": true}.
-    """
-    body       = request.json or {}
-    canvas_json = body.get("canvas", "{}")
-
-    # Try to get the pywebview window reference
+    # ── 1. Try pywebview ──────────────────────────────────────────────────────
     try:
         import webview
         windows = webview.windows
-        if not windows:
-            raise RuntimeError("no window")
-        win = windows[0]
+        if windows:
+            win = windows[0]
+            result = win.create_file_dialog(
+                webview.SAVE_DIALOG,
+                directory    = os.path.expanduser("~"),
+                save_filename= default_name,
+                file_types   = file_types_wv
+            )
+            if result is None:
+                return None          # user cancelled
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            return path or None
+    except Exception:
+        pass
 
-        # open_file_dialog with save mode
-        result = win.create_file_dialog(
-            webview.SAVE_DIALOG,
-            directory    = os.path.expanduser("~"),
-            save_filename= "nlpflow_session.zip",
-            file_types   = ("ZIP Archive (*.zip)", "All files (*.*)")
+    # ── 2. Fallback: tkinter ──────────────────────────────────────────────────
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.asksaveasfilename(
+            initialfile   = default_name,
+            defaultextension = os.path.splitext(default_name)[1] or "",
+            filetypes     = filetypes_tk,
+            parent        = root,
         )
+        root.destroy()
+        return path or None
+    except Exception as tk_err:
+        raise RuntimeError(f"No native dialog available: {tk_err}")
 
-        if not result:
+
+@app.route("/api/pick_save_path", methods=["POST"])
+def pick_save_path():
+    """Open a native Save-File dialog, write the session ZIP to the chosen path."""
+    body        = request.json or {}
+    canvas_json = body.get("canvas", "{}")
+    try:
+        path = _native_save_dialog(
+            "nlpflow_session.zip",
+            ("ZIP Archive (*.zip)", "All files (*.*)"),
+            [("ZIP Archive", "*.zip"), ("All files", "*.*")]
+        )
+        if not path:
             return jsonify({"cancelled": True})
-
-        # result is a string path (pywebview ≥ 4) or list[str] (older)
-        save_path = result[0] if isinstance(result, (list, tuple)) else result
-        if not save_path:
-            return jsonify({"cancelled": True})
-
-        # Ensure .zip extension
-        if not save_path.lower().endswith(".zip"):
-            save_path += ".zip"
-
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
         zip_bytes = _build_session_zip(canvas_json)
-        with open(save_path, "wb") as f:
+        with open(path, "wb") as f:
             f.write(zip_bytes)
-
-        return jsonify({"path": save_path})
-
+        return jsonify({"path": path})
     except Exception as e:
-        # pywebview unavailable (e.g. running plain browser) → fallback to download
         return jsonify({"error": str(e), "fallback": True})
 
 
@@ -3332,27 +3819,18 @@ def pick_export_img():
 
     ext = os.path.splitext(default_name)[1] or ".png"
     try:
-        import webview
-        windows = webview.windows
-        if not windows:
-            raise RuntimeError("no window")
-        win    = windows[0]
-        result = win.create_file_dialog(
-            webview.SAVE_DIALOG,
-            directory     = os.path.expanduser("~"),
-            save_filename = default_name,
-            file_types    = ("PNG Image (*.png)", "JPEG Image (*.jpg)", "All files (*.*)")
+        path = _native_save_dialog(
+            default_name,
+            ("PNG Image (*.png)", "JPEG Image (*.jpg)", "All files (*.*)"),
+            [("PNG Image", "*.png"), ("JPEG Image", "*.jpg"), ("All files", "*.*")]
         )
-        if not result:
+        if not path:
             return jsonify({"cancelled": True})
-        save_path = result[0] if isinstance(result, (list, tuple)) else result
-        if not save_path:
-            return jsonify({"cancelled": True})
-        if not save_path.lower().endswith(ext):
-            save_path += ext
-        with open(save_path, "wb") as f:
+        if not path.lower().endswith(ext):
+            path += ext
+        with open(path, "wb") as f:
             f.write(img_bytes)
-        return jsonify({"path": save_path})
+        return jsonify({"path": path})
     except Exception as e:
         return jsonify({"error": str(e), "fallback": True})
 
@@ -3398,27 +3876,18 @@ def pick_export_wc_all():
         return jsonify({"error": str(e)}), 500
 
     try:
-        import webview
-        windows = webview.windows
-        if not windows:
-            raise RuntimeError("no window")
-        win    = windows[0]
-        result = win.create_file_dialog(
-            webview.SAVE_DIALOG,
-            directory     = os.path.expanduser("~"),
-            save_filename = "wordclouds_topicos.zip",
-            file_types    = ("ZIP Archive (*.zip)", "All files (*.*)")
+        path = _native_save_dialog(
+            "wordclouds_topicos.zip",
+            ("ZIP Archive (*.zip)", "All files (*.*)"),
+            [("ZIP Archive", "*.zip"), ("All files", "*.*")]
         )
-        if not result:
+        if not path:
             return jsonify({"cancelled": True})
-        save_path = result[0] if isinstance(result, (list, tuple)) else result
-        if not save_path:
-            return jsonify({"cancelled": True})
-        if not save_path.lower().endswith(".zip"):
-            save_path += ".zip"
-        with open(save_path, "wb") as f:
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        with open(path, "wb") as f:
             f.write(zip_bytes)
-        return jsonify({"path": save_path})
+        return jsonify({"path": path})
     except Exception as e:
         return jsonify({"error": str(e), "fallback": True})
 
@@ -3482,28 +3951,18 @@ def pick_export_path():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Open native dialog
+    # Open native dialog (pywebview → tkinter fallback)
+    tk_types = [(ft.split("(")[0].strip(), "*." + ext.lstrip(".")) for ft in [file_types[0]]]
+    tk_types.append(("All files", "*.*"))
     try:
-        import webview
-        windows = webview.windows
-        if not windows: raise RuntimeError("no window")
-        win    = windows[0]
-        result = win.create_file_dialog(
-            webview.SAVE_DIALOG,
-            directory     = os.path.expanduser("~"),
-            save_filename = default_name,
-            file_types    = file_types
-        )
-        if not result:
+        path = _native_save_dialog(default_name, file_types, tk_types)
+        if not path:
             return jsonify({"cancelled": True})
-        save_path = result[0] if isinstance(result, (list, tuple)) else result
-        if not save_path:
-            return jsonify({"cancelled": True})
-        if not save_path.lower().endswith(ext):
-            save_path += ext
-        with open(save_path, "wb") as f:
+        if not path.lower().endswith(ext):
+            path += ext
+        with open(path, "wb") as f:
             f.write(content_bytes)
-        return jsonify({"path": save_path})
+        return jsonify({"path": path})
     except Exception as e:
         return jsonify({"error": str(e), "fallback": True})
 
@@ -3539,7 +3998,7 @@ def plot_custom():
     def get_cats(col):
         return [str(r.get(col,"")) for r in rows if not _is_missing(r.get(col,""))]
 
-    num_cols_all = [c for c in cols if _col_type([r.get(c,"") for r in rows[:50]]) == "numeric"]
+    num_cols_all = [c for c in cols if _is_numeric_type(_col_type([r.get(c,"") for r in rows[:50]]))]
     cat_cols_all = [c for c in cols if _col_type([r.get(c,"") for r in rows[:50]]) == "categorical"]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
