@@ -1,6 +1,6 @@
-"""NLP Flow 3 — Flask API with SSE progress streaming"""
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
-import re, io, base64, csv, json, time, threading
+"""NLP Flow 4 — Flask API with SSE progress streaming + session persistence"""
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, send_file
+import re, io, base64, csv, json, time, threading, zipfile, os, pickle, tempfile, shutil
 from collections import Counter
 
 import numpy as np
@@ -11,14 +11,18 @@ from wordcloud import WordCloud
 
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso
 from sklearn.svm import LinearSVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score
-from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.model_selection import train_test_split, KFold, StratifiedKFold, cross_val_score
+from sklearn.metrics import (accuracy_score, confusion_matrix, classification_report,
+                              f1_score, precision_score, recall_score,
+                              mean_squared_error, mean_absolute_error, r2_score)
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.decomposition import LatentDirichletAllocation, NMF, TruncatedSVD
+import joblib
 
 try:
     import nltk
@@ -44,8 +48,58 @@ S = dict(
     texts=[], labels=[], label_names=[], task="classification",
     processed_texts=[], active_steps=[],
     model=None, vectorizer=None, results={}, dataset_name="",
-    columns=[], raw_rows=[],
+    columns=[], raw_rows=[], csv_source="",  # "external" when loaded from user CSV
+    exp_label="",                             # experiment label (one word)
 )
+
+# ── Multi-dataset store keyed by data-node id ─────────────────────────────────
+# Each entry mirrors the tabular fields of S that are data-specific.
+# NLP fields (texts, labels, model…) stay in S (single pipeline for now).
+_NODE_DATA: dict = {}   # { node_id_str : { columns, raw_rows, dataset_name, task, csv_source } }
+
+def _node_slot(node_id: str) -> dict:
+    """Return (creating if needed) the per-node data slot."""
+    if node_id not in _NODE_DATA:
+        _NODE_DATA[node_id] = dict(columns=[], raw_rows=[], dataset_name="",
+                                   task="classification", csv_source="")
+    return _NODE_DATA[node_id]
+
+def _get_data(node_id: str | None) -> dict:
+    """Return the correct data slot: per-node if available, else global S."""
+    if node_id and node_id in _NODE_DATA and _NODE_DATA[node_id]["raw_rows"]:
+        return _NODE_DATA[node_id]
+    return S   # fallback — keeps backward compat for single-pipeline apps
+
+def _effective_data(node_id: str | None) -> dict:
+    """Like _get_data but applies selected_cols / target_col filters from the slot config.
+    Returns a dict with keys: raw_rows, columns, task, target, dataset_name.
+    The returned rows only contain the selected columns (if set).
+    """
+    slot = _get_data(node_id)
+    rows = slot.get("raw_rows", [])
+    cols = slot.get("columns", [])
+    task = slot.get("task", "classification")
+    target = slot.get("target", "")
+    name = slot.get("dataset_name", "")
+
+    # Apply column filter if configured on the node slot
+    cfg = _NODE_DATA.get(node_id or "", {}) if node_id else {}
+    selected_cols = cfg.get("selected_cols")  # list of col names or None
+    cfg_target    = cfg.get("target_col") or target
+
+    if selected_cols:
+        # Keep only selected columns in rows
+        sel_set = set(selected_cols)
+        rows = [{k: v for k, v in r.items() if k in sel_set} for r in rows]
+        cols = [c for c in cols if c in sel_set]
+
+    return {
+        "raw_rows": rows,
+        "columns": cols,
+        "task": task,
+        "target": cfg_target or target,
+        "dataset_name": name,
+    }
 
 # Progress: list of {pct, msg}
 _progress = []
@@ -184,6 +238,101 @@ DATASETS = {
     },
 }
 
+# ── Tabular datasets registry (separate from NLP DATASETS) ───────────────────
+TAB_DATASETS = {}   # populated lazily by _build_tab_datasets()
+
+def _build_tab_datasets():
+    """Build tabular demo datasets and cache in TAB_DATASETS."""
+    import random as _rnd, math as _math
+
+    # ── 1. Patient Health Risk (classification, 100 rows) ────────────────────
+    _rnd.seed(42)
+    rows_ph = []
+    cols_ph = ["age","bmi","blood_pressure","cholesterol","glucose",
+               "heart_rate","creatinine","income_k","smoker","risk_label"]
+    for _ in range(100):
+        age  = _rnd.randint(25, 80)
+        bmi  = round(_rnd.gauss(26.5, 5.0), 1)
+        bp   = _rnd.randint(60, 180) if _rnd.random() > 0.06 else None
+        chol = _rnd.randint(140, 320)
+        gluc = round(_rnd.gauss(100, 30), 1)
+        hr   = _rnd.randint(55, 105)
+        crea = round(_rnd.uniform(0.5, 4.5), 2)
+        inc  = round(_rnd.gauss(45, 20), 1)
+        smok = _rnd.choice(["yes","no","no","no"])
+        score= (age>55) + (bmi>30) + (bp is not None and bp>140) + (chol>260) + (smok=="yes")
+        risk = 1 if (score>=2 or _rnd.random()<0.15) else 0
+        rows_ph.append({
+            "age": str(age),
+            "bmi": str(bmi) if _rnd.random()>0.04 else "",
+            "blood_pressure": str(bp) if bp and _rnd.random()>0.05 else "",
+            "cholesterol": str(chol),
+            "glucose": str(gluc) if _rnd.random()>0.04 else "",
+            "heart_rate": str(hr),
+            "creatinine": str(crea),
+            "income_k": str(inc) if _rnd.random()>0.03 else "?",
+            "smoker": smok,
+            "risk_label": str(risk),
+        })
+    TAB_DATASETS["patient_health"] = {
+        "name": "🏥 Patient Health Risk (clasificación)",
+        "task": "classification", "target": "risk_label",
+        "columns": cols_ph, "rows": rows_ph,
+        "desc": "100 pacientes · variables médicas → riesgo (0/1) · ~5% valores ausentes"
+    }
+
+    # ── 2. California Housing (regression, 200 rows synthetic) ──────────────
+    _rnd.seed(7)
+    rows_ca = []
+    cols_ca = ["MedInc","HouseAge","AveRooms","AveBedrms","Population",
+               "AveOccup","Latitude","Longitude","MedHouseVal"]
+    for _ in range(200):
+        medinc  = round(_rnd.uniform(0.5, 15.0), 4)
+        age     = _rnd.randint(1, 52)
+        rooms   = round(_rnd.uniform(1.5, 10.0), 4)
+        bedrms  = round(_rnd.uniform(0.8, 3.5), 4)
+        pop     = _rnd.randint(50, 3500)
+        occup   = round(_rnd.uniform(1.5, 6.0), 4)
+        lat     = round(_rnd.uniform(32.5, 42.0), 4)
+        lon     = round(_rnd.uniform(-124.5, -114.0), 4)
+        # synthetic target: income + rooms + age drive value
+        base = 0.45*medinc + 0.08*rooms + 0.01*age - 0.0002*pop + _rnd.gauss(0,0.3)
+        val  = round(max(0.15, min(5.0, base + 1.0)), 4)
+        rows_ca.append({
+            "MedInc": str(medinc),
+            "HouseAge": str(age),
+            "AveRooms": str(rooms),
+            "AveBedrms": str(bedrms),
+            "Population": str(pop),
+            "AveOccup": str(occup),
+            "Latitude": str(lat),
+            "Longitude": str(lon),
+            "MedHouseVal": str(val) if _rnd.random()>0.03 else "",
+        })
+    TAB_DATASETS["california_housing"] = {
+        "name": "🏠 California Housing (regresión)",
+        "task": "regression", "target": "MedHouseVal",
+        "columns": cols_ca, "rows": rows_ca,
+        "desc": "200 distritos · variables demográficas → valor medio vivienda (×$100k)"
+    }
+
+_build_tab_datasets()
+
+# ── Tabular state (separate from NLP state S) ────────────────────────────────
+# raw_rows / columns come from S; tabular preprocessing lives here
+_TAB = dict(
+    sampled_train=[],  # rows after Data Sampler
+    sampled_test=[],
+    processed_rows=[],  # after normalization / imputation
+    proc_params={},     # fit params (min, max, mean, std per column)
+    split_ratio=0.7,
+    split_mode="random",   # "random" or "stratified"
+    target_col="",
+)
+
+# ── Synthetic tabular dataset ─────────────────────────────────────────────────
+# _make_synthetic_dataset removed — data now served from TAB_DATASETS
+
 # ── Preprocessing ────────────────────────────────────────────────────────────
 STEPS = {
     "lowercase":    lambda t: t.lower(),
@@ -202,16 +351,19 @@ def preprocess(text, steps):
     return text
 
 # ── Plot helpers ─────────────────────────────────────────────────────────────
-LIGHT="#ffffff"; BG="#f5f5f5"; INK="#121212"; SEC="#656565"; MINT="#19e68c"; BORDER="#dedede"
+LIGHT="#ffffff"; BG="#f5f5f5"; INK="#121212"; SEC="#656565"; MINT="#19e68c"; BORDER="#e8e8e8"
 
-# Vibrant colour palette for charts
-PALETTE = ["#6C63FF","#FF6B6B","#FFD93D","#4ECDC4","#FF8E53","#A8E6CF","#C77DFF","#F72585"]
+# Paleta Claude-style: limpia, bien contrastada, sin colores chillones
+PALETTE = ["#5B7FDB","#E8785A","#5CB88A","#C4805F","#8B78C9","#D4875F","#4AA8C4","#C46E7A"]
+# Paleta de gradiente para mapas de calor y matrices
+HEATMAP_COLORS = ["#EEF2FF","#C7D4F5","#99B2ED","#6B8FE5","#3D6DDD","#1A4EC8"]
 
 def style_ax(ax):
     ax.set_facecolor(LIGHT)
     ax.tick_params(colors=SEC, labelsize=10)
     ax.spines[["top","right"]].set_visible(False)
     ax.spines[["left","bottom"]].set_color(BORDER)
+    ax.spines[["left","bottom"]].set_linewidth(0.8)
 
 def fig_b64(fig):
     buf = io.BytesIO()
@@ -221,13 +373,53 @@ def fig_b64(fig):
     plt.close(fig)
     return data
 
+def _wordfreq_b64():
+    """Generate word-frequency comparison plot and return base64 PNG string."""
+    texts = S["texts"]; proc = S["processed_texts"]
+    if not texts: return None
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5)); fig.patch.set_facecolor(LIGHT)
+    def top_words(corpus, n=12):
+        all_w = []
+        for t in corpus: all_w.extend(t.lower().split())
+        return Counter(all_w).most_common(n)
+    for ax_i, (ax, corpus, title, pal) in enumerate([
+        (axes[0], texts, "Top words — Raw",          PALETTE[1]),
+        (axes[1], proc,  "Top words — Preprocessed", PALETTE[3])
+    ]):
+        style_ax(ax)
+        wf = top_words(corpus)
+        if wf:
+            words, freqs = zip(*wf)
+            bar_colors = [pal if j == 0 else PALETTE[(ax_i*3+j) % len(PALETTE)]
+                          for j in range(len(words))]
+            ax.barh(list(reversed(words)), list(reversed(freqs)),
+                    color=list(reversed(bar_colors)), edgecolor="none", alpha=0.88)
+        ax.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.6, zorder=0)
+        ax.set_title(title, color=INK, fontsize=13, fontweight="bold")
+    plt.tight_layout(pad=1.8)
+    return fig_b64(fig)
+
+
 def _dataset_summary():
     texts = S["texts"]
     if not texts: return {"loaded": False}
     wc = [len(t.split()) for t in texts]
     c  = Counter(S["labels"])
+    # is_tabular: true only when loaded from TAB_DATASETS or when the CSV has
+    # many numeric/mixed columns (not a simple text+label NLP dataset).
+    n_cols = len(S["columns"])
+    n_numeric = sum(1 for c in S["columns"]
+                    if S["raw_rows"] and _col_type([r.get(c,"") for r in S["raw_rows"][:50]])=="numeric")
+    is_tab = bool(
+        S["raw_rows"] and (
+            S["csv_source"] == "demo" or          # always a tab dataset
+            (n_cols > 2 and n_numeric >= 2) or    # CSV with multiple numeric cols
+            S["task"] == "regression"              # regression is always tabular
+        )
+    )
     return {
         "loaded": True, "name": S["dataset_name"], "task": S["task"],
+        "is_tabular": is_tab,
         "n": len(texts), "label_names": S["label_names"],
         "label_counts": {S["label_names"][k]: v for k,v in c.items()} if S["label_names"] else {},
         "avg_words": round(float(np.mean(wc)), 1),
@@ -275,6 +467,7 @@ def upload_csv():
     text_col  = request.form.get("text_col","text")
     label_col = request.form.get("label_col","")
     task      = request.form.get("task","classification")
+    node_id   = request.form.get("node_id","")
     content   = f.read().decode("utf-8", errors="replace")
     rows      = list(csv.DictReader(io.StringIO(content)))
     if not rows: return jsonify({"error":"Empty CSV"}), 400
@@ -291,29 +484,1255 @@ def upload_csv():
         labels, label_names = [m[l] for l in raw_lbl], uniq
     S.update(texts=texts, labels=labels, label_names=label_names, task=task,
              dataset_name=f.filename, processed_texts=list(texts),
-             results={}, model=None, vectorizer=None, columns=cols, raw_rows=raw_rows)
-    return jsonify({**_dataset_summary(), "columns": cols})
+             results={}, model=None, vectorizer=None, columns=cols, raw_rows=raw_rows,
+             csv_source="external")
+    if node_id:
+        slot = _node_slot(node_id)
+        slot.update(columns=cols, raw_rows=raw_rows, dataset_name=f.filename,
+                    task=task, csv_source="external")
+    return jsonify({**_dataset_summary(), "columns": cols, "node_id": node_id})
 
 @app.route("/api/dataset_info")
 def dataset_info(): return jsonify(_dataset_summary())
 
+# ── Tabular Data Info (rich — for the Data Info panel) ────────────────────────
+def _col_type(values):
+    """Return 'numeric', 'categorical', or 'text' for a list of raw string values."""
+    non_empty = [v for v in values if str(v).strip() not in ("", "?", "NA", "NaN", "nan", "None")]
+    if not non_empty:
+        return "categorical"
+    numeric_ok = 0
+    for v in non_empty[:200]:
+        try:
+            float(v); numeric_ok += 1
+        except (ValueError, TypeError):
+            pass
+    ratio = numeric_ok / len(non_empty[:200])
+    if ratio >= 0.85:
+        return "numeric"
+    if len(set(str(v) for v in non_empty[:500])) <= max(20, len(non_empty) * 0.05):
+        return "categorical"
+    return "text"
+
+def _is_missing(v):
+    return str(v).strip() in ("", "?", "NA", "NaN", "nan", "None", "null")
+
+# ── List & load tabular datasets ──────────────────────────────────────────────
+@app.route("/api/tab_datasets")
+def tab_datasets():
+    return jsonify([{"id": k, "name": v["name"], "task": v["task"],
+                     "target": v["target"], "desc": v["desc"]}
+                    for k, v in TAB_DATASETS.items()])
+
+@app.route("/api/load_tab_dataset", methods=["POST"])
+def load_tab_dataset():
+    body = request.get_json(force=True, silent=True) or {}
+    ds_id   = body.get("id", "")
+    node_id = str(body.get("node_id", ""))
+    ds = TAB_DATASETS.get(ds_id)
+    if not ds:
+        return jsonify({"error": "Dataset not found"}), 404
+    cols, rows = ds["columns"], ds["rows"]
+    texts = [" ".join(str(r.get(c,"")) for c in cols) for r in rows]
+    # Always update global S for NLP pipeline compatibility
+    S.update(
+        texts=texts, labels=[], label_names=[], task=ds["task"],
+        processed_texts=list(texts), results={}, model=None, vectorizer=None,
+        dataset_name=ds["name"], columns=cols, raw_rows=rows, csv_source="demo"
+    )
+    # Also store in per-node slot when a node_id is provided
+    if node_id:
+        slot = _node_slot(node_id)
+        slot.update(columns=cols, raw_rows=rows, dataset_name=ds["name"],
+                    task=ds["task"], csv_source="demo")
+    _TAB["target_col"] = ds["target"]
+    return jsonify({**_dataset_summary(), "columns": cols,
+                    "target": ds["target"], "task": ds["task"], "node_id": node_id})
+
+# ── Node configuration (selected columns, target) ─────────────────────────────
+@app.route("/api/set_node_config", methods=["POST"])
+def set_node_config():
+    """Persist column selection and target column for a data node."""
+    body      = request.get_json(force=True, silent=True) or {}
+    node_id   = str(body.get("node_id", ""))
+    sel_cols  = body.get("selected_cols")   # list[str] or None (= all)
+    target    = body.get("target_col", "")
+    if not node_id:
+        return jsonify({"error": "node_id required"}), 400
+    slot = _node_slot(node_id)
+    if sel_cols is not None:
+        slot["selected_cols"] = sel_cols
+    if target:
+        slot["target_col"]    = target
+        slot["target"]        = target        # keep both keys in sync
+        _TAB["target_col"]    = target
+    return jsonify({"ok": True, "node_id": node_id,
+                    "selected_cols": slot.get("selected_cols"),
+                    "target_col": slot.get("target_col")})
+
+# ── Data Sampler (random & stratified split) ──────────────────────────────────
+@app.route("/api/data_sampler", methods=["POST"])
+def data_sampler():
+    body   = request.get_json(force=True, silent=True) or {}
+    rows   = S["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data loaded"}), 400
+
+    ratio  = float(body.get("ratio", 0.7))
+    mode   = body.get("mode", "random")        # "random" or "stratified"
+    target = body.get("target_col", "")
+    seed   = int(body.get("seed", 42))
+
+    import random as _rnd
+    rng = _rnd.Random(seed)
+
+    if mode == "stratified" and target and target in S["columns"]:
+        groups = {}
+        for r in rows:
+            g = str(r.get(target, ""))
+            groups.setdefault(g, []).append(r)
+        train_rows, test_rows = [], []
+        for g, grp in groups.items():
+            rng.shuffle(grp)
+            n_train = max(1, round(len(grp) * ratio))
+            train_rows.extend(grp[:n_train])
+            test_rows.extend(grp[n_train:])
+        rng.shuffle(train_rows); rng.shuffle(test_rows)
+    else:
+        idx = list(range(len(rows)))
+        rng.shuffle(idx)
+        n_train = max(1, round(len(rows) * ratio))
+        train_rows = [rows[i] for i in idx[:n_train]]
+        test_rows  = [rows[i] for i in idx[n_train:]]
+
+    _TAB["sampled_train"] = train_rows
+    _TAB["sampled_test"]  = test_rows
+    _TAB["split_ratio"]   = ratio
+    _TAB["split_mode"]    = mode
+    _TAB["target_col"]    = target
+
+    def class_dist(rws, col):
+        if not col or not rws: return {}
+        c = Counter(str(r.get(col,"")) for r in rws)
+        return dict(c)
+
+    return jsonify({
+        "n_train": len(train_rows), "n_test": len(test_rows),
+        "ratio": ratio, "mode": mode,
+        "train_sample": train_rows[:5],
+        "test_sample":  test_rows[:5],
+        "train_dist": class_dist(train_rows, target),
+        "test_dist":  class_dist(test_rows, target),
+        "orig_dist":  class_dist(rows, target),
+    })
+
+# ── Tabular Preprocessing (normalize + impute) ────────────────────────────────
+@app.route("/api/tabular_preprocess", methods=["POST"])
+def tabular_preprocess():
+    body      = request.get_json(force=True, silent=True) or {}
+    normalize = body.get("normalize", "none")   # "none" | "minmax" | "zscore"
+    impute    = body.get("impute",    "mean")    # "drop" | "mean" | "median" | "mode" | "zero"
+    cat_fix   = body.get("cat_fix",  True)       # standardize text categories (lowercase+strip)
+    use_train = body.get("use_train", False)      # fit on train, apply to all
+
+    source_rows = _TAB["sampled_train"] if (use_train and _TAB["sampled_train"]) else S["raw_rows"]
+    apply_rows  = S["raw_rows"]
+    cols = S["columns"]
+    if not apply_rows:
+        return jsonify({"error": "No data loaded"}), 400
+
+    # --- Step 1: standardize categories ---
+    if cat_fix:
+        apply_rows = [{c: v.strip().lower() if isinstance(v, str) else v
+                       for c, v in r.items()} for r in apply_rows]
+        source_rows = [{c: v.strip().lower() if isinstance(v, str) else v
+                        for c, v in r.items()} for r in source_rows]
+
+    # --- Step 2: imputation ---
+    # Build fill values from source (train)
+    fill = {}
+    for col in cols:
+        vals = [r.get(col, "") for r in source_rows]
+        ctype = _col_type(vals)
+        non_empty = [v for v in vals if not _is_missing(v)]
+        if ctype == "numeric":
+            nums = []
+            for v in non_empty:
+                try: nums.append(float(v))
+                except: pass
+            if nums:
+                if impute == "median":
+                    fill[col] = str(round(float(np.median(nums)), 4))
+                elif impute == "mode":
+                    c2 = Counter(nums); fill[col] = str(c2.most_common(1)[0][0])
+                elif impute == "zero":
+                    fill[col] = "0"
+                else:  # mean (default)
+                    fill[col] = str(round(float(np.mean(nums)), 4))
+        else:
+            if non_empty and impute != "drop":
+                c2 = Counter(str(v) for v in non_empty)
+                fill[col] = c2.most_common(1)[0][0]
+
+    # Apply imputation / drop
+    result_rows = []
+    dropped = 0
+    for r in apply_rows:
+        if impute == "drop":
+            if any(_is_missing(r.get(c,"")) for c in cols):
+                dropped += 1; continue
+        else:
+            r = {c: (fill.get(c, r.get(c,"")) if _is_missing(r.get(c,"")) else r.get(c,"")) for c in cols}
+        result_rows.append(r)
+
+    # --- Step 3: normalization (fit on source, apply to result) ---
+    params = {}
+    if normalize != "none":
+        for col in cols:
+            vals = [r.get(col,"") for r in source_rows]
+            if _col_type(vals) != "numeric": continue
+            nums = []
+            for v in vals:
+                try:
+                    if not _is_missing(v): nums.append(float(v))
+                except: pass
+            if not nums: continue
+            if normalize == "minmax":
+                mn, mx = min(nums), max(nums)
+                params[col] = {"method":"minmax","min":mn,"max":mx}
+            else:  # zscore
+                mu, sd = float(np.mean(nums)), float(np.std(nums))
+                params[col] = {"method":"zscore","mean":mu,"std":sd}
+
+        for col, p in params.items():
+            for r in result_rows:
+                try:
+                    v = float(r.get(col, 0) or 0)
+                    if p["method"] == "minmax":
+                        rng_v = p["max"] - p["min"]
+                        r[col] = str(round((v - p["min"]) / rng_v, 6)) if rng_v else "0"
+                    else:
+                        r[col] = str(round((v - p["mean"]) / p["std"], 6)) if p["std"] else "0"
+                except: pass
+
+    _TAB["processed_rows"] = result_rows
+    _TAB["proc_params"]    = params
+
+    # Summary stats before/after for first numeric column
+    before_after = {}
+    for col in cols:
+        raw_vals = [r.get(col,"") for r in S["raw_rows"]]
+        if _col_type(raw_vals) != "numeric": continue
+        raw_nums = [float(v) for v in raw_vals if not _is_missing(v) and _try_float(v)]
+        proc_nums= [float(v) for v in [r.get(col,"") for r in result_rows] if _try_float(v)]
+        if raw_nums and proc_nums:
+            before_after[col] = {
+                "before": {"mean": round(float(np.mean(raw_nums)),4),
+                            "std": round(float(np.std(raw_nums)),4),
+                            "min": round(min(raw_nums),4), "max": round(max(raw_nums),4)},
+                "after":  {"mean": round(float(np.mean(proc_nums)),4),
+                            "std": round(float(np.std(proc_nums)),4),
+                            "min": round(min(proc_nums),4), "max": round(max(proc_nums),4)},
+            }
+        if len(before_after) >= 6: break
+
+    return jsonify({
+        "n_in": len(apply_rows), "n_out": len(result_rows), "dropped": dropped,
+        "normalize": normalize, "impute": impute,
+        "params": {k: {kk: round(vv,4) if isinstance(vv,float) else vv
+                       for kk,vv in v.items()} for k,v in params.items()},
+        "before_after": before_after,
+        "sample": result_rows[:8],
+    })
+
+def _try_float(v):
+    try: float(v); return True
+    except: return False
+
+# ── Box plot (for outlier detection) ─────────────────────────────────────────
+@app.route("/api/plot_boxplot")
+def plot_boxplot():
+    cols_req = request.args.get("cols", "")
+    color_by = request.args.get("color_by", "")
+    rows = S["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data"}), 400
+
+    # Columns to plot: explicit list or all numeric
+    if cols_req:
+        selected = [c.strip() for c in cols_req.split(",") if c.strip() in S["columns"]]
+    else:
+        selected = [c for c in S["columns"] if _col_type([r.get(c,"") for r in rows]) == "numeric"]
+    selected = selected[:8]  # max 8
+
+    if not selected:
+        return jsonify({"error": "No numeric columns found"}), 400
+
+    fig, axes = plt.subplots(1, len(selected), figsize=(max(5, len(selected)*2.2), 5))
+    fig.patch.set_facecolor(LIGHT)
+    if len(selected) == 1: axes = [axes]
+
+    for ax, col in zip(axes, selected):
+        style_ax(ax)
+        vals = [r.get(col,"") for r in rows]
+        nums = [float(v) for v in vals if not _is_missing(v) and _try_float(v)]
+        if not nums: continue
+        bp = ax.boxplot(nums, patch_artist=True, widths=0.5,
+                        medianprops=dict(color=MINT, linewidth=2),
+                        boxprops=dict(facecolor=PALETTE[0], alpha=0.7),
+                        flierprops=dict(marker="o", color=PALETTE[1],
+                                        markerfacecolor=PALETTE[1], markersize=5, alpha=0.7),
+                        whiskerprops=dict(color=SEC), capprops=dict(color=SEC))
+        ax.set_xticklabels([col], color=INK, fontsize=9, rotation=15, ha="right")
+        ax.set_ylabel("Value", color=SEC, fontsize=9)
+        q1,med,q3 = np.percentile(nums,[25,50,75])
+        iqr = q3 - q1
+        n_out = sum(1 for v in nums if v < q1-1.5*iqr or v > q3+1.5*iqr)
+        ax.set_title(f"{col}\n({n_out} outliers)", color=INK, fontsize=10, fontweight="bold")
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+
+    plt.tight_layout(pad=1.4)
+    return jsonify({"img": fig_b64(fig)})
+
+# ════════════════════════════════════════════════════════════════════════════
+# REGRESSION  (OLS · Ridge · LASSO · metrics · CV)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _build_Xy(rows, cols, target_col, normalize="none"):
+    """Return (X, y, feature_names) from raw_rows.
+
+    y can be numeric (regression) or string (classification).
+    Categorical feature columns are one-hot encoded (up to 10 categories).
+    Rows with a missing target are dropped; missing numeric features are
+    mean-imputed.
+    """
+    feature_cols = [c for c in cols if c != target_col]
+
+    # Determine which feature cols are numeric vs categorical
+    all_vals = {c: [r.get(c, "") for r in rows] for c in feature_cols}
+    num_feat  = [c for c in feature_cols if _col_type(all_vals[c]) == "numeric"]
+    cat_feat  = [c for c in feature_cols if _col_type(all_vals[c]) == "categorical"]
+
+    # Build category maps for one-hot encoding (max 10 cats per column)
+    cat_maps = {}
+    for c in cat_feat:
+        cats = sorted(set(str(v) for v in all_vals[c] if not _is_missing(v)))[:10]
+        cat_maps[c] = cats
+
+    # Determine target type
+    targ_vals = [r.get(target_col, "") for r in rows]
+    targ_is_numeric = _col_type([v for v in targ_vals if not _is_missing(v)]) == "numeric"
+
+    X_raw, y_raw = [], []
+    for r in rows:
+        yv = r.get(target_col, "")
+        if _is_missing(yv):
+            continue
+        # Parse target
+        if targ_is_numeric:
+            yf = _try_float(yv)
+            if yf is None:
+                continue
+            y_parsed = yf
+        else:
+            y_parsed = str(yv).strip()
+
+        row_x = []
+        # Numeric features
+        for c in num_feat:
+            v = r.get(c, "")
+            fv = _try_float(v)
+            row_x.append(float(fv) if fv is not None and not _is_missing(v) else float("nan"))
+        # Categorical features → one-hot
+        for c in cat_feat:
+            v = str(r.get(c, "")).strip()
+            for cat in cat_maps[c]:
+                row_x.append(1.0 if v == cat else 0.0)
+
+        X_raw.append(row_x)
+        y_raw.append(y_parsed)
+
+    if not X_raw:
+        return None, "No quedan filas válidas tras filtrar target ausente", []
+
+    X = np.array(X_raw, dtype=float)
+    y = np.array(y_raw)          # object dtype for strings, float64 for numeric
+
+    # Feature names including one-hot suffixes
+    feat_names = list(num_feat)
+    for c in cat_feat:
+        for cat in cat_maps[c]:
+            feat_names.append(f"{c}={cat}")
+
+    # Mean imputation for NaN in numeric columns only (first len(num_feat) cols)
+    if X.ndim == 2 and X.shape[1] > 0:
+        for j in range(len(num_feat)):
+            col_vals = X[:, j]
+            nan_mask = np.isnan(col_vals)
+            if nan_mask.any():
+                col_mean = float(np.nanmean(col_vals)) if not np.all(nan_mask) else 0.0
+                X[nan_mask, j] = col_mean
+
+    if normalize == "minmax":
+        scaler = MinMaxScaler()
+        X = scaler.fit_transform(X)
+    elif normalize == "zscore":
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+
+    return X, y, feat_names
+
+def _reg_metrics(y_true, y_pred):
+    mse  = float(mean_squared_error(y_true, y_pred))
+    rmse = float(mse ** 0.5)
+    mae  = float(mean_absolute_error(y_true, y_pred))
+    r2   = float(r2_score(y_true, y_pred))
+    mape = float(np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), 1e-8)))) * 100
+    return {"MSE": round(mse,4), "RMSE": round(rmse,4),
+            "MAE": round(mae,4),  "MAPE": round(mape,2), "R2": round(r2,4)}
+
+@app.route("/api/regression", methods=["POST"])
+def run_regression():
+    body       = request.get_json(force=True, silent=True) or {}
+    node_id    = str(body.get("node", ""))
+    D          = _effective_data(node_id) if node_id else None
+    target_col = body.get("target_col") or (D["target"] if D else None) or _TAB.get("target_col","")
+    method     = body.get("method", "ols")      # ols | ridge | lasso
+    alpha      = float(body.get("alpha", 1.0))
+    normalize  = body.get("normalize", "none")  # none | minmax | zscore
+    test_size  = float(body.get("test_size", 0.3))
+    seed       = int(body.get("seed", 42))
+
+    rows = (D["raw_rows"] if D else None) or S["raw_rows"]
+    cols = (D["columns"]  if D else None) or S["columns"]
+    if not rows or not target_col:
+        return jsonify({"error": "No data or no target column specified"}), 400
+    if target_col not in cols:
+        return jsonify({"error": f"Column '{target_col}' not found"}), 400
+
+    X, y, feat_names = _build_Xy(rows, cols, target_col, normalize)
+    if len(X) < 10:
+        return jsonify({"error": "Not enough valid rows (need ≥10)"}), 400
+
+    Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=test_size,
+                                           random_state=seed)
+
+    if method == "ridge":
+        model = Ridge(alpha=alpha)
+    elif method == "lasso":
+        model = Lasso(alpha=alpha, max_iter=5000)
+    else:
+        model = LinearRegression()
+
+    model.fit(Xtr, ytr)
+    ytr_pred = model.predict(Xtr)
+    yte_pred = model.predict(Xte)
+
+    train_m = _reg_metrics(ytr, ytr_pred)
+    test_m  = _reg_metrics(yte, yte_pred)
+
+    coefs = list(zip(feat_names, [round(float(c),6) for c in model.coef_]))
+    coefs_sorted = sorted(coefs, key=lambda x: abs(x[1]), reverse=True)
+
+    # ── Plot: predicted vs actual ──────────────────────────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig.patch.set_facecolor(LIGHT)
+
+    ax = axes[0]; style_ax(ax)
+    mn_v = min(float(yte.min()), float(yte_pred.min()))
+    mx_v = max(float(yte.max()), float(yte_pred.max()))
+    ax.scatter(yte, yte_pred, color=PALETTE[0], alpha=0.65, s=28, edgecolors="none", zorder=3)
+    ax.plot([mn_v, mx_v], [mn_v, mx_v], color=MINT, linewidth=1.8, linestyle="--", label="Ideal")
+    ax.set_xlabel("Actual", color=SEC, fontsize=11)
+    ax.set_ylabel("Predicted", color=SEC, fontsize=11)
+    ax.set_title(f"Predicted vs Actual  (R²={test_m['R2']})", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+
+    # Residuals
+    ax2 = axes[1]; style_ax(ax2)
+    resid = yte - yte_pred
+    ax2.axhline(0, color=MINT, linewidth=1.5, linestyle="--")
+    ax2.scatter(yte_pred, resid, color=PALETTE[1], alpha=0.65, s=28, edgecolors="none", zorder=3)
+    ax2.set_xlabel("Fitted values", color=SEC, fontsize=11)
+    ax2.set_ylabel("Residuals", color=SEC, fontsize=11)
+    ax2.set_title("Residuals plot", color=INK, fontsize=12, fontweight="bold")
+    ax2.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+
+    plt.tight_layout(pad=1.6)
+    plot_img = fig_b64(fig)
+
+    # ── Coefficient bar chart ─────────────────────────────────────────────
+    fig2, ax3 = plt.subplots(figsize=(7, max(3, len(coefs_sorted)*0.4 + 1)))
+    fig2.patch.set_facecolor(LIGHT); style_ax(ax3)
+    names_c = [c[0] for c in coefs_sorted]
+    vals_c  = [c[1] for c in coefs_sorted]
+    colors_c= [PALETTE[0] if v >= 0 else PALETTE[1] for v in vals_c]
+    ax3.barh(names_c, vals_c, color=colors_c, edgecolor="none", alpha=0.85)
+    ax3.axvline(0, color=SEC, linewidth=0.8)
+    ax3.set_xlabel("Coefficient", color=SEC, fontsize=11)
+    ax3.set_title(f"Coefficients — {method.upper()} (α={alpha})", color=INK,
+                  fontsize=12, fontweight="bold")
+    ax3.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    coef_img = fig_b64(fig2)
+
+    return jsonify({
+        "method": method, "alpha": alpha, "normalize": normalize,
+        "n_train": len(Xtr), "n_test": len(Xte),
+        "features": feat_names,
+        "coefficients": coefs_sorted,
+        "intercept": round(float(model.intercept_), 6),
+        "train_metrics": train_m, "test_metrics": test_m,
+        "plot_img": plot_img, "coef_img": coef_img,
+    })
+
+@app.route("/api/regression_cv", methods=["POST"])
+def regression_cv():
+    """K-fold cross-validation over a list of alpha values for Ridge / LASSO."""
+    body       = request.get_json(force=True, silent=True) or {}
+    target_col = body.get("target_col", _TAB.get("target_col",""))
+    method     = body.get("method", "ridge")
+    alphas     = body.get("alphas", [0.001, 0.01, 0.1, 1.0, 10.0, 100.0])
+    k_folds    = int(body.get("k_folds", 5))
+    normalize  = body.get("normalize", "zscore")
+
+    rows = S["raw_rows"]
+    cols = S["columns"]
+    if not rows or not target_col:
+        return jsonify({"error": "No data or no target"}), 400
+
+    X, y, feat_names = _build_Xy(rows, cols, target_col, normalize)
+    if len(X) < k_folds * 2:
+        return jsonify({"error": "Not enough data for CV"}), 400
+
+    kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+    results = []
+    for a in alphas:
+        if method == "lasso":
+            mdl = Lasso(alpha=float(a), max_iter=5000)
+        else:
+            mdl = Ridge(alpha=float(a))
+        scores = cross_val_score(mdl, X, y, cv=kf,
+                                 scoring="neg_mean_squared_error")
+        rmse_scores = [float((-s)**0.5) for s in scores]
+        results.append({
+            "alpha": float(a),
+            "rmse_mean": round(float(np.mean(rmse_scores)), 4),
+            "rmse_std":  round(float(np.std(rmse_scores)),  4),
+        })
+
+    best = min(results, key=lambda r: r["rmse_mean"])
+
+    # ── CV curve plot ─────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(7, 4))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+    alphas_f = [r["alpha"] for r in results]
+    means    = [r["rmse_mean"] for r in results]
+    stds     = [r["rmse_std"]  for r in results]
+    ax.semilogx(alphas_f, means, color=PALETTE[0], linewidth=2, marker="o", markersize=6)
+    ax.fill_between(alphas_f,
+                    [m - s for m, s in zip(means, stds)],
+                    [m + s for m, s in zip(means, stds)],
+                    alpha=0.18, color=PALETTE[0])
+    ax.axvline(best["alpha"], color=MINT, linewidth=1.6, linestyle="--",
+               label=f"Best α={best['alpha']}  RMSE={best['rmse_mean']}")
+    ax.set_xlabel("α (log scale)", color=SEC, fontsize=11)
+    ax.set_ylabel("CV RMSE", color=SEC, fontsize=11)
+    ax.set_title(f"{method.upper()} — {k_folds}-fold CV", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    cv_img = fig_b64(fig)
+
+    return jsonify({"results": results, "best": best,
+                    "method": method, "k_folds": k_folds, "cv_img": cv_img})
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAB 4 — TABULAR CLASSIFICATION
+# Endpoints: /api/tab_classify  /api/tab_classify_cv  /api/tab_classify_scatter
+# /api/tab_classify_boundary  /api/tab_classify_imbalance
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _cls_metrics(y_true, y_pred, all_labels=None):
+    """Return dict of accuracy, precision, recall, f1 (macro) + confusion matrix.
+
+    all_labels: full list of known integer class labels — ensures cm shape is
+    always n_classes × n_classes even when a fold contains only one class.
+    """
+    labels_arg = sorted(all_labels) if all_labels is not None else None
+    acc  = round(float(accuracy_score(y_true, y_pred)), 4)
+    prec = round(float(precision_score(y_true, y_pred, average="macro", zero_division=0, labels=labels_arg)), 4)
+    rec  = round(float(recall_score(y_true, y_pred, average="macro", zero_division=0, labels=labels_arg)), 4)
+    f1   = round(float(f1_score(y_true, y_pred, average="macro", zero_division=0, labels=labels_arg)), 4)
+    cm   = confusion_matrix(y_true, y_pred, labels=labels_arg).tolist()
+    return {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1, "cm": cm}
+
+def _build_classifier(name, hp):
+    """Instantiate a sklearn classifier from name + hp dict."""
+    c = hp.get("C", 1.0)
+    k = hp.get("k", 5)
+    n = hp.get("n_estimators", 100)
+    d = hp.get("max_depth", None) if hp.get("max_depth", 0) != 0 else None
+    if name == "logistic":
+        return LogisticRegression(C=float(c), max_iter=2000, random_state=42, solver="saga")
+    if name == "knn":
+        return KNeighborsClassifier(n_neighbors=int(k))
+    if name == "random_forest":
+        return RandomForestClassifier(n_estimators=int(n), max_depth=d, random_state=42, n_jobs=-1)
+    if name == "svm":
+        return LinearSVC(C=float(c), max_iter=3000, random_state=42)
+    return LogisticRegression(max_iter=2000, random_state=42)
+
+def _smote_oversample(X, y):
+    """Simple manual SMOTE-lite: duplicate minority class with small jitter."""
+    import random as rnd
+    classes, counts = np.unique(y, return_counts=True)
+    majority_cls = classes[np.argmax(counts)]
+    minority_cls = classes[np.argmin(counts)]
+    X_min = X[y == minority_cls]
+    n_to_add = int(counts.max()) - int(counts.min())
+    new_rows = []
+    for _ in range(n_to_add):
+        i, j = rnd.sample(range(len(X_min)), 2)
+        alpha = rnd.random()
+        new_rows.append(X_min[i] * alpha + X_min[j] * (1 - alpha))
+    X_new = np.vstack([X, np.array(new_rows)])
+    y_new = np.concatenate([y, np.full(n_to_add, minority_cls)])
+    return X_new, y_new
+
+@app.route("/api/tab_classify", methods=["POST"])
+def tab_classify():
+    """Train + evaluate one or more classifiers on tabular data."""
+    body       = request.get_json(force=True, silent=True) or {}
+    node_id    = str(body.get("node", ""))
+    D          = _effective_data(node_id) if node_id else None
+    target_col = body.get("target_col") or (D["target"] if D else None) or ""
+    models_req = body.get("models", ["logistic"])   # list of model names
+    normalize  = body.get("normalize", "zscore")
+    test_size  = float(body.get("test_size", 0.3))
+    hp         = body.get("hp", {})
+    imbalance  = body.get("imbalance_strategy", "none")  # none | oversample | undersample | weights
+
+    rows = (D["raw_rows"] if D else None) or S["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data loaded"}), 400
+    if not target_col:
+        return jsonify({"error": "Selecciona la variable objetivo"}), 400
+
+    all_cols = (D["columns"] if D else None) or S["columns"]
+    cols = [c for c in all_cols if c != target_col]
+    X_all, y_all, feat_names = _build_Xy(rows, cols, target_col, normalize=normalize)
+    if X_all is None:
+        return jsonify({"error": y_all}), 400
+
+    # Encode target to int labels
+    # If target came back as float (0.0 / 1.0) normalise to int strings ("0","1")
+    def _tstr(v):
+        try:
+            f = float(v)
+            return str(int(f)) if f == int(f) else str(f)
+        except (ValueError, TypeError):
+            return str(v).strip()
+    classes = sorted(list(set(_tstr(v) for v in y_all)))
+    label_map = {c: i for i, c in enumerate(classes)}
+    y_int = np.array([label_map[_tstr(v)] for v in y_all])
+
+    # Stratified split
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X_all, y_int, test_size=test_size, random_state=42, stratify=y_int)
+
+    # Class distribution
+    tr_dist = {classes[i]: int(np.sum(y_tr==i)) for i in range(len(classes))}
+    te_dist = {classes[i]: int(np.sum(y_te==i)) for i in range(len(classes))}
+    imbalance_ratio = round(float(max(tr_dist.values())) / max(1, float(min(tr_dist.values()))), 2)
+
+    # Imbalance strategy on training set
+    X_tr_use, y_tr_use = X_tr.copy(), y_tr.copy()
+    if imbalance == "oversample":
+        X_tr_use, y_tr_use = _smote_oversample(X_tr_use, y_tr_use)
+    elif imbalance == "undersample":
+        classes_u, counts_u = np.unique(y_tr_use, return_counts=True)
+        min_count = int(counts_u.min())
+        idx_keep = []
+        for cls_u in classes_u:
+            idx_cls = np.where(y_tr_use == cls_u)[0]
+            idx_keep.extend(np.random.choice(idx_cls, min_count, replace=False).tolist())
+        X_tr_use = X_tr_use[idx_keep]; y_tr_use = y_tr_use[idx_keep]
+
+    results = []
+    coef_imgs = {}
+    for model_name in models_req:
+        clf_hp = hp.get(model_name, {})
+        # class_weight for logistic / svm
+        use_weights = (imbalance == "weights")
+        if use_weights and model_name in ("logistic",):
+            clf_hp["class_weight"] = "balanced"
+        clf = _build_classifier(model_name, clf_hp)
+        try:
+            clf.fit(X_tr_use, y_tr_use)
+        except Exception as e:
+            results.append({"model": model_name, "error": str(e)})
+            continue
+        y_pred_tr = clf.predict(X_tr_use)
+        y_pred_te = clf.predict(X_te)
+        all_lbl   = list(range(len(classes)))
+        tr_m = _cls_metrics(y_tr_use, y_pred_tr, all_labels=all_lbl)
+        te_m = _cls_metrics(y_te,     y_pred_te,  all_labels=all_lbl)
+
+        # Coefficient plot (logistic / svm)
+        coef_img = None
+        if hasattr(clf, "coef_"):
+            coef = clf.coef_[0] if clf.coef_.ndim > 1 else clf.coef_
+            top_n = min(12, len(feat_names))
+            idx_sorted = np.argsort(np.abs(coef))[::-1][:top_n]
+            names_top = [feat_names[i] for i in idx_sorted]
+            vals_top  = [float(coef[i]) for i in idx_sorted]
+            fig, ax = plt.subplots(figsize=(6, max(3, top_n * 0.35)))
+            fig.patch.set_facecolor(LIGHT); style_ax(ax)
+            colors = [PALETTE[0] if v >= 0 else "#ef4444" for v in vals_top]
+            ax.barh(range(len(names_top)), vals_top[::-1], color=colors[::-1],
+                    edgecolor="none", zorder=3)
+            ax.set_yticks(range(len(names_top)))
+            ax.set_yticklabels(names_top[::-1], fontsize=9, color=INK)
+            ax.axvline(0, color=INK, linewidth=0.8)
+            ax.set_title("Coeficientes — " + model_name, color=INK,
+                         fontsize=11, fontweight="bold")
+            ax.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+            plt.tight_layout(pad=1.2)
+            coef_img = fig_b64(fig)
+
+        # Feature importance (random forest)
+        if hasattr(clf, "feature_importances_"):
+            imp = clf.feature_importances_
+            top_n = min(12, len(feat_names))
+            idx_sorted = np.argsort(imp)[::-1][:top_n]
+            names_top = [feat_names[i] for i in idx_sorted]
+            vals_top  = [float(imp[i]) for i in idx_sorted]
+            fig, ax = plt.subplots(figsize=(6, max(3, top_n * 0.35)))
+            fig.patch.set_facecolor(LIGHT); style_ax(ax)
+            ax.barh(range(len(names_top)), vals_top[::-1],
+                    color=PALETTE[:len(names_top)][::-1], edgecolor="none", zorder=3)
+            ax.set_yticks(range(len(names_top)))
+            ax.set_yticklabels(names_top[::-1], fontsize=9, color=INK)
+            ax.set_title("Importancia de variables — " + model_name, color=INK,
+                         fontsize=11, fontweight="bold")
+            ax.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+            plt.tight_layout(pad=1.2)
+            coef_img = fig_b64(fig)
+
+        results.append({
+            "model": model_name,
+            "train": tr_m, "test": te_m,
+            "n_train": len(y_tr_use), "n_test": len(y_te),
+            "coef_img": coef_img,
+            "classes": classes,
+        })
+
+    # Confusion matrix plot for first model
+    cm_img = None
+    if results and "cm" in results[0].get("test", {}):
+        cm = np.array(results[0]["test"]["cm"])
+        fig, ax = plt.subplots(figsize=(max(4, len(classes)), max(3.5, len(classes)*0.8)))
+        fig.patch.set_facecolor(LIGHT); style_ax(ax)
+        im = ax.imshow(cm, cmap="Blues", aspect="auto")
+        ax.set_xticks(range(len(classes))); ax.set_xticklabels(classes, rotation=30, ha="right", color=INK)
+        ax.set_yticks(range(len(classes))); ax.set_yticklabels(classes, color=INK)
+        ax.set_xlabel("Predicho", color=SEC, fontsize=11)
+        ax.set_ylabel("Real", color=SEC, fontsize=11)
+        ax.set_title("Matriz de confusión — " + (results[0]["model"] if results else ""), color=INK, fontsize=12, fontweight="bold")
+        for i in range(len(classes)):
+            for j in range(len(classes)):
+                ax.text(j, i, str(cm[i, j]), ha="center", va="center",
+                        color="white" if cm[i, j] > cm.max()/2 else INK, fontsize=13, fontweight="bold")
+        plt.tight_layout(pad=1.4)
+        cm_img = fig_b64(fig)
+
+    return jsonify({
+        "results": results, "cm_img": cm_img,
+        "train_dist": tr_dist, "test_dist": te_dist,
+        "imbalance_ratio": imbalance_ratio,
+        "classes": classes,
+        "imbalance_strategy": imbalance,
+    })
+
+@app.route("/api/tab_classify_cv", methods=["POST"])
+def tab_classify_cv():
+    """K-fold cross-validation for one classifier."""
+    body       = request.get_json(force=True, silent=True) or {}
+    target_col = body.get("target_col", "")
+    model_name = body.get("model", "logistic")
+    normalize  = body.get("normalize", "zscore")
+    k_folds    = int(body.get("k_folds", 5))
+    hp         = body.get("hp", {})
+
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
+    rows = S["raw_rows"]
+    if not rows: return jsonify({"error": "No data"}), 400
+
+    cols = [c for c in S["columns"] if c != target_col]
+    X, y_raw, feat_names = _build_Xy(rows, cols, target_col, normalize=normalize)
+    if X is None: return jsonify({"error": y_raw}), 400
+
+    def _tstr(v):
+        try:
+            f = float(v); return str(int(f)) if f == int(f) else str(f)
+        except (ValueError, TypeError): return str(v).strip()
+    classes = sorted(list(set(_tstr(v) for v in y_raw)))
+    label_map = {c: i for i, c in enumerate(classes)}
+    y = np.array([label_map[_tstr(v)] for v in y_raw])
+
+    clf = _build_classifier(model_name, hp)
+    all_lbl = list(range(len(classes)))
+
+    # Reduce k if fewer samples than requested folds
+    min_class_count = int(np.min([np.sum(y == c) for c in all_lbl]))
+    k_folds = min(k_folds, min_class_count)
+    if k_folds < 2:
+        return jsonify({"error": f"Muy pocas muestras por clase ({min_class_count}) para hacer CV. Reduce K o usa más datos."}), 400
+
+    skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+
+    fold_rows = []
+    scores_acc, scores_f1 = [], []
+    for i, (tr_idx, te_idx) in enumerate(skf.split(X, y)):
+        # Skip fold if train split has only one class
+        unique_tr = np.unique(y[tr_idx])
+        if len(unique_tr) < 2:
+            fold_rows.append({"fold": i+1, "accuracy": None, "f1": None,
+                               "precision": None, "recall": None, "skipped": True})
+            continue
+        c2 = _build_classifier(model_name, hp)
+        try:
+            c2.fit(X[tr_idx], y[tr_idx])
+            yp = c2.predict(X[te_idx])
+            m  = _cls_metrics(y[te_idx], yp, all_labels=all_lbl)
+            fold_rows.append({"fold": i+1, "accuracy": m["accuracy"],
+                               "f1": m["f1"], "precision": m["precision"],
+                               "recall": m["recall"]})
+            scores_acc.append(m["accuracy"])
+            scores_f1.append(m["f1"])
+        except Exception as e:
+            fold_rows.append({"fold": i+1, "accuracy": None, "f1": None,
+                               "precision": None, "recall": None,
+                               "error": str(e)})
+
+    if not scores_acc:
+        return jsonify({"error": "Todos los folds fallaron — probablemente el dataset tiene muy pocas muestras de alguna clase."}), 400
+
+    scores_acc = np.array(scores_acc)
+    scores_f1  = np.array(scores_f1)
+
+    # Plot only valid folds
+    valid_folds = [r for r in fold_rows if r.get("accuracy") is not None]
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
+    fig.patch.set_facecolor(LIGHT)
+    for ax, metric_key, label in zip(axes, ["accuracy", "f1"], ["Accuracy", "F1 (macro)"]):
+        style_ax(ax)
+        vals = [r[metric_key] for r in valid_folds]
+        xs   = [r["fold"] for r in valid_folds]
+        ax.bar(xs, vals, color=PALETTE[:len(xs)], edgecolor="none", zorder=3)
+        ax.axhline(float(np.mean(vals)), color=INK, linewidth=1.4,
+                   linestyle="--", label=f"Media {np.mean(vals):.3f}")
+        ax.set_xticks(xs); ax.set_xticklabels([f"Fold {x}" for x in xs], fontsize=9, color=INK)
+        ax.set_ylim(0, 1.05)
+        ax.set_title(label, color=INK, fontsize=11, fontweight="bold")
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+        ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    plt.tight_layout(pad=1.4)
+    cv_img = fig_b64(fig)
+
+    return jsonify({
+        "fold_rows": fold_rows,
+        "mean_acc": round(float(np.mean(scores_acc)), 4),
+        "std_acc":  round(float(np.std(scores_acc)), 4),
+        "mean_f1":  round(float(np.mean(scores_f1)), 4),
+        "std_f1":   round(float(np.std(scores_f1)), 4),
+        "cv_img": cv_img, "model": model_name, "k_folds": k_folds,
+    })
+
+@app.route("/api/tab_classify_scatter", methods=["POST"])
+def tab_classify_scatter():
+    """2D scatter of two features coloured by target class."""
+    body       = request.get_json(force=True, silent=True) or {}
+    target_col = body.get("target_col", "")
+    feat_x     = body.get("feat_x", "")
+    feat_y     = body.get("feat_y", "")
+
+    rows = S["raw_rows"]
+    if not rows: return jsonify({"error": "No data"}), 400
+    cols = S["columns"]
+    num_cols = [c for c in cols if _col_type([r.get(c,"") for r in rows])=="numeric" and c != target_col]
+    if not feat_x: feat_x = num_cols[0] if num_cols else ""
+    if not feat_y: feat_y = num_cols[1] if len(num_cols) > 1 else feat_x
+
+    def get_vals(col):
+        return [r.get(col,"") for r in rows]
+
+    targ = [str(r.get(target_col,"")) for r in rows]
+    classes = sorted(list(set(targ)))
+    xs = [_try_float(v) for v in get_vals(feat_x)]
+    ys = [_try_float(v) for v in get_vals(feat_y)]
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+    for i, cls in enumerate(classes):
+        idx = [j for j, t in enumerate(targ) if t == cls]
+        xs_c = [xs[j] for j in idx if xs[j] is not None]
+        ys_c = [ys[j] for j in idx if ys[j] is not None]
+        ax.scatter(xs_c, ys_c, color=PALETTE[i % len(PALETTE)],
+                   alpha=0.65, edgecolors="white", linewidth=0.4,
+                   label=cls, s=40, zorder=3)
+    ax.set_xlabel(feat_x, color=SEC, fontsize=11)
+    ax.set_ylabel(feat_y, color=SEC, fontsize=11)
+    ax.set_title(f"Distribución: {feat_x} vs {feat_y}", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(title=target_col, facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    ax.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    return jsonify({"img": fig_b64(fig), "feat_x": feat_x, "feat_y": feat_y})
+
+@app.route("/api/tab_classify_imbalance", methods=["POST"])
+def tab_classify_imbalance():
+    """Simulate class imbalance: filter rows and return class distribution plot."""
+    body       = request.get_json(force=True, silent=True) or {}
+    target_col = body.get("target_col", "")
+    filter_col = body.get("filter_col", "")
+    filter_op  = body.get("filter_op", "gt")
+    filter_val = body.get("filter_val", 0.0)
+    node_id    = body.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows: return jsonify({"error": "No data"}), 400
+
+    fv = float(filter_val)
+    if filter_col:
+        if filter_op == "gt":
+            filtered = [r for r in rows if _try_float(r.get(filter_col,"")) is not None and float(_try_float(r.get(filter_col,0))) > fv]
+        elif filter_op == "lt":
+            filtered = [r for r in rows if _try_float(r.get(filter_col,"")) is not None and float(_try_float(r.get(filter_col,0))) < fv]
+        else:
+            filtered = [r for r in rows if str(r.get(filter_col,"")) == str(filter_val)]
+    else:
+        filtered = rows
+
+    targ = [str(r.get(target_col,"")) for r in filtered]
+    classes = sorted(list(set(targ)))
+    orig_targ = [str(r.get(target_col,"")) for r in rows]
+    orig_dist = Counter(orig_targ)
+    filt_dist = Counter(targ)
+
+    # Distribution comparison bar chart
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
+    fig.patch.set_facecolor(LIGHT)
+    for ax, dist, title in zip(axes, [orig_dist, filt_dist], ["Original", "Filtrado (simulado)"]):
+        style_ax(ax)
+        lbls = sorted(dist.keys()); vals = [dist[l] for l in lbls]
+        bars = ax.bar(range(len(lbls)), vals, color=PALETTE[:len(lbls)], edgecolor="none", zorder=3)
+        ax.set_xticks(range(len(lbls))); ax.set_xticklabels(lbls, color=INK, fontsize=10)
+        ax.set_title(title, color=INK, fontsize=11, fontweight="bold")
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x()+b.get_width()/2, b.get_height()+0.5, str(v), ha="center", color=INK, fontsize=10)
+    plt.suptitle("Distribución de clases", color=INK, fontsize=12, fontweight="bold", y=1.02)
+    plt.tight_layout(pad=1.4)
+
+    ratio = round(max(filt_dist.values()) / max(1, min(filt_dist.values())), 2) if len(filt_dist) > 1 else 1.0
+    return jsonify({
+        "img": fig_b64(fig),
+        "original_dist": dict(orig_dist),
+        "filtered_dist": dict(filt_dist),
+        "n_filtered": len(filtered),
+        "ratio": ratio,
+        "classes": classes,
+    })
+
+# ── Tabular info ──────────────────────────────────────────────────────────────
+
+@app.route("/api/tabular_info")
+def tabular_info():
+    node_id = request.args.get("node", "") or request.args.get("node_id", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data loaded" + (f" for node {node_id}" if node_id else "")}), 400
+    cols = D["columns"]
+    total = len(rows)
+    col_info = []
+    for col in cols:
+        vals = [r.get(col, "") for r in rows]
+        missing = sum(1 for v in vals if _is_missing(v))
+        non_empty = [v for v in vals if not _is_missing(v)]
+        ctype = _col_type(vals)
+        info = {"name": col, "type": ctype, "missing": missing,
+                "missing_pct": round(missing / max(total, 1) * 100, 1)}
+        if ctype == "numeric":
+            nums = []
+            for v in non_empty:
+                try: nums.append(float(v))
+                except: pass
+            if nums:
+                info.update({
+                    "min": round(min(nums), 4), "max": round(max(nums), 4),
+                    "mean": round(float(np.mean(nums)), 4),
+                    "std":  round(float(np.std(nums)),  4),
+                    "n_unique": len(set(nums))
+                })
+        else:
+            counts = Counter(str(v) for v in non_empty)
+            info.update({"n_unique": len(counts),
+                         "top_values": [{"v": k, "n": v} for k, v in counts.most_common(5)]})
+        col_info.append(info)
+    n_numeric = sum(1 for c in col_info if c["type"] == "numeric")
+    n_cat     = sum(1 for c in col_info if c["type"] == "categorical")
+    n_text    = sum(1 for c in col_info if c["type"] == "text")
+    total_missing = sum(c["missing"] for c in col_info)
+    return jsonify({
+        "rows": total, "cols": len(cols),
+        "n_numeric": n_numeric, "n_categorical": n_cat, "n_text": n_text,
+        "total_missing": total_missing,
+        "columns": col_info,
+        "name": D["dataset_name"]
+    })
+
+# ── Distributions plot ────────────────────────────────────────────────────────
+@app.route("/api/plot_distribution")
+def plot_distribution():
+    col     = request.args.get("col", "")
+    node_id = request.args.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows or col not in D["columns"]:
+        return jsonify({"error": "No data or column not found"}), 400
+
+    vals      = [r.get(col, "") for r in rows]
+    ctype     = _col_type(vals)
+    non_empty = [v for v in vals if not _is_missing(v)]
+
+    fig, ax = plt.subplots(figsize=(8, 4.2))
+    fig.patch.set_facecolor(LIGHT)
+    style_ax(ax)
+
+    if ctype == "numeric":
+        nums = []
+        for v in non_empty:
+            try: nums.append(float(v))
+            except: pass
+        if not nums:
+            return jsonify({"error": "No numeric values"}), 400
+        n_bins = min(30, max(8, len(set(nums))))
+        ax.hist(nums, bins=n_bins, color=PALETTE[0], edgecolor="white",
+                linewidth=0.5, alpha=0.88)
+        mean_v = float(np.mean(nums)); med_v = float(np.median(nums))
+        ax.axvline(mean_v, color=PALETTE[1], linewidth=1.8, linestyle="--",
+                   label=f"Media {mean_v:.2f}", alpha=0.9)
+        ax.axvline(med_v, color=PALETTE[2], linewidth=1.8, linestyle=":",
+                   label=f"Mediana {med_v:.2f}", alpha=0.9)
+        ax.set_xlabel(col, color=SEC, fontsize=11)
+        ax.set_ylabel("Frecuencia", color=SEC, fontsize=11)
+        ax.set_title(f"Distribución de {col}", color=INK, fontsize=13, fontweight="bold")
+        ax.yaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+        ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10,
+                  framealpha=0.85, edgecolor=BORDER)
+    else:
+        counts = Counter(str(v) for v in non_empty)
+        top = counts.most_common(20)
+        if not top:
+            return jsonify({"error": "No values"}), 400
+        labels_b, freqs = zip(*top)
+        # Horizontal bar chart — mucho más legible para categóricas
+        y_pos = range(len(labels_b))
+        colors = [PALETTE[i % len(PALETTE)] for i in range(len(labels_b))]
+        bars = ax.barh(list(reversed(list(y_pos))), list(reversed(list(freqs))),
+                       color=list(reversed(colors)), edgecolor="none", height=0.65)
+        ax.set_yticks(list(y_pos))
+        ax.set_yticklabels(list(reversed(list(labels_b))), color=INK, fontsize=10)
+        ax.set_xlabel("Frecuencia", color=SEC, fontsize=11)
+        ax.set_title(f"Distribución de {col}", color=INK, fontsize=13, fontweight="bold")
+        ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+        for b in bars:
+            w = b.get_width()
+            ax.text(w + max(freqs)*0.01, b.get_y() + b.get_height()/2,
+                    str(int(w)), va="center", color=INK, fontsize=9, fontweight="600")
+
+    plt.tight_layout(pad=1.6)
+    return jsonify({"img": fig_b64(fig), "type": ctype})
+
+# ── Feature statistics (summary table for all columns) ───────────────────────
+@app.route("/api/feature_stats")
+def feature_stats():
+    node_id = request.args.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data loaded"}), 400
+    cols  = D["columns"]
+    total = len(rows)
+    stats = []
+    for col in cols:
+        vals = [r.get(col, "") for r in rows]
+        missing = sum(1 for v in vals if _is_missing(v))
+        non_empty = [v for v in vals if not _is_missing(v)]
+        ctype = _col_type(vals)
+        row = {"name": col, "type": ctype, "missing": missing,
+               "missing_pct": round(missing / max(total, 1) * 100, 1),
+               "n_unique": 0}
+        if ctype == "numeric":
+            nums = []
+            for v in non_empty:
+                try: nums.append(float(v))
+                except: pass
+            if nums:
+                row.update({
+                    "n_unique": len(set(nums)),
+                    "mean":   round(float(np.mean(nums)), 3),
+                    "std":    round(float(np.std(nums)),  3),
+                    "min":    round(min(nums), 3),
+                    "max":    round(max(nums), 3),
+                    "median": round(float(np.median(nums)), 3),
+                })
+        else:
+            c = Counter(str(v) for v in non_empty)
+            row.update({"n_unique": len(c), "top": c.most_common(1)[0][0] if c else ""})
+        stats.append(row)
+    return jsonify({"stats": stats, "rows": total, "cols": len(cols)})
+
+# ── Scatter plot ──────────────────────────────────────────────────────────────
+@app.route("/api/plot_scatter")
+def plot_scatter():
+    x_col    = request.args.get("x", "")
+    y_col    = request.args.get("y", "")
+    color_by = request.args.get("color_by", "")
+    node_id  = request.args.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    cols = D["columns"]
+    if not rows:
+        return jsonify({"error": "No data loaded"}), 400
+    if x_col not in cols or y_col not in cols:
+        return jsonify({"error": "Column not found"}), 400
+
+    # Build xy pairs
+    xs, ys, groups = [], [], []
+    for r in rows:
+        xv = r.get(x_col, ""); yv = r.get(y_col, "")
+        if _is_missing(xv) or _is_missing(yv):
+            continue
+        try:
+            xs.append(float(xv)); ys.append(float(yv))
+        except:
+            continue
+        groups.append(str(r.get(color_by, "all")) if color_by and color_by in cols else "all")
+
+    if not xs:
+        return jsonify({"error": "No numeric data for selected columns"}), 400
+
+    uniq_groups = sorted(set(groups))
+    fig, ax = plt.subplots(figsize=(8, 5))
+    fig.patch.set_facecolor(LIGHT)
+    style_ax(ax)
+
+    for i, grp in enumerate(uniq_groups):
+        idx = [j for j, g in enumerate(groups) if g == grp]
+        gx  = [xs[j] for j in idx]
+        gy  = [ys[j] for j in idx]
+        ax.scatter(gx, gy, color=PALETTE[i % len(PALETTE)], alpha=0.65,
+                   s=28, edgecolors="none",
+                   label=grp if color_by else None, zorder=3)
+
+    ax.set_xlabel(x_col, color=SEC, fontsize=11)
+    ax.set_ylabel(y_col, color=SEC, fontsize=11)
+    title = f"{x_col} vs {y_col}"
+    if color_by: title += f"  (colour: {color_by})"
+    ax.set_title(title, color=INK, fontsize=13, fontweight="bold")
+    ax.grid(True, color=BORDER, linestyle="--", linewidth=0.6, zorder=0)
+    if color_by and len(uniq_groups) > 1:
+        ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10,
+                  title=color_by, markerscale=1.4)
+    plt.tight_layout(pad=1.6)
+    return jsonify({"img": fig_b64(fig), "n_points": len(xs)})
+
+# ── Missing-value heatmap ─────────────────────────────────────────────────────
+@app.route("/api/plot_missing")
+def plot_missing():
+    node_id = request.args.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows:
+        return jsonify({"error": "No data"}), 400
+    cols = D["columns"]
+    total = len(rows)
+    if not cols:
+        return jsonify({"error": "No columns"}), 400
+
+    # Barras horizontales compactas: % de nulos por columna
+    miss_data = []
+    for col in cols:
+        vals = [r.get(col, "") for r in rows]
+        pct = sum(1 for v in vals if _is_missing(v)) / max(total, 1) * 100
+        miss_data.append((col, round(pct, 1)))
+
+    # Solo columnas con algún nulo, ordenadas desc
+    miss_data = sorted([m for m in miss_data if m[1] > 0], key=lambda x: -x[1])
+    if not miss_data:
+        # Sin nulos — devuelve imagen de "todo bien"
+        fig, ax = plt.subplots(figsize=(5, 2.5))
+        fig.patch.set_facecolor(LIGHT); ax.set_facecolor(LIGHT)
+        ax.text(0.5, 0.5, "✓  Sin valores ausentes", ha="center", va="center",
+                fontsize=14, color=MINT, fontweight="bold", transform=ax.transAxes)
+        ax.axis("off")
+        plt.tight_layout(pad=1)
+        return jsonify({"img": fig_b64(fig)})
+
+    n = len(miss_data)
+    fig_h = max(2.5, n * 0.42 + 1.0)
+    fig, ax = plt.subplots(figsize=(7, fig_h))
+    fig.patch.set_facecolor(LIGHT)
+    style_ax(ax)
+
+    names, pcts = zip(*miss_data)
+    colors = ["#EF4444" if p > 10 else "#F59E0B" if p > 5 else "#FCD34D" for p in pcts]
+    bars = ax.barh(range(n), pcts, color=colors, edgecolor="none", height=0.6)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(names, color=INK, fontsize=10)
+    ax.set_xlabel("% de valores ausentes", color=SEC, fontsize=11)
+    ax.set_title("Valores ausentes por columna", color=INK, fontsize=12, fontweight="bold")
+    ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+    ax.set_xlim(0, 100)   # siempre sobre 100%
+    for b, p in zip(bars, pcts):
+        ax.text(min(p + 1.5, 96), b.get_y() + b.get_height()/2,
+                f"{p}%", va="center", color=INK, fontsize=9, fontweight="700")
+    plt.tight_layout(pad=1.4)
+    return jsonify({"img": fig_b64(fig)})
+
 # ── Table endpoint (paginated) ────────────────────────────────────────────────
 @app.route("/api/table")
 def table():
-    q      = request.args.get("q","").lower()
-    page   = int(request.args.get("page",1))
-    per    = 20
-    rows   = S["raw_rows"]
+    q        = request.args.get("q","").lower()
+    page     = int(request.args.get("page",1))
+    sort_col = request.args.get("sort","")
+    sort_dir = int(request.args.get("dir","1"))
+    node_id  = request.args.get("node","")
+    per      = 20
+    D    = _effective_data(node_id)
+    rows = list(D["raw_rows"])
     if q:
         rows = [r for r in rows if any(q in str(v).lower() for v in r.values())]
+    if sort_col and sort_col in D["columns"]:
+        def sort_key(r):
+            v = r.get(sort_col, "")
+            try: return (0, float(v))
+            except: return (1, str(v).lower())
+        rows = sorted(rows, key=sort_key, reverse=(sort_dir < 0))
     total  = len(rows)
     start  = (page-1)*per
-    return jsonify({"columns": S["columns"], "rows": rows[start:start+per],
+    return jsonify({"columns": D["columns"], "rows": rows[start:start+per],
                     "total": total, "page": page, "pages": max(1,(total+per-1)//per)})
 
 # ── Explore ───────────────────────────────────────────────────────────────────
 @app.route("/api/plot_explore")
 def plot_explore():
+    """NLP explore: word-length histogram + class distribution."""
     texts, labels, lnames = S["texts"], S["labels"], S["label_names"]
     if not texts: return jsonify({"error":"No data"}), 400
     ncols = 2 if labels else 1
@@ -324,10 +1743,16 @@ def plot_explore():
     lengths=[len(t.split()) for t in texts]
     n_bins=min(20,len(set(lengths)))
     ax.hist(lengths, bins=n_bins, color=PALETTE[0], edgecolor="white", linewidth=0.4, alpha=0.85)
-    ax.set_xlabel("Words per text",color=SEC,fontsize=11)
+    ax.set_xlabel("Words per document",color=SEC,fontsize=11)
     ax.set_ylabel("Frequency",color=SEC,fontsize=11)
-    ax.set_title("Length distribution",color=INK,fontsize=13,fontweight="bold")
+    ax.set_title("Document length distribution",color=INK,fontsize=13,fontweight="bold")
     ax.yaxis.grid(True,color=BORDER,linestyle="--",linewidth=0.6,zorder=0)
+    # stats annotation
+    ax.axvline(float(np.mean(lengths)), color=PALETTE[2], linewidth=1.6,
+               linestyle="--", label=f"Mean {np.mean(lengths):.0f}")
+    ax.axvline(float(np.median(lengths)), color=PALETTE[4], linewidth=1.6,
+               linestyle=":", label=f"Median {np.median(lengths):.0f}")
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
     if labels:
         ax2=axes[1]; style_ax(ax2)
         c=Counter(labels)
@@ -341,7 +1766,144 @@ def plot_explore():
             ax2.text(b.get_x()+b.get_width()/2,b.get_height()+.1,
                      str(int(b.get_height())),ha="center",color=INK,fontsize=12,fontweight="bold")
     plt.tight_layout(pad=1.8)
-    return jsonify({"img": fig_b64(fig)})
+    return jsonify({"img": fig_b64(fig), "type": "nlp"})
+
+@app.route("/api/plot_explore_tabular")
+def plot_explore_tabular():
+    """Tabular explore: numeric distributions grid + categorical bars + missing bar."""
+    node_id = request.args.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    cols = D["columns"]
+    if not rows: return jsonify({"error":"No data"}), 400
+
+    num_cols = [c for c in cols if _col_type([r.get(c,"") for r in rows])=="numeric"]
+    cat_cols = [c for c in cols if _col_type([r.get(c,"") for r in rows])=="categorical"]
+
+    # ── Summary stats table (like df.describe()) ──────────────────────────
+    summary = []
+    for col in num_cols:
+        vals = [r.get(col,"") for r in rows]
+        nums = [float(v) for v in vals if not _is_missing(v) and _try_float(v)]
+        if not nums: continue
+        summary.append({
+            "col": col,
+            "count": len(nums),
+            "missing": len(vals)-len(nums),
+            "mean": round(float(np.mean(nums)),3),
+            "std": round(float(np.std(nums)),3),
+            "min": round(min(nums),3),
+            "p25": round(float(np.percentile(nums,25)),3),
+            "p50": round(float(np.median(nums)),3),
+            "p75": round(float(np.percentile(nums,75)),3),
+            "max": round(max(nums),3),
+        })
+
+    # ── Figure 1: numeric histograms — one per row to avoid crowding ─────
+    n_num = len(num_cols[:8])   # max 8
+    imgs = []
+    if n_num:
+        # 2 cols, N rows — guarantees enough vertical space per subplot
+        ncols_g = min(2, n_num)
+        nrows_g = (n_num + ncols_g - 1) // ncols_g
+        cell_h  = 3.2        # height per row
+        fig1, axes1 = plt.subplots(nrows_g, ncols_g,
+                                   figsize=(ncols_g * 4.2, nrows_g * cell_h))
+        fig1.patch.set_facecolor(LIGHT)
+        # Normalise axes to always be a 2-D list
+        if n_num == 1:
+            axes1 = [[axes1]]
+        elif nrows_g == 1:
+            axes1 = [list(axes1)]
+        else:
+            axes1 = [list(row) for row in axes1]
+        flat = [ax for row in axes1 for ax in row]
+        for i, col in enumerate(num_cols[:8]):
+            ax = flat[i]; style_ax(ax)
+            vals = [r.get(col,"") for r in rows]
+            nums = [float(v) for v in vals if not _is_missing(v) and _try_float(v)]
+            if nums:
+                n_bins = min(20, max(6, len(set(nums))))
+                ax.hist(nums, bins=n_bins,
+                        color=PALETTE[i % len(PALETTE)], edgecolor="white",
+                        linewidth=0.4, alpha=0.88)
+                ax.axvline(float(np.mean(nums)), color=INK,
+                           linewidth=1.2, linestyle="--", alpha=0.5)
+            ax.set_title(col, color=INK, fontsize=10, fontweight="bold")
+            ax.set_ylabel("Frecuencia", color=SEC, fontsize=8)
+            ax.tick_params(labelsize=8)
+            ax.yaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+        for ax in flat[n_num:]:
+            ax.set_visible(False)
+        fig1.suptitle("Distribuciones numéricas", color=INK,
+                      fontsize=12, fontweight="bold")
+        plt.tight_layout(pad=1.4)
+        imgs.append(("numeric", fig_b64(fig1)))
+
+    # ── Figure 2: categorical bar charts — horizontal, 1 col layout ───────
+    n_cat = len(cat_cols[:6])
+    if n_cat:
+        fig2, axes2 = plt.subplots(n_cat, 1,
+                                   figsize=(7, n_cat * 3.0))
+        fig2.patch.set_facecolor(LIGHT)
+        if n_cat == 1: axes2 = [axes2]
+        for i, col in enumerate(cat_cols[:6]):
+            ax = axes2[i]; style_ax(ax)
+            vals = [r.get(col,"") for r in rows]
+            non_empty = [v for v in vals if not _is_missing(v)]
+            counts = Counter(str(v) for v in non_empty)
+            top = counts.most_common(10)
+            if top:
+                lbls, freqs = zip(*top)
+                colors_c = [PALETTE[j % len(PALETTE)] for j in range(len(lbls))]
+                # Horizontal bars for legibility
+                y_pos = range(len(lbls))
+                bars = ax.barh(list(y_pos), list(freqs),
+                               color=colors_c, edgecolor="none", height=0.6)
+                ax.set_yticks(list(y_pos))
+                ax.set_yticklabels(list(lbls), color=INK, fontsize=8)
+                ax.xaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+                ax.set_xlabel("Frecuencia", color=SEC, fontsize=8)
+                for b in bars:
+                    w = b.get_width()
+                    ax.text(w + max(freqs)*0.01, b.get_y()+b.get_height()/2,
+                            str(int(w)), va="center", color=INK, fontsize=8)
+            ax.set_title(col, color=INK, fontsize=10, fontweight="bold")
+        fig2.suptitle("Variables categóricas", color=INK,
+                      fontsize=12, fontweight="bold")
+        plt.tight_layout(pad=1.4)
+        imgs.append(("categorical", fig_b64(fig2)))
+
+    # ── Figure 3: missing values bar ─────────────────────────────────────
+    total = len(rows)
+    miss_pcts = []
+    for col in cols:
+        vals = [r.get(col,"") for r in rows]
+        pct = sum(1 for v in vals if _is_missing(v)) / max(total,1) * 100
+        if pct > 0:
+            miss_pcts.append((col, round(pct,1)))
+    if miss_pcts:
+        n_m = len(miss_pcts)
+        fig3, ax3 = plt.subplots(figsize=(7, max(2.5, n_m * 0.42 + 1.0)))
+        fig3.patch.set_facecolor(LIGHT); style_ax(ax3)
+        mc, mp = zip(*miss_pcts)
+        colors_m = ["#EF4444" if p > 10 else "#F59E0B" if p > 5 else "#FCD34D" for p in mp]
+        bars3 = ax3.barh(range(n_m), mp, color=colors_m, edgecolor="none", height=0.55)
+        ax3.set_yticks(range(n_m))
+        ax3.set_yticklabels(mc, color=INK, fontsize=9)
+        ax3.set_xlabel("% valores ausentes", color=SEC, fontsize=10)
+        ax3.set_xlim(0, max(mp) * 1.2)
+        ax3.set_title("Valores ausentes por columna", color=INK,
+                      fontsize=12, fontweight="bold")
+        ax3.xaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+        for b, p in zip(bars3, mp):
+            ax3.text(p + max(mp)*0.02, b.get_y()+b.get_height()/2,
+                     f"{p}%", va="center", color=INK, fontsize=9, fontweight="700")
+        plt.tight_layout(pad=1.4)
+        imgs.append(("missing", fig_b64(fig3)))
+
+    return jsonify({"type": "tabular", "imgs": imgs, "summary": summary,
+                    "n_numeric": len(num_cols), "n_categorical": len(cat_cols)})
 
 # ── Preprocessing preview ─────────────────────────────────────────────────────
 _pre_thread = None
@@ -393,25 +1955,9 @@ def preview_text():
 
 @app.route("/api/plot_wordfreq")
 def plot_wordfreq():
-    texts=S["texts"]; proc=S["processed_texts"]
-    if not texts: return jsonify({"error":"No data"}),400
-    fig,axes=plt.subplots(1,2,figsize=(12,4.5)); fig.patch.set_facecolor(LIGHT)
-    def top_words(corpus,n=12):
-        all_w=[]
-        for t in corpus: all_w.extend(t.lower().split())
-        return Counter(all_w).most_common(n)
-    for ax_i,(ax,corpus,title,pal) in enumerate([(axes[0],texts,"Top words — Raw",PALETTE[1]),(axes[1],proc,"Top words — Preprocessed",PALETTE[3])]):
-        style_ax(ax)
-        wf=top_words(corpus)
-        if wf:
-            words,freqs=zip(*wf)
-            bar_colors=[pal if j==0 else PALETTE[(ax_i*3+j)%len(PALETTE)] for j in range(len(words))]
-            ax.barh(list(reversed(words)),list(reversed(freqs)),
-                    color=list(reversed(bar_colors)),edgecolor="none",alpha=0.88)
-        ax.xaxis.grid(True,color=BORDER,linestyle="--",linewidth=0.6,zorder=0)
-        ax.set_title(title,color=INK,fontsize=13,fontweight="bold")
-    plt.tight_layout(pad=1.8)
-    return jsonify({"img":fig_b64(fig)})
+    if not S["texts"]: return jsonify({"error": "No data"}), 400
+    img = _wordfreq_b64()
+    return jsonify({"img": img} if img else {"error": "Could not generate"})
 
 # ── Word cloud ────────────────────────────────────────────────────────────────
 @app.route("/api/plot_wordcloud", methods=["POST"])
@@ -506,6 +2052,8 @@ def train():
     dt_crit    = body.get("dt_criterion","gini")
     max_feat   = body.get("max_features",None)
     max_feat   = int(max_feat) if max_feat else None
+    exp_label  = (body.get("exp_label") or "").strip().split()[0] if body.get("exp_label") else ""
+    S["exp_label"] = exp_label
     ngram      = body.get("ngram","1")
 
     texts, proc = S["texts"], S["processed_texts"]
@@ -565,6 +2113,7 @@ def train():
                                "report":rep,"report_txt":report_txt}
                 if mode=="processed":
                     S["model"]=clf; S["vectorizer"]=vec
+            results["exp_label"] = S.get("exp_label", "")
             S["results"]=results; S["label_names"]=lnames
             push_progress(100,"Done ✓")
         except Exception as e:
@@ -592,10 +2141,13 @@ def train_results():
             "ready": True,
             "task": "topic_model",
             "results": {
-                "topics":    res.get("topics", []),
-                "perplexity": res.get("perplexity"),
-                "coherence":  res.get("coherence", []),
-                "doc_topics": res.get("doc_topics", []),
+                "topics":           res.get("topics", []),
+                "perplexity":       res.get("perplexity"),
+                "coherence_cv":     res.get("coherence_cv",    res.get("coherence", [])),
+                "coherence_cnpmi":  res.get("coherence_cnpmi", []),
+                "algorithm":        res.get("algorithm", "lda"),
+                "doc_topics":       res.get("doc_topics", []),
+                "label_result":     res.get("label_result"),
             }
         })
     return jsonify({"ready":True,"results":{k:{
@@ -668,6 +2220,7 @@ def plot_results():
 def _plot_topics(res):
     topics=res.get("topics",[])
     if not topics: return jsonify({"error":"No topics"}),400
+    topic_labels = res.get("topic_labels", {})
     n=len(topics)
     cols=min(n,4); rows=max(1,(n+cols-1)//cols)
     fig,axes=plt.subplots(rows,cols,figsize=(4.5*cols,4.5*rows))
@@ -677,9 +2230,11 @@ def _plot_topics(res):
         style_ax(ax)
         words=tp["words"][:10]; weights=tp["weights"][:10]
         color=PALETTE[idx % len(PALETTE)]
-        bars=ax.barh(list(reversed(words)),list(reversed(weights)),
-                     color=color,edgecolor="none",alpha=0.85)
-        ax.set_title(f"Topic {tp['id']+1}",color=INK,fontsize=13,fontweight="bold")
+        ax.barh(list(reversed(words)),list(reversed(weights)),
+                color=color,edgecolor="none",alpha=0.85)
+        lbl = topic_labels.get(str(tp["id"]), "")
+        title = f"Topic {tp['id']+1}" + (f" — {lbl}" if lbl else "")
+        ax.set_title(title, color=INK, fontsize=13, fontweight="bold")
         ax.tick_params(axis="y",labelsize=10)
     # hide unused subplots
     for ax in axes_flat[n:]: ax.set_visible(False)
@@ -689,67 +2244,362 @@ def _plot_topics(res):
 # ── Topic model ───────────────────────────────────────────────────────────────
 _topic_thread = None
 
+def _coherence_cv(topic_words_list, tokenized_docs, top_n=10):
+    """
+    C_V coherence approximation (no gensim needed):
+    For each topic, compute pairwise normalised PMI of top-N words,
+    averaged across all word pairs.
+    """
+    vocab = {}
+    for doc in tokenized_docs:
+        for w in set(doc): vocab[w] = vocab.get(w, 0) + 1
+    N = len(tokenized_docs)
+    scores = []
+    for words in topic_words_list:
+        wds = words[:top_n]
+        pair_scores = []
+        for i in range(len(wds)):
+            for j in range(i+1, len(wds)):
+                wi, wj = wds[i], wds[j]
+                fi  = vocab.get(wi, 0)
+                fj  = vocab.get(wj, 0)
+                fij = sum(1 for doc in tokenized_docs if wi in doc and wj in doc)
+                if fi == 0 or fj == 0 or fij == 0:
+                    pair_scores.append(0.0)
+                    continue
+                pmi = np.log((fij * N) / (fi * fj) + 1e-10)
+                norm = -np.log(fij / N + 1e-10)
+                pair_scores.append(float(pmi / (norm + 1e-10)))
+        scores.append(round(float(np.mean(pair_scores)) if pair_scores else 0.0, 4))
+    return scores
+
+
+def _coherence_cnpmi(topic_words_list, tokenized_docs, top_n=10):
+    """
+    C_NPMI coherence approximation:
+    NPMI = PMI / -log(p(wi,wj)) — normalised to [-1, 1].
+    """
+    vocab = {}
+    for doc in tokenized_docs:
+        for w in set(doc): vocab[w] = vocab.get(w, 0) + 1
+    N = len(tokenized_docs)
+    scores = []
+    for words in topic_words_list:
+        wds = words[:top_n]
+        pair_scores = []
+        for i in range(len(wds)):
+            for j in range(i+1, len(wds)):
+                wi, wj = wds[i], wds[j]
+                fi  = vocab.get(wi, 0)
+                fj  = vocab.get(wj, 0)
+                fij = sum(1 for doc in tokenized_docs if wi in doc and wj in doc)
+                if fi == 0 or fj == 0 or fij == 0:
+                    pair_scores.append(-1.0)
+                    continue
+                p_ij = fij / N
+                p_i  = fi  / N
+                p_j  = fj  / N
+                pmi  = np.log(p_ij / (p_i * p_j) + 1e-10)
+                npmi = pmi / (-np.log(p_ij + 1e-10))
+                pair_scores.append(float(npmi))
+        scores.append(round(float(np.mean(pair_scores)) if pair_scores else -1.0, 4))
+    return scores
+
+
 @app.route("/api/topic_model", methods=["POST"])
 def topic_model():
     global _topic_thread
-    body=request.json
-    n_topics  = int(body.get("n_topics",  5))
+    body       = request.json
+    algorithm  = body.get("algorithm", "lda")   # lda | nmf | lsa
+    n_topics   = int(body.get("n_topics",  5))
     max_vocab  = int(body.get("max_vocab", 500))
-    top_words  = int(body.get("top_words", 15))
-    proc=S["processed_texts"] or S["texts"]
-    if not proc: return jsonify({"error":"No texts loaded — connect a Data block first"}),400
+    top_n_words= int(body.get("top_words", 15))
+    # Labeling params (optional — if label_classes provided, run weak labeling too)
+    label_classes   = body.get("label_classes", [])    # [{name, keywords}]
+    label_strategy  = body.get("label_strategy", "most")
+    label_ci        = body.get("label_ci", True)
+
+    proc = S["processed_texts"] or S["texts"]
+    if not proc:
+        return jsonify({"error": "No texts loaded — connect a Data block first"}), 400
 
     def topic_worker():
         try:
             reset_progress()
-            push_progress(5,"Vectorizing corpus…")
+            push_progress(5, f"Vectorizando corpus ({algorithm.upper()})…")
             time.sleep(0.05)
+
             min_df = 2 if len(proc) > 50 else 1
-            vec=CountVectorizer(max_features=max_vocab, min_df=min_df)
-            X=vec.fit_transform(proc)
-            push_progress(25,"Fitting LDA model…")
-            time.sleep(0.05)
-            n_iter = min(40, max(10, len(proc)//8))
-            lda=LatentDirichletAllocation(n_components=n_topics, random_state=42,
-                                          max_iter=n_iter, learning_method="batch",
-                                          evaluate_every=5)
-            lda.fit(X)
-            push_progress(75,"Extracting topics…")
-            time.sleep(0.05)
-            feat=vec.get_feature_names_out()
-            topics=[{"id":i,"words":[feat[j] for j in c.argsort()[-top_words:][::-1]],
-                     "weights":[round(float(c[j]),4) for j in c.argsort()[-top_words:][::-1]]}
-                    for i,c in enumerate(lda.components_)]
-            doc_topics=lda.transform(X).argmax(axis=1).tolist()
-            perplexity=round(float(lda.perplexity(X)),1)
-            push_progress(95,"Computing coherence…")
-            time.sleep(0.05)
+            tokenized = [t.lower().split() for t in proc]
 
-            # Coherence proxy: avg top-word co-occurrence (UMass style, fast)
-            # We compute token overlap between topic top words
-            topic_sets = [set(tp["words"][:10]) for tp in topics]
-            coherence_scores = []
-            for ts in topic_sets:
-                doc_counts = sum(1 for t in proc if any(w in t.split() for w in ts))
-                coherence_scores.append(round(doc_counts / max(len(proc), 1), 3))
+            # Choose vectorizer and model
+            if algorithm == "lda":
+                vec = CountVectorizer(max_features=max_vocab, min_df=min_df)
+                X   = vec.fit_transform(proc)
+                push_progress(20, "Ajustando LDA…")
+                n_iter = min(40, max(10, len(proc) // 8))
+                model  = LatentDirichletAllocation(
+                    n_components=n_topics, random_state=42,
+                    max_iter=n_iter, learning_method="batch", evaluate_every=5)
+                model.fit(X)
+                components = model.components_
+                doc_topic_matrix = model.transform(X)
+                perplexity = round(float(model.perplexity(X)), 1)
 
-            S["results"]={
-                "topics": topics,
-                "doc_topics": doc_topics,
-                "perplexity": perplexity,
-                "coherence": coherence_scores,
+            elif algorithm == "nmf":
+                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
+                X   = vec.fit_transform(proc)
+                push_progress(20, "Ajustando NMF…")
+                model = NMF(n_components=n_topics, random_state=42, max_iter=400,
+                            init="nndsvda", l1_ratio=0.5)
+                W = model.fit_transform(X)
+                components = model.components_
+                # Normalise rows for soft assignment
+                row_sums = W.sum(axis=1, keepdims=True)
+                row_sums[row_sums == 0] = 1
+                doc_topic_matrix = W / row_sums
+                perplexity = None  # NMF has no perplexity
+
+            else:  # lsa / svd
+                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
+                X   = vec.fit_transform(proc)
+                push_progress(20, "Ajustando LSA (SVD)…")
+                model = TruncatedSVD(n_components=n_topics, random_state=42)
+                W = model.fit_transform(X)
+                components = model.components_
+                # For LSA, take abs value for topic word importance
+                components = np.abs(components)
+                doc_topic_matrix = np.abs(W)
+                row_sums = doc_topic_matrix.sum(axis=1, keepdims=True)
+                row_sums[row_sums == 0] = 1
+                doc_topic_matrix = doc_topic_matrix / row_sums
+                perplexity = None
+
+            push_progress(60, "Extrayendo tópicos…")
+            feat   = vec.get_feature_names_out()
+            topics = [
+                {
+                    "id": i,
+                    "words":   [feat[j] for j in c.argsort()[-top_n_words:][::-1]],
+                    "weights": [round(float(c[j]), 4) for j in c.argsort()[-top_n_words:][::-1]]
+                }
+                for i, c in enumerate(components)
+            ]
+            doc_topics = doc_topic_matrix.argmax(axis=1).tolist()
+
+            push_progress(75, "Calculando coherencia C_V…")
+            time.sleep(0.05)
+            topic_word_lists = [tp["words"][:10] for tp in topics]
+            cv_scores   = _coherence_cv(topic_word_lists, tokenized, top_n=10)
+
+            push_progress(88, "Calculando coherencia C_NPMI…")
+            time.sleep(0.05)
+            cnpmi_scores = _coherence_cnpmi(topic_word_lists, tokenized, top_n=10)
+
+            # ── Weak labeling (if requested) ──────────────────────────────
+            label_result = None
+            if label_classes:
+                push_progress(93, "Etiquetando corpus…")
+                class_kws = []
+                for cls in label_classes:
+                    kws = [k.lower() if label_ci else k for k in cls.get("keywords", []) if k.strip()]
+                    class_kws.append({"name": cls["name"], "kws": kws})
+                labels_out = []
+                counts = {c["name"]: 0 for c in class_kws}
+                for text in proc:
+                    t = text.lower() if label_ci else text
+                    matched = []
+                    for cls in class_kws:
+                        hits = sum(1 for kw in cls["kws"] if kw in t)
+                        if hits > 0:
+                            matched.append({"name": cls["name"], "hits": hits})
+                    if not matched:
+                        labels_out.append(None)
+                    else:
+                        assigned = max(matched, key=lambda x: x["hits"])["name"] if label_strategy == "most" else matched[0]["name"]
+                        labels_out.append(assigned)
+                        counts[assigned] = counts.get(assigned, 0) + 1
+                labeled = sum(1 for l in labels_out if l is not None)
+                label_result = {
+                    "labels": labels_out, "counts": counts,
+                    "labeled": labeled, "total": len(proc),
+                    "pct": round(labeled / max(len(proc), 1) * 100, 1)
+                }
+                _pending_labels["labels"]  = labels_out
+                _pending_labels["classes"] = [c["name"] for c in class_kws]
+
+            S["results"] = {
+                "topics":      topics,
+                "doc_topics":  doc_topics,
+                "perplexity":  perplexity,
+                "coherence_cv":    cv_scores,
+                "coherence_cnpmi": cnpmi_scores,
+                "algorithm":   algorithm,
+                "label_result": label_result,
                 "task": "topic_model"
             }
-            push_progress(100,"Done ✓")
+
+            # ── Auto-label topics via HF if toggle is active ──────────────
+            if HF_LABELING_ACTIVE:
+                push_progress(95, "Etiquetando tópicos con IA (HF)…")
+                topic_list_str = "\n".join(
+                    f"Topic {tp['id']+1}: {', '.join(tp['words'][:10])}"
+                    for tp in topics
+                )
+                prompt_lbl = (
+                    "You are an expert in text analysis. Given the following topics discovered by a topic model, "
+                    "propose a short descriptive label (2-4 words in Spanish) for each topic that captures its main theme.\n\n"
+                    f"Topics:\n{topic_list_str}\n\n"
+                    "Reply ONLY with a valid JSON object (no explanation):\n"
+                    '{"labels": [{"id": 0, "label": "..."}, {"id": 1, "label": "..."}, ...]}'
+                )
+                raw_lbl = _call_llm(prompt_lbl)
+                auto_labels = {}
+                if raw_lbl:
+                    jm = re.search(r'\{[\s\S]*\}', raw_lbl)
+                    if jm:
+                        try:
+                            parsed_lbl = json.loads(jm.group())
+                            for item in parsed_lbl.get("labels", []):
+                                auto_labels[str(item["id"])] = item["label"]
+                        except Exception:
+                            pass
+                # fallback for any missing
+                for tp in topics:
+                    if str(tp["id"]) not in auto_labels:
+                        auto_labels[str(tp["id"])] = _rule_label(tp["words"])
+                S["results"]["topic_labels"] = auto_labels
+
+            push_progress(100, "Listo ✓")
         except Exception as e:
             push_progress(100, f"Error: {str(e)}")
 
     if _topic_thread and _topic_thread.is_alive():
-        return jsonify({"error":"Already running"}), 429
+        return jsonify({"error": "Ya en ejecución"}), 429
 
     _topic_thread = threading.Thread(target=topic_worker, daemon=True)
     _topic_thread.start()
-    return jsonify({"ok":True,"started":True})
+    return jsonify({"ok": True, "started": True})
+
+# ── Weak labeling ────────────────────────────────────────────────────────────
+# Store pending labeled results before applying to dataset
+_pending_labels = {}
+
+@app.route("/api/label", methods=["POST"])
+def label():
+    body      = request.json
+    classes   = body.get("classes", [])      # [{name, keywords}, ...]
+    strategy  = body.get("strategy", "first")
+    ci        = body.get("case_insensitive", True)
+
+    texts = S["processed_texts"] or S["texts"]
+    if not texts:
+        return jsonify({"error": "No texts loaded — connect a Data block first"}), 400
+    if not classes:
+        return jsonify({"error": "Define at least one class"}), 400
+
+    # Normalize keywords
+    class_kws = []
+    for cls in classes:
+        kws = [k.lower() if ci else k for k in cls.get("keywords", []) if k.strip()]
+        class_kws.append({"name": cls["name"], "kws": kws})
+
+    labels_out = []
+    counts = {c["name"]: 0 for c in class_kws}
+
+    for text in texts:
+        t = text.lower() if ci else text
+        matched = []
+        for cls in class_kws:
+            hits = sum(1 for kw in cls["kws"] if kw in t)
+            if hits > 0:
+                matched.append({"name": cls["name"], "hits": hits})
+        if not matched:
+            labels_out.append(None)
+            continue
+        if strategy == "first":
+            assigned = matched[0]["name"]
+        elif strategy == "most":
+            assigned = max(matched, key=lambda x: x["hits"])["name"]
+        else:  # any
+            assigned = matched[0]["name"]
+        labels_out.append(assigned)
+        counts[assigned] = counts.get(assigned, 0) + 1
+
+    labeled   = sum(1 for l in labels_out if l is not None)
+    unlabeled = len(labels_out) - labeled
+    pct       = round(labeled / max(len(labels_out), 1) * 100, 1)
+
+    # Build sample (first 30 rows)
+    sample = [
+        {"idx": i, "text": texts[i][:200], "label": (labels_out[i] or "—")}
+        for i in range(min(30, len(texts)))
+    ]
+
+    # Store pending so /api/apply_labels can commit
+    _pending_labels["labels"]   = labels_out
+    _pending_labels["classes"]  = [c["name"] for c in class_kws]
+
+    # Distribution chart
+    chart_img = None
+    try:
+        names  = [c["name"] for c in class_kws] + ["Sin etiquetar"]
+        values = [counts.get(c["name"], 0) for c in class_kws] + [unlabeled]
+        colors = PALETTE[:len(names)]
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        fig.patch.set_facecolor(LIGHT)
+        style_ax(ax)
+        bars = ax.bar(names, values, color=colors, width=0.5, edgecolor="none", zorder=3)
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.6, zorder=0)
+        ax.set_title("Distribución de etiquetas", color=INK, fontsize=13, fontweight="bold")
+        for b, v in zip(bars, values):
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 0.2, str(v),
+                    ha="center", color=INK, fontsize=12, fontweight="bold")
+        plt.tight_layout(pad=1.5)
+        chart_img = fig_b64(fig)
+    except Exception:
+        pass
+
+    return jsonify({
+        "labeled": labeled, "unlabeled": unlabeled, "pct": pct,
+        "counts": counts, "sample": sample, "chart_img": chart_img,
+        "total": len(texts)
+    })
+
+
+@app.route("/api/apply_labels", methods=["POST"])
+def apply_labels():
+    if not _pending_labels:
+        return jsonify({"error": "Run /api/label first"}), 400
+    labels_out = _pending_labels["labels"]
+    cls_names  = _pending_labels["classes"]
+
+    texts = S["processed_texts"] or S["texts"]
+    # Filter to labeled only
+    filtered_texts  = [t for t, l in zip(texts, labels_out) if l is not None]
+    filtered_labels = [l for l in labels_out if l is not None]
+
+    uniq_names = list(dict.fromkeys(filtered_labels))  # preserve order
+    name_to_idx = {n: i for i, n in enumerate(uniq_names)}
+    int_labels  = [name_to_idx[l] for l in filtered_labels]
+
+    # Also update raw_rows if available
+    raw = S.get("raw_rows", [])
+    filtered_raw = [r for r, l in zip(raw, labels_out) if l is not None] if len(raw) == len(labels_out) else []
+
+    S.update(
+        texts=filtered_texts,
+        processed_texts=filtered_texts,
+        labels=int_labels,
+        label_names=uniq_names,
+        task="classification",
+        raw_rows=filtered_raw,
+        columns=S.get("columns", []),
+        model=None, vectorizer=None, results={}
+    )
+    _pending_labels.clear()
+    return jsonify({"ok": True, "n": len(filtered_texts), "classes": len(uniq_names)})
+
 
 # ── Classify ──────────────────────────────────────────────────────────────────
 @app.route("/api/classify", methods=["POST"])
@@ -765,3 +2615,1321 @@ def classify():
         p=S["model"].predict_proba(X)[0]; proba=f"{round(float(max(p))*100,1)}%"
     return jsonify({"label":label,"proba":proba,"processed":proc[:150],
                     "acc":S["results"].get("processed",{}).get("acc","")})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SESSION SAVE / LOAD  (canvas + model + data)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _safe_results_for_json(res):
+    """Strip numpy types so results are JSON-serialisable."""
+    if not res:
+        return {}
+    out = {}
+    for mode, v in res.items():
+        if isinstance(v, dict):
+            out[mode] = {
+                k: (val.tolist() if hasattr(val, "tolist") else val)
+                for k, val in v.items()
+            }
+        else:
+            out[mode] = v
+    return out
+
+
+@app.route("/api/save_session", methods=["POST"])
+def save_session():
+    """
+    Body: { canvas: <canvas JSON string>, filename: <optional name> }
+    Returns a ZIP file containing:
+      - canvas.json       — node/edge layout
+      - data.json         — dataset metadata + texts + labels
+      - preprocessed.csv  — processed texts (if available)
+      - model.pkl         — trained sklearn model + vectorizer (if available)
+      - results.json      — training metrics + report (if available)
+      - plots/            — all result plots as PNG
+    """
+    body      = request.json or {}
+    canvas    = body.get("canvas", "{}")
+    filename  = body.get("filename", "nlpflow_session")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+
+        # 1. Canvas layout
+        zf.writestr("canvas.json", canvas)
+
+        # 2. Dataset (texts + labels + metadata)
+        data_payload = {
+            "dataset_name": S["dataset_name"],
+            "task":         S["task"],
+            "texts":        S["texts"],
+            "labels":       S["labels"],
+            "label_names":  S["label_names"],
+            "active_steps": S["active_steps"],
+            "columns":      S["columns"],
+        }
+        zf.writestr("data.json", json.dumps(data_payload, ensure_ascii=False, indent=2))
+
+        # 3. Preprocessed CSV
+        if S["processed_texts"]:
+            csv_buf = io.StringIO()
+            writer  = csv.writer(csv_buf)
+            has_labels = bool(S["labels"])
+            header = ["idx", "original_text", "processed_text"]
+            if has_labels:
+                header.append("label")
+            writer.writerow(header)
+            for i, (orig, proc) in enumerate(zip(S["texts"], S["processed_texts"])):
+                row = [i, orig, proc]
+                if has_labels and i < len(S["labels"]):
+                    lname = S["label_names"][S["labels"][i]] if S["label_names"] else S["labels"][i]
+                    row.append(lname)
+                writer.writerow(row)
+            zf.writestr("preprocessed.csv", csv_buf.getvalue())
+
+        # 4. Model + vectorizer (pickle via joblib in-memory)
+        if S["model"] is not None and S["vectorizer"] is not None:
+            model_buf = io.BytesIO()
+            joblib.dump({"model": S["model"], "vectorizer": S["vectorizer"],
+                         "label_names": S["label_names"], "active_steps": S["active_steps"]},
+                        model_buf)
+            zf.writestr("model.pkl", model_buf.getvalue())
+
+        # 5. Results JSON (metrics + classification report)
+        if S["results"]:
+            res_clean = _safe_results_for_json(S["results"])
+            zf.writestr("results.json", json.dumps(res_clean, ensure_ascii=False, indent=2))
+
+            # Also save report_txt as plain text
+            rep_txt = ""
+            if "processed" in S["results"]:
+                rep_txt = S["results"]["processed"].get("report_txt", "")
+            elif "topics" in S["results"]:
+                topics = S["results"].get("topics", [])
+                lines  = ["NLP Flow — Topic Model Report", "=" * 40]
+                for tp in topics:
+                    lines.append(f"\nTopic {tp['id']+1}: {', '.join(tp['words'][:10])}")
+                rep_txt = "\n".join(lines)
+            if rep_txt:
+                zf.writestr("report.txt", rep_txt)
+
+        # 6. Plots as PNG
+        plots_generated = []
+
+        # 6a. Results / topic plot
+        try:
+            res = S["results"]
+            lnames = S["label_names"]
+            if res:
+                if S["task"] == "topic_model" or "topics" in res:
+                    topics = res.get("topics", [])
+                    if topics:
+                        n = len(topics)
+                        cols = min(n, 4); rows = max(1, (n + cols - 1) // cols)
+                        import numpy as _np
+                        fig, axes = plt.subplots(rows, cols, figsize=(4.5 * cols, 4.5 * rows))
+                        fig.patch.set_facecolor(LIGHT)
+                        axes_flat = _np.array(axes).flatten() if n > 1 else [axes]
+                        for idx, (ax, tp) in enumerate(zip(axes_flat, topics)):
+                            style_ax(ax)
+                            ax.barh(list(reversed(tp["words"][:10])),
+                                    list(reversed(tp["weights"][:10])),
+                                    color=PALETTE[idx % len(PALETTE)], edgecolor="none", alpha=0.85)
+                            ax.set_title(f"Topic {tp['id']+1}", color=INK, fontsize=12, fontweight="bold")
+                        for ax in axes_flat[n:]: ax.set_visible(False)
+                        plt.tight_layout(pad=2)
+                        png_buf = io.BytesIO()
+                        fig.savefig(png_buf, format="png", dpi=130, bbox_inches="tight", facecolor=LIGHT)
+                        plt.close(fig)
+                        zf.writestr("plots/topic_weights.png", png_buf.getvalue())
+                        plots_generated.append("topic_weights.png")
+                else:
+                    # Classification plots
+                    import numpy as _np
+                    has_raw = "raw" in res
+                    ncols = 3 if has_raw else 2
+                    fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 5))
+                    fig.patch.set_facecolor(LIGHT)
+                    if ncols == 1: axes = [axes]
+                    i = 0
+                    if has_raw:
+                        ax = axes[i]; i += 1; style_ax(ax)
+                        modes = ["Raw", "Preprocessed"]
+                        accs  = [res["raw"]["acc"], res["processed"]["acc"]]
+                        colors = [PALETTE[0], PALETTE[1]]
+                        colors[int(_np.argmax(accs))] = PALETTE[2]
+                        bars = ax.bar(modes, accs, color=colors, width=.4, edgecolor="none", zorder=3)
+                        ax.set_ylim(0, 115); ax.set_ylabel("Accuracy (%)", color=SEC)
+                        ax.set_title("Preprocessing impact", color=INK, fontweight="bold")
+                        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.6, zorder=0)
+                        for b, v in zip(bars, accs):
+                            ax.text(b.get_x() + b.get_width()/2, b.get_height()+1,
+                                    f"{v}%", ha="center", color=INK, fontsize=12, fontweight="bold")
+                    ax = axes[i]; i += 1
+                    ax.set_facecolor(LIGHT); ax.tick_params(colors=INK)
+                    cm = _np.array(res["processed"]["cm"])
+                    ax.imshow(cm, cmap="RdYlGn", vmin=0, vmax=cm.max())
+                    ax.set_xticks(range(len(lnames))); ax.set_yticks(range(len(lnames)))
+                    ax.set_xticklabels(lnames, color=INK, fontsize=9, rotation=20, ha="right")
+                    ax.set_yticklabels(lnames, color=INK, fontsize=9)
+                    ax.set_title("Confusion matrix", color=INK, fontweight="bold")
+                    for ii in range(cm.shape[0]):
+                        for jj in range(cm.shape[1]):
+                            ax.text(jj, ii, str(cm[ii, jj]), ha="center", va="center",
+                                    fontsize=14, fontweight="bold", color=INK)
+                    ax = axes[i]; style_ax(ax)
+                    yt = res["processed"]["y_test"]; yp = res["processed"]["y_pred"]
+                    cats = sorted(set(yt)); x = _np.arange(len(cats)); w = .3
+                    ax.bar(x-w/2, [(_np.array(yt)==c).sum() for c in cats], w,
+                           label="Actual",    color=PALETTE[3], edgecolor="none", zorder=3)
+                    ax.bar(x+w/2, [(_np.array(yp)==c).sum() for c in cats], w,
+                           label="Predicted", color=PALETTE[4], edgecolor="none", zorder=3)
+                    ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.6, zorder=0)
+                    ax.set_xticks(x); ax.set_xticklabels([lnames[c] for c in cats], color=INK)
+                    ax.set_title("Actual vs predicted", color=INK, fontweight="bold")
+                    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10)
+                    plt.tight_layout(pad=2)
+                    png_buf = io.BytesIO()
+                    fig.savefig(png_buf, format="png", dpi=130, bbox_inches="tight", facecolor=LIGHT)
+                    plt.close(fig)
+                    zf.writestr("plots/results.png", png_buf.getvalue())
+                    plots_generated.append("results.png")
+        except Exception as e:
+            zf.writestr("plots/error.txt", str(e))
+
+        # 6b. Word frequency plot (direct call, no HTTP overhead)
+        try:
+            if S["texts"] and S["processed_texts"]:
+                img_b64 = _wordfreq_b64()
+                if img_b64:
+                    zf.writestr("plots/word_frequency.png", base64.b64decode(img_b64))
+                    plots_generated.append("word_frequency.png")
+        except Exception:
+            pass
+
+        # 7. README
+        readme = f"""NLP Flow Session
+================
+Dataset  : {S['dataset_name'] or '—'}
+Task     : {S['task']}
+Texts    : {len(S['texts'])}
+Steps    : {', '.join(S['active_steps']) or 'none'}
+Trained  : {'yes' if S['model'] else 'no'}
+
+Files
+-----
+canvas.json       — Canvas layout (nodes + edges)
+data.json         — Dataset texts, labels and metadata
+preprocessed.csv  — Preprocessed corpus (one row per text)
+model.pkl         — Trained model + vectorizer (joblib)
+results.json      — Training metrics and classification report
+report.txt        — Plain-text classification report
+plots/            — Result plots as PNG images
+"""
+        zf.writestr("README.txt", readme)
+
+    buf.seek(0)
+    safe_name = re.sub(r"[^\w\-]", "_", filename) or "nlpflow_session"
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{safe_name}.zip"
+    )
+
+
+@app.route("/api/load_session", methods=["POST"])
+def load_session():
+    """
+    Receives a ZIP file upload.  Restores data, model and results.
+    Returns { canvas, info } so the frontend can rebuild the canvas.
+    """
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    canvas_json = "{}"
+    info        = {}
+
+    try:
+        buf = io.BytesIO(f.read())
+        with zipfile.ZipFile(buf, "r") as zf:
+            names = zf.namelist()
+
+            # Canvas
+            if "canvas.json" in names:
+                canvas_json = zf.read("canvas.json").decode("utf-8")
+
+            # Dataset
+            if "data.json" in names:
+                data = json.loads(zf.read("data.json").decode("utf-8"))
+                S.update(
+                    texts        = data.get("texts", []),
+                    labels       = data.get("labels", []),
+                    label_names  = data.get("label_names", []),
+                    task         = data.get("task", "classification"),
+                    dataset_name = data.get("dataset_name", "Loaded session"),
+                    active_steps = data.get("active_steps", []),
+                    columns      = data.get("columns", []),
+                    raw_rows     = [],
+                    processed_texts = data.get("texts", []),  # will be overwritten below
+                    model        = None,
+                    vectorizer   = None,
+                    results      = {},
+                    csv_source   = data.get("csv_source", ""),
+                )
+                info["texts"]  = len(S["texts"])
+                info["task"]   = S["task"]
+
+            # Preprocessed CSV — restore processed_texts
+            if "preprocessed.csv" in names:
+                csv_data = zf.read("preprocessed.csv").decode("utf-8", errors="replace")
+                rows     = list(csv.DictReader(io.StringIO(csv_data)))
+                if rows and "processed_text" in rows[0]:
+                    S["processed_texts"] = [r["processed_text"] for r in rows]
+                    info["preprocessed"] = len(S["processed_texts"])
+
+            # Model
+            if "model.pkl" in names:
+                model_bytes = zf.read("model.pkl")
+                loaded      = joblib.load(io.BytesIO(model_bytes))
+                S["model"]       = loaded.get("model")
+                S["vectorizer"]  = loaded.get("vectorizer")
+                if loaded.get("label_names"):
+                    S["label_names"] = loaded["label_names"]
+                if loaded.get("active_steps"):
+                    S["active_steps"] = loaded["active_steps"]
+                info["model_loaded"] = True
+
+            # Results
+            if "results.json" in names:
+                S["results"] = json.loads(zf.read("results.json").decode("utf-8"))
+                info["results_loaded"] = True
+                res = S["results"]
+                # Extract training metrics for node badge restoration
+                proc_res = res.get("processed", res.get("raw", {}))
+                if proc_res.get("acc"):
+                    info["acc"]       = proc_res["acc"]
+                    info["f1_macro"]  = proc_res.get("f1_macro")
+                info["exp_label"] = res.get("exp_label", "")
+                # Topic model info
+                if "topics" in res:
+                    info["n_topics"]  = len(res["topics"])
+                    info["algorithm"] = res.get("algorithm", "lda")
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to load session: {str(e)}"}), 500
+
+    # Flag si el dataset original era un CSV externo (no podemos restaurar el raw)
+    info["needs_csv_reload"] = (S.get("csv_source") == "external" and bool(S["texts"]))
+    info["dataset_name"]     = S.get("dataset_name", "")
+
+    return jsonify({"canvas": canvas_json, "info": info})
+
+
+# ── Individual export endpoints ───────────────────────────────────────────────
+
+@app.route("/api/export_csv")
+def export_csv():
+    """Export the preprocessed corpus as a standalone CSV."""
+    texts = S["texts"]; proc = S["processed_texts"]
+    if not texts:
+        return jsonify({"error": "No data loaded"}), 400
+
+    csv_buf = io.StringIO()
+    writer  = csv.writer(csv_buf)
+    has_labels = bool(S["labels"])
+    header = ["idx", "original_text", "processed_text"]
+    if has_labels:
+        header.append("label")
+    writer.writerow(header)
+    for i, (orig, pr) in enumerate(zip(texts, proc if proc else texts)):
+        row = [i, orig, pr]
+        if has_labels and i < len(S["labels"]):
+            lname = S["label_names"][S["labels"][i]] if S["label_names"] else S["labels"][i]
+            row.append(lname)
+        writer.writerow(row)
+
+    csv_bytes = csv_buf.getvalue().encode("utf-8")
+    name = re.sub(r"[^\w\-]", "_", S["dataset_name"] or "corpus") + "_preprocessed.csv"
+    return send_file(
+        io.BytesIO(csv_bytes),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=name
+    )
+
+
+@app.route("/api/export_report")
+def export_report():
+    """Export the classification report as plain text."""
+    if not S["results"]:
+        return jsonify({"error": "No results — train a model first"}), 400
+
+    lines = [
+        f"NLP Flow — Classification Report",
+        f"Dataset : {S['dataset_name']}",
+        f"Task    : {S['task']}",
+        f"Steps   : {', '.join(S['active_steps']) or 'none'}",
+        "=" * 52,
+    ]
+
+    if "topics" in S["results"]:
+        lines.append("\nTopic Model Results")
+        lines.append(f"Perplexity : {S['results'].get('perplexity', '—')}")
+        for tp in S["results"].get("topics", []):
+            lines.append(f"\nTopic {tp['id']+1}: {', '.join(tp['words'][:15])}")
+    else:
+        for mode in ("processed", "raw"):
+            if mode not in S["results"]:
+                continue
+            r = S["results"][mode]
+            lines.append(f"\n[{mode.upper()}]")
+            lines.append(f"Accuracy    : {r.get('acc', '—')}%")
+            lines.append(f"F1 Macro    : {r.get('f1_macro', '—')}%")
+            lines.append(f"F1 Weighted : {r.get('f1_weighted', '—')}%")
+            if r.get("report_txt"):
+                lines.append("\n" + r["report_txt"])
+
+    text = "\n".join(lines)
+    name = re.sub(r"[^\w\-]", "_", S["dataset_name"] or "results") + "_report.txt"
+    return send_file(
+        io.BytesIO(text.encode("utf-8")),
+        mimetype="text/plain",
+        as_attachment=True,
+        download_name=name
+    )
+
+
+@app.route("/api/export_model")
+def export_model():
+    """Export the trained model + vectorizer as a .pkl file."""
+    if S["model"] is None:
+        return jsonify({"error": "No trained model"}), 400
+
+    model_buf = io.BytesIO()
+    joblib.dump({
+        "model":        S["model"],
+        "vectorizer":   S["vectorizer"],
+        "label_names":  S["label_names"],
+        "active_steps": S["active_steps"],
+    }, model_buf)
+    model_buf.seek(0)
+    name = re.sub(r"[^\w\-]", "_", S["dataset_name"] or "model") + "_model.pkl"
+    return send_file(
+        model_buf,
+        mimetype="application/octet-stream",
+        as_attachment=True,
+        download_name=name
+    )
+
+
+@app.route("/api/session_status")
+def session_status():
+    """Quick summary of what's available to save."""
+    return jsonify({
+        "has_data":       bool(S["texts"]),
+        "has_processed":  bool(S["processed_texts"] and S["processed_texts"] != S["texts"]),
+        "has_model":      S["model"] is not None,
+        "has_results":    bool(S["results"]),
+        "dataset_name":   S["dataset_name"],
+        "task":           S["task"],
+        "n_texts":        len(S["texts"]),
+        "active_steps":   S["active_steps"],
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# LLM TOPIC LABELING  — Hugging Face Inference API (free, no key needed)
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Hugging Face InferenceClient (lazy init) ─────────────────────────────────
+try:
+    from huggingface_hub import InferenceClient as _HFClient
+    _HF_AVAILABLE = True
+except ImportError:
+    _HFClient     = None
+    _HF_AVAILABLE = False
+
+_HF_MODEL  = "mistralai/Mistral-7B-Instruct-v0.3"
+_hf_client = None   # created on first use
+
+def _get_hf_client():
+    global _hf_client
+    if _hf_client is None and _HF_AVAILABLE:
+        _hf_client = _HFClient(_HF_MODEL)
+    return _hf_client
+
+# Toggle: True = auto-label topics via HF when topic model runs
+HF_LABELING_ACTIVE = False
+
+@app.route("/api/labeling_toggle", methods=["POST"])
+def labeling_toggle():
+    global HF_LABELING_ACTIVE
+    body = request.get_json(force=True, silent=True) or {}
+    HF_LABELING_ACTIVE = bool(body.get("active", not HF_LABELING_ACTIVE))
+    return jsonify({"active": HF_LABELING_ACTIVE})
+
+@app.route("/api/labeling_status", methods=["GET"])
+def labeling_status():
+    return jsonify({"active": HF_LABELING_ACTIVE})
+
+def _call_llm(prompt: str) -> str:
+    """
+    Call Hugging Face Inference API via huggingface_hub InferenceClient.
+    Uses the free serverless endpoint (no API key required for public models).
+    Returns the generated text or empty string on failure.
+    """
+    client = _get_hf_client()
+    if client is None:
+        return ""
+    try:
+        result = client.text_generation(
+            prompt,
+            max_new_tokens=512,
+            temperature=0.3,
+            do_sample=True,
+            return_full_text=False,
+        )
+        # result is a string when return_full_text=False
+        return result.strip() if isinstance(result, str) else ""
+    except Exception:
+        return ""
+
+def cleanup_hf_cache() -> None:
+    """
+    Remove Hugging Face cache directories created during this session.
+    Called when the app window closes.
+    """
+    import pathlib
+    hf_home = os.environ.get("HF_HOME") or os.path.join(pathlib.Path.home(), ".cache", "huggingface")
+    hub_cache = os.path.join(hf_home, "hub")
+    # Only wipe the hub model cache, not credentials or tokens
+    if os.path.isdir(hub_cache):
+        try:
+            shutil.rmtree(hub_cache)
+        except Exception:
+            pass
+
+
+def _rule_label(words: list[str]) -> str:
+    """Fast deterministic fallback: title-case first 3 words."""
+    return " / ".join(w.capitalize() for w in words[:3])
+
+
+@app.route("/api/llm_label_topics", methods=["POST"])
+def llm_label_topics():
+    res = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
+
+    topic_list = "\n".join(
+        f"Tópico {tp['id']+1}: {', '.join(tp['words'][:10])}"
+        for tp in topics
+    )
+    prompt = f"""Eres un experto en análisis de texto. Se te dan los tópicos descubiertos por un modelo LDA/NMF/LSA.
+Para cada tópico, propón una etiqueta descriptiva corta (2-4 palabras en español) que capture el tema principal.
+
+Tópicos:
+{topic_list}
+
+Responde ÚNICAMENTE con un JSON válido con esta estructura exacta (sin explicación extra):
+{{
+  "labels": [
+    {{"id": 0, "label": "Etiqueta del tópico 1"}},
+    {{"id": 1, "label": "Etiqueta del tópico 2"}}
+  ],
+  "reasoning": "Una frase breve explicando el criterio de etiquetado"
+}}"""
+
+    raw = _call_llm(prompt)
+
+    # Parse JSON from LLM response
+    labels_out = []
+    reasoning  = ""
+    llm_ok     = False
+
+    if raw:
+        # Extract first JSON block from response
+        json_match = re.search(r'\{[\s\S]*\}', raw)
+        if json_match:
+            try:
+                parsed    = json.loads(json_match.group())
+                llm_labels = parsed.get("labels", [])
+                reasoning  = parsed.get("reasoning", "")
+                if llm_labels:
+                    for tp in topics:
+                        match = next((l for l in llm_labels if l.get("id") == tp["id"]), None)
+                        lbl   = match["label"] if match else _rule_label(tp["words"])
+                        labels_out.append({"id": tp["id"], "label": lbl, "words": tp["words"]})
+                    llm_ok = True
+            except Exception:
+                pass
+
+    if not llm_ok:
+        # Fallback: rule-based labels (first 3 words, capitalised)
+        for tp in topics:
+            labels_out.append({
+                "id":    tp["id"],
+                "label": _rule_label(tp["words"]),
+                "words": tp["words"]
+            })
+        reasoning = "Etiquetado automático por reglas (Hugging Face no disponible o sin respuesta)."
+
+    # Store labels in results for later reference
+    S["results"]["topic_labels"] = {str(item["id"]): item["label"] for item in labels_out}
+
+    return jsonify({"labels": labels_out, "reasoning": reasoning, "llm_used": llm_ok})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# NATIVE SAVE DIALOG  — uses pywebview file dialog
+# ════════════════════════════════════════════════════════════════════════════
+
+def _build_session_zip(canvas_json: str) -> bytes:
+    """Build the session ZIP in memory and return raw bytes."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("canvas.json", canvas_json)
+
+        data_payload = {
+            "dataset_name": S["dataset_name"], "task": S["task"],
+            "texts": S["texts"], "labels": S["labels"],
+            "label_names": S["label_names"], "active_steps": S["active_steps"],
+            "columns": S["columns"], "csv_source": S.get("csv_source", ""),
+        }
+        zf.writestr("data.json", json.dumps(data_payload, ensure_ascii=False, indent=2))
+
+        if S["processed_texts"]:
+            csv_buf = io.StringIO()
+            writer  = csv.writer(csv_buf)
+            has_labels = bool(S["labels"])
+            writer.writerow(["idx", "original_text", "processed_text"] + (["label"] if has_labels else []))
+            for i, (orig, proc) in enumerate(zip(S["texts"], S["processed_texts"])):
+                row = [i, orig, proc]
+                if has_labels and i < len(S["labels"]):
+                    row.append(S["label_names"][S["labels"][i]] if S["label_names"] else S["labels"][i])
+                writer.writerow(row)
+            zf.writestr("preprocessed.csv", csv_buf.getvalue())
+
+        if S["model"] is not None and S["vectorizer"] is not None:
+            model_buf = io.BytesIO()
+            joblib.dump({"model": S["model"], "vectorizer": S["vectorizer"],
+                         "label_names": S["label_names"], "active_steps": S["active_steps"]}, model_buf)
+            zf.writestr("model.pkl", model_buf.getvalue())
+
+        if S["results"]:
+            zf.writestr("results.json", json.dumps(_safe_results_for_json(S["results"]),
+                                                    ensure_ascii=False, indent=2))
+            rep_txt = ""
+            if "processed" in S["results"]:
+                rep_txt = S["results"]["processed"].get("report_txt", "")
+            elif "topics" in S["results"]:
+                lines = ["NLP Flow — Topic Model Report", "="*40]
+                for tp in S["results"].get("topics", []):
+                    lbl = S["results"].get("topic_labels", {}).get(str(tp["id"]), "")
+                    lines.append(f"\nTópico {tp['id']+1}" + (f" [{lbl}]" if lbl else "") +
+                                 f": {', '.join(tp['words'][:10])}")
+                rep_txt = "\n".join(lines)
+            if rep_txt:
+                zf.writestr("report.txt", rep_txt)
+
+        # Word freq plot
+        try:
+            img = _wordfreq_b64()
+            if img:
+                zf.writestr("plots/word_frequency.png", base64.b64decode(img))
+        except Exception:
+            pass
+
+        # Results plot
+        try:
+            if S["results"]:
+                plot_resp = app.test_client().get("/api/plot_results")
+                pd = json.loads(plot_resp.data)
+                if pd.get("img"):
+                    zf.writestr("plots/results.png", base64.b64decode(pd["img"]))
+        except Exception:
+            pass
+
+        readme = f"""NLP Flow Session
+================
+Dataset : {S['dataset_name'] or '—'}
+Task    : {S['task']}
+Texts   : {len(S['texts'])}
+Steps   : {', '.join(S['active_steps']) or 'none'}
+Trained : {'yes' if S['model'] else 'no'}
+"""
+        zf.writestr("README.txt", readme)
+    buf.seek(0)
+    return buf.read()
+
+
+@app.route("/api/pick_save_path", methods=["POST"])
+def pick_save_path():
+    """
+    Open a native Save-File dialog via pywebview, write the ZIP to the
+    chosen path, and return {"path": ...} or {"cancelled": true}.
+    """
+    body       = request.json or {}
+    canvas_json = body.get("canvas", "{}")
+
+    # Try to get the pywebview window reference
+    try:
+        import webview
+        windows = webview.windows
+        if not windows:
+            raise RuntimeError("no window")
+        win = windows[0]
+
+        # open_file_dialog with save mode
+        result = win.create_file_dialog(
+            webview.SAVE_DIALOG,
+            directory    = os.path.expanduser("~"),
+            save_filename= "nlpflow_session.zip",
+            file_types   = ("ZIP Archive (*.zip)", "All files (*.*)")
+        )
+
+        if not result:
+            return jsonify({"cancelled": True})
+
+        # result is a string path (pywebview ≥ 4) or list[str] (older)
+        save_path = result[0] if isinstance(result, (list, tuple)) else result
+        if not save_path:
+            return jsonify({"cancelled": True})
+
+        # Ensure .zip extension
+        if not save_path.lower().endswith(".zip"):
+            save_path += ".zip"
+
+        zip_bytes = _build_session_zip(canvas_json)
+        with open(save_path, "wb") as f:
+            f.write(zip_bytes)
+
+        return jsonify({"path": save_path})
+
+    except Exception as e:
+        # pywebview unavailable (e.g. running plain browser) → fallback to download
+        return jsonify({"error": str(e), "fallback": True})
+
+
+@app.route("/api/pick_export_img", methods=["POST"])
+def pick_export_img():
+    """Save a single base64-encoded PNG/JPG image via native Save dialog."""
+    body         = request.json or {}
+    img_b64      = body.get("img_b64", "")
+    default_name = body.get("default_name", "imagen.png")
+
+    if not img_b64:
+        return jsonify({"error": "No image data"}), 400
+
+    try:
+        img_bytes = base64.b64decode(img_b64)
+    except Exception as e:
+        return jsonify({"error": "Invalid base64: " + str(e)}), 400
+
+    ext = os.path.splitext(default_name)[1] or ".png"
+    try:
+        import webview
+        windows = webview.windows
+        if not windows:
+            raise RuntimeError("no window")
+        win    = windows[0]
+        result = win.create_file_dialog(
+            webview.SAVE_DIALOG,
+            directory     = os.path.expanduser("~"),
+            save_filename = default_name,
+            file_types    = ("PNG Image (*.png)", "JPEG Image (*.jpg)", "All files (*.*)")
+        )
+        if not result:
+            return jsonify({"cancelled": True})
+        save_path = result[0] if isinstance(result, (list, tuple)) else result
+        if not save_path:
+            return jsonify({"cancelled": True})
+        if not save_path.lower().endswith(ext):
+            save_path += ext
+        with open(save_path, "wb") as f:
+            f.write(img_bytes)
+        return jsonify({"path": save_path})
+    except Exception as e:
+        return jsonify({"error": str(e), "fallback": True})
+
+
+@app.route("/api/pick_export_wc_all", methods=["POST"])
+def pick_export_wc_all():
+    """Generate all topic word clouds and save them as a ZIP via native dialog."""
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
+
+    try:
+        from wordcloud import WordCloud
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for tp in topics:
+                words  = tp.get("words", [])
+                scores = tp.get("scores", [])
+                freq   = {w: float(s) for w, s in zip(words, scores)} if scores else {w: 1.0 for w in words}
+                wc = WordCloud(width=800, height=400, background_color="white",
+                               max_words=40, colormap="viridis").generate_from_frequencies(freq)
+                fig, ax = plt.subplots(figsize=(8, 4))
+                ax.imshow(wc, interpolation="bilinear")
+                ax.axis("off")
+                lbl = res.get("topic_labels", {}).get(str(tp["id"]), "")
+                ax.set_title("Tópico " + str(tp["id"]+1) + (" — " + lbl if lbl else ""),
+                             fontsize=13, pad=10)
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+                plt.close(fig)
+                buf.seek(0)
+                safe_lbl = lbl.replace(" ", "_").replace("/", "-") if lbl else ""
+                fname    = "topico_{:02d}".format(tp["id"]+1) + ("_" + safe_lbl if safe_lbl else "") + ".png"
+                zf.writestr(fname, buf.read())
+        zip_buf.seek(0)
+        zip_bytes = zip_buf.read()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    try:
+        import webview
+        windows = webview.windows
+        if not windows:
+            raise RuntimeError("no window")
+        win    = windows[0]
+        result = win.create_file_dialog(
+            webview.SAVE_DIALOG,
+            directory     = os.path.expanduser("~"),
+            save_filename = "wordclouds_topicos.zip",
+            file_types    = ("ZIP Archive (*.zip)", "All files (*.*)")
+        )
+        if not result:
+            return jsonify({"cancelled": True})
+        save_path = result[0] if isinstance(result, (list, tuple)) else result
+        if not save_path:
+            return jsonify({"cancelled": True})
+        if not save_path.lower().endswith(".zip"):
+            save_path += ".zip"
+        with open(save_path, "wb") as f:
+            f.write(zip_bytes)
+        return jsonify({"path": save_path})
+    except Exception as e:
+        return jsonify({"error": str(e), "fallback": True})
+
+
+@app.route("/api/pick_export_path", methods=["POST"])
+def pick_export_path():
+    """
+    Open a native Save-File dialog, generate the requested export content
+    (csv / model / report) and write it to the chosen path.
+    """
+    body         = request.json or {}
+    endpoint     = body.get("endpoint", "")
+    default_name = body.get("default_name", "export")
+    ext          = os.path.splitext(default_name)[1] or ".bin"
+
+    # Build the content bytes locally (no HTTP round-trip)
+    try:
+        if endpoint == "/api/export_csv":
+            texts = S["texts"]; proc = S["processed_texts"] or texts
+            if not texts: return jsonify({"error": "No data loaded"}), 400
+            csv_buf = io.StringIO()
+            writer  = csv.writer(csv_buf)
+            has_labels = bool(S["labels"])
+            writer.writerow(["idx","original_text","processed_text"] + (["label"] if has_labels else []))
+            for i,(orig,pr) in enumerate(zip(texts, proc)):
+                row = [i, orig, pr]
+                if has_labels and i < len(S["labels"]):
+                    row.append(S["label_names"][S["labels"][i]] if S["label_names"] else S["labels"][i])
+                writer.writerow(row)
+            content_bytes = csv_buf.getvalue().encode("utf-8")
+            file_types = ("CSV File (*.csv)", "All files (*.*)")
+
+        elif endpoint == "/api/export_model":
+            if S["model"] is None: return jsonify({"error": "No trained model"}), 400
+            model_buf = io.BytesIO()
+            joblib.dump({"model": S["model"], "vectorizer": S["vectorizer"],
+                         "label_names": S["label_names"], "active_steps": S["active_steps"]}, model_buf)
+            content_bytes = model_buf.getvalue()
+            file_types = ("Pickle File (*.pkl)", "All files (*.*)")
+
+        elif endpoint == "/api/export_report":
+            if not S["results"]: return jsonify({"error": "No results"}), 400
+            lines = [f"NLP Flow — Report\nDataset: {S['dataset_name']}\n" + "="*52]
+            if "topics" in S["results"]:
+                for tp in S["results"].get("topics", []):
+                    lbl = S["results"].get("topic_labels", {}).get(str(tp["id"]), "")
+                    lines.append(f"\nTópico {tp['id']+1}" + (f" [{lbl}]" if lbl else "") +
+                                 f": {', '.join(tp['words'][:10])}")
+            else:
+                for mode in ("processed","raw"):
+                    if mode not in S["results"]: continue
+                    r = S["results"][mode]
+                    lines.append(f"\n[{mode.upper()}]\nAccuracy: {r.get('acc','—')}%\nF1 Macro: {r.get('f1_macro','—')}%")
+                    if r.get("report_txt"): lines.append("\n" + r["report_txt"])
+            content_bytes = "\n".join(lines).encode("utf-8")
+            file_types = ("Text File (*.txt)", "All files (*.*)")
+
+        else:
+            return jsonify({"error": "Unknown endpoint"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    # Open native dialog
+    try:
+        import webview
+        windows = webview.windows
+        if not windows: raise RuntimeError("no window")
+        win    = windows[0]
+        result = win.create_file_dialog(
+            webview.SAVE_DIALOG,
+            directory     = os.path.expanduser("~"),
+            save_filename = default_name,
+            file_types    = file_types
+        )
+        if not result:
+            return jsonify({"cancelled": True})
+        save_path = result[0] if isinstance(result, (list, tuple)) else result
+        if not save_path:
+            return jsonify({"cancelled": True})
+        if not save_path.lower().endswith(ext):
+            save_path += ext
+        with open(save_path, "wb") as f:
+            f.write(content_bytes)
+        return jsonify({"path": save_path})
+    except Exception as e:
+        return jsonify({"error": str(e), "fallback": True})
+
+# ── Custom plot builder ──────────────────────────────────────────────────────
+@app.route("/api/plot_custom", methods=["POST"])
+def plot_custom():
+    """Flexible plot builder for the 📊 Plots block."""
+    body       = request.get_json(force=True, silent=True) or {}
+    plot_type  = body.get("type", "histogram")
+    x_col      = body.get("x", "")
+    y_col      = body.get("y", "")
+    color_col  = body.get("color", "")
+    node_id    = body.get("node", "")
+    task       = body.get("task", "classification")   # "classification" | "regression"
+    target_col = body.get("target_col", "")
+
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    cols = D["columns"]
+    task = task or D.get("task", "classification")
+    is_cls = (task == "classification")
+
+    if not rows:
+        return jsonify({"error": "No hay datos. Conecta este bloque a un bloque Datos y carga un dataset primero."}), 400
+
+    # Guard: regression-only types blocked for regression
+    if not is_cls and plot_type in ("bar", "pie"):
+        return jsonify({"error": f"El tipo '{plot_type}' no es aplicable a problemas de regresión (no hay variables categóricas de clase)."}), 400
+
+    def get_nums(col):
+        return [float(r.get(col,"")) for r in rows
+                if not _is_missing(r.get(col,"")) and _try_float(r.get(col,""))]
+    def get_cats(col):
+        return [str(r.get(col,"")) for r in rows if not _is_missing(r.get(col,""))]
+
+    num_cols_all = [c for c in cols if _col_type([r.get(c,"") for r in rows[:50]]) == "numeric"]
+    cat_cols_all = [c for c in cols if _col_type([r.get(c,"") for r in rows[:50]]) == "categorical"]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig.patch.set_facecolor(LIGHT)
+    style_ax(ax)
+
+    # ── HISTOGRAMA — todas las variables numéricas en un grid ─────────────────
+    if plot_type == "histogram":
+        sel_cols = num_cols_all[:12]   # cap at 12 subplots
+        if not sel_cols:
+            return jsonify({"error": "No hay columnas numéricas"}), 400
+        plt.close(fig)
+        n = len(sel_cols)
+        ncols_g = min(3, n)
+        nrows_g = (n + ncols_g - 1) // ncols_g
+        fig, axes = plt.subplots(nrows_g, ncols_g,
+                                 figsize=(ncols_g * 4.2, nrows_g * 3.2))
+        fig.patch.set_facecolor(LIGHT)
+        axes_flat = np.array(axes).flatten() if n > 1 else [axes]
+        for i, c in enumerate(sel_cols):
+            a = axes_flat[i]
+            style_ax(a)
+            nums = get_nums(c)
+            if not nums:
+                a.text(0.5, 0.5, "Sin datos", ha="center", va="center",
+                       transform=a.transAxes, color=SEC)
+                a.set_title(c, color=INK, fontsize=10, fontweight="bold"); continue
+            n_bins = min(25, max(8, len(set(nums))))
+            a.hist(nums, bins=n_bins, color=PALETTE[i % len(PALETTE)],
+                   edgecolor="white", linewidth=0.4, alpha=0.88)
+            mean_v   = float(np.mean(nums))
+            median_v = float(np.median(nums))
+            # Mode: most frequent value
+            from collections import Counter as _Cnt
+            mode_raw = _Cnt(round(v, 4) for v in nums).most_common(1)
+            mode_v   = mode_raw[0][0] if mode_raw else mean_v
+            a.axvline(mean_v,   color="#E8785A", linewidth=1.6, linestyle="--",
+                      label=f"Media {mean_v:.2f}", alpha=0.9)
+            a.axvline(median_v, color="#5CB88A", linewidth=1.6, linestyle=":",
+                      label=f"Mediana {median_v:.2f}", alpha=0.9)
+            a.axvline(mode_v,   color="#8B78C9", linewidth=1.6, linestyle="-.",
+                      label=f"Moda {mode_v:.2f}", alpha=0.9)
+            a.set_title(c, color=INK, fontsize=10, fontweight="bold")
+            a.yaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+            a.legend(facecolor=LIGHT, labelcolor=INK, fontsize=7,
+                     edgecolor=BORDER, loc="upper right")
+        # Hide unused axes
+        for j in range(len(sel_cols), len(axes_flat)):
+            axes_flat[j].set_visible(False)
+        plt.suptitle("Distribución de variables numéricas",
+                     color=INK, fontsize=13, fontweight="bold", y=1.01)
+        plt.tight_layout(pad=1.2, h_pad=1.8, w_pad=1.4)
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── BARRAS — frecuencia por clase target (clasificación) ─────────────────
+    elif plot_type == "bar":
+        # Use target col if available, else fall back to x_col
+        col_b = target_col if (target_col and target_col in cols) else x_col
+        if col_b not in cols:
+            return jsonify({"error": "No se encontró la columna objetivo. Elige una columna categórica."}), 400
+        cats = get_cats(col_b)
+        if not cats: return jsonify({"error": "Sin valores"}), 400
+        counts_b = Counter(cats)
+        top = counts_b.most_common(20)
+        labels_b, freqs = zip(*top)
+        total_b = sum(freqs)
+        bars = ax.barh(range(len(labels_b)), freqs,
+                       color=[PALETTE[i % len(PALETTE)] for i in range(len(labels_b))],
+                       edgecolor="none", height=0.65)
+        ax.set_yticks(range(len(labels_b)))
+        ax.set_yticklabels(labels_b, color=INK, fontsize=10)
+        ax.set_xlabel("Número de muestras", color=SEC, fontsize=11)
+        is_target = (col_b == target_col)
+        ax.set_title(
+            f"Distribución de clases — {col_b}" if is_target
+            else f"Frecuencia de {col_b}",
+            color=INK, fontsize=13, fontweight="bold")
+        if is_target:
+            ax.set_title(f"Distribución de la clase a predecir: {col_b}",
+                         color=INK, fontsize=13, fontweight="bold")
+        ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+        for b, f in zip(bars, freqs):
+            pct = round(f / total_b * 100, 1)
+            ax.text(f + max(freqs)*0.01, b.get_y() + b.get_height()/2,
+                    f"{int(f)} ({pct}%)", va="center", color=INK, fontsize=9, fontweight="600")
+
+    # ── BOXPLOT — normalizado por z-score si rangos muy dispares ─────────────
+    elif plot_type == "boxplot":
+        sel_b = num_cols_all[:8]
+        if not sel_b: return jsonify({"error": "No hay columnas numéricas"}), 400
+        data_boxes, labels_box = [], []
+        for c in sel_b:
+            n = get_nums(c)
+            if n: data_boxes.append(n); labels_box.append(c)
+        if not data_boxes: return jsonify({"error": "Sin datos"}), 400
+
+        # Detect if ranges are too disparate to show in one plot
+        # Metric: ratio of max IQR to min IQR (more robust than mean-based)
+        iqrs = []
+        for d in data_boxes:
+            q75, q25 = np.percentile(d, [75, 25])
+            iqrs.append(float(q75 - q25))
+        valid_iqrs = [v for v in iqrs if v > 0]
+        iqr_ratio = (max(valid_iqrs) / min(valid_iqrs)) if len(valid_iqrs) >= 2 else 1.0
+        # Also check raw range ratio
+        ranges = [max(d) - min(d) for d in data_boxes if d]
+        range_ratio = (max(ranges) / max(1e-9, min(r for r in ranges if r > 0))) if ranges else 1.0
+        # Only split into subplots when scales differ by more than 50×
+        use_subplots = (iqr_ratio > 50 or range_ratio > 100)
+
+        n_b = len(labels_box)
+        plt.close(fig)
+
+        if not use_subplots:
+            # All in one boxplot — most readable when scales are similar
+            fig, ax = plt.subplots(figsize=(max(6, n_b * 1.4), 5))
+            fig.patch.set_facecolor(LIGHT); style_ax(ax)
+            bp = ax.boxplot(data_boxes, patch_artist=True,
+                            medianprops=dict(color="#5CB88A", linewidth=2.2),
+                            boxprops=dict(linewidth=0),
+                            whiskerprops=dict(color=SEC, linewidth=1.2),
+                            capprops=dict(color=SEC, linewidth=1.2),
+                            flierprops=dict(marker="o", color=SEC, markersize=4,
+                                            alpha=0.4, linestyle="none"))
+            for patch, color in zip(bp["boxes"], PALETTE):
+                patch.set_facecolor(color); patch.set_alpha(0.75)
+            ax.set_xticks(range(1, n_b + 1))
+            ax.set_xticklabels(labels_box, rotation=20, ha="right", color=INK, fontsize=10)
+            ax.yaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+            ax.set_title("Boxplot de variables numéricas", color=INK, fontsize=13, fontweight="bold")
+        else:
+            # Subplots: each variable with its own y-axis scale
+            ncols_box = min(4, n_b)
+            nrows_box = (n_b + ncols_box - 1) // ncols_box
+            fig, axes_box = plt.subplots(nrows_box, ncols_box,
+                                         figsize=(ncols_box * 3.2, nrows_box * 3.5))
+            fig.patch.set_facecolor(LIGHT)
+            ax_list = np.array(axes_box).flatten() if n_b > 1 else [axes_box]
+            for i, (d, lbl) in enumerate(zip(data_boxes, labels_box)):
+                a = ax_list[i]; style_ax(a)
+                bp = a.boxplot([d], patch_artist=True,
+                               medianprops=dict(color="#5CB88A", linewidth=2.2),
+                               boxprops=dict(linewidth=0),
+                               whiskerprops=dict(color=SEC, linewidth=1.2),
+                               capprops=dict(color=SEC, linewidth=1.2),
+                               flierprops=dict(marker="o", color=SEC, markersize=4,
+                                               alpha=0.4, linestyle="none"))
+                bp["boxes"][0].set_facecolor(PALETTE[i % len(PALETTE)])
+                bp["boxes"][0].set_alpha(0.75)
+                a.set_title(lbl, color=INK, fontsize=10, fontweight="bold")
+                a.yaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+                a.set_xticks([])
+            for j in range(n_b, len(ax_list)):
+                ax_list[j].set_visible(False)
+            plt.suptitle("Boxplot por variable (escalas independientes)",
+                         color=INK, fontsize=13, fontweight="bold", y=1.01)
+        plt.tight_layout(pad=1.4)
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── DISPERSIÓN ───────────────────────────────────────────────────────────
+    elif plot_type == "scatter":
+        if x_col not in cols or y_col not in cols:
+            return jsonify({"error": "Selecciona columnas X e Y numéricas"}), 400
+        # For classification: color by target automatically; for regression: no color
+        eff_color = target_col if (is_cls and target_col and target_col in cols) else (
+                    color_col if (is_cls and color_col and color_col in cols) else "")
+        pairs = [(float(r.get(x_col,"")), float(r.get(y_col,"")),
+                  str(r.get(eff_color,"clase")) if eff_color else "puntos")
+                 for r in rows
+                 if not _is_missing(r.get(x_col,"")) and not _is_missing(r.get(y_col,""))
+                 and _try_float(r.get(x_col,"")) and _try_float(r.get(y_col,""))]
+        if not pairs: return jsonify({"error": "Sin datos numéricos para esos ejes"}), 400
+        uniq_g = sorted(set(p[2] for p in pairs))
+        for i, g in enumerate(uniq_g):
+            gp = [(p[0], p[1]) for p in pairs if p[2] == g]
+            gx, gy = zip(*gp)
+            ax.scatter(gx, gy, color=PALETTE[i % len(PALETTE)], alpha=0.68,
+                       s=28, edgecolors="none",
+                       label=g if eff_color and len(uniq_g) > 1 else None,
+                       zorder=3)
+        ax.set_xlabel(x_col, color=SEC, fontsize=11)
+        ax.set_ylabel(y_col, color=SEC, fontsize=11)
+        color_label = f" (color: {eff_color})" if eff_color else ""
+        ax.set_title(f"Dispersión: {x_col} vs {y_col}{color_label}",
+                     color=INK, fontsize=13, fontweight="bold")
+        ax.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+        if eff_color and len(uniq_g) > 1:
+            ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10,
+                      title=eff_color, markerscale=1.4, edgecolor=BORDER)
+
+    # ── CORRELACIÓN — rojo=+1, azul=-1 ───────────────────────────────────────
+    elif plot_type == "correlation":
+        num_cols_sel = num_cols_all
+        if len(num_cols_sel) < 2:
+            return jsonify({"error": "Se necesitan al menos 2 columnas numéricas"}), 400
+        num_cols_sel = num_cols_sel[:10]
+        matrix_data = []
+        for c in num_cols_sel:
+            matrix_data.append(get_nums(c))
+        min_len = min(len(d) for d in matrix_data)
+        matrix_data = [d[:min_len] for d in matrix_data]
+        corr = np.corrcoef(matrix_data)
+        plt.close(fig)
+        n = len(num_cols_sel)
+        fig, ax = plt.subplots(figsize=(max(5, n*0.9+1), max(4, n*0.9)))
+        fig.patch.set_facecolor(LIGHT); ax.set_facecolor(LIGHT)
+        from matplotlib.colors import LinearSegmentedColormap
+        # Rojo=+1 (correlación positiva fuerte), azul=-1 (negativa fuerte)
+        cmap = LinearSegmentedColormap.from_list("corr", ["#5B7FDB", "#ffffff", "#E8785A"])
+        im = ax.imshow(corr, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
+        ax.set_xticks(range(n))
+        ax.set_xticklabels(num_cols_sel, rotation=40, ha="right", color=INK, fontsize=9)
+        ax.set_yticks(range(n))
+        ax.set_yticklabels(num_cols_sel, color=INK, fontsize=9)
+        for i in range(n):
+            for j in range(n):
+                v = corr[i, j]
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center",
+                        color="white" if abs(v) > 0.55 else INK,
+                        fontsize=8, fontweight="600")
+        ax.set_title("Matriz de correlación",
+                     color=INK, fontsize=13, fontweight="bold")
+        cb = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.04)
+        cb.ax.tick_params(labelsize=8, colors=SEC)
+        ax.spines[["top","right","left","bottom"]].set_visible(False)
+        ax.tick_params(colors=SEC, labelsize=9)
+        plt.tight_layout(pad=1.4)
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── TARTA (solo clasificación) ────────────────────────────────────────────
+    elif plot_type == "pie":
+        col_p = target_col if (target_col and target_col in cols) else x_col
+        if col_p not in cols:
+            return jsonify({"error": "No se encontró la columna objetivo."}), 400
+        cats = get_cats(col_p)
+        if not cats: return jsonify({"error": "Sin valores"}), 400
+        counts_p = Counter(cats)
+        top_p = counts_p.most_common(10)
+        if len(counts_p) > 10:
+            others = sum(v for k, v in counts_p.items()
+                         if k not in dict(top_p))
+            top_p.append(("Otros", others))
+        labels_p, freqs_p = zip(*top_p)
+        plt.close(fig)
+        fig, ax = plt.subplots(figsize=(7, 5))
+        fig.patch.set_facecolor(LIGHT); ax.set_facecolor(LIGHT)
+        wedges, texts, autotexts = ax.pie(
+            freqs_p, labels=labels_p, autopct="%1.1f%%",
+            colors=PALETTE[:len(labels_p)], startangle=90,
+            pctdistance=0.80, labeldistance=1.10,
+            wedgeprops=dict(linewidth=0.5, edgecolor="white"))
+        for t in texts:    t.set_fontsize(10); t.set_color(INK)
+        for t in autotexts: t.set_fontsize(9); t.set_color("white"); t.set_fontweight("bold")
+        ax.set_title(f"Distribución de la clase a predecir: {col_p}",
+                     color=INK, fontsize=13, fontweight="bold")
+        plt.tight_layout(pad=1.2)
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── LÍNEAS — una línea por variable, normaliza si escalas muy dispares ────
+    elif plot_type == "line":
+        sel_l = num_cols_all[:6]
+        if not sel_l:
+            return jsonify({"error": "Sin columnas numéricas para gráfico de líneas"}), 400
+
+        all_vals = [get_nums(c) for c in sel_l]
+        all_vals = [(c, v) for c, v in zip(sel_l, all_vals) if v]
+        if not all_vals:
+            return jsonify({"error": "Sin datos"}), 400
+
+        # Detect if scales are too disparate — only split then
+        per_ranges = [max(vs) - min(vs) for _, vs in all_vals]
+        valid_ranges = [r for r in per_ranges if r > 0]
+        range_ratio_l = (max(valid_ranges) / min(valid_ranges)) if len(valid_ranges) >= 2 else 1.0
+        use_subplots_l = range_ratio_l > 50 and len(all_vals) > 1
+
+        plt.close(fig)
+        n_l = len(all_vals)
+
+        if not use_subplots_l:
+            # All series in one plot — most readable
+            fig, ax = plt.subplots(figsize=(9, 4.5))
+            fig.patch.set_facecolor(LIGHT); style_ax(ax)
+            for i, (c, vs) in enumerate(all_vals):
+                ax.plot(range(len(vs)), vs, color=PALETTE[i % len(PALETTE)],
+                        linewidth=1.6, alpha=0.85, label=c)
+            ax.set_xlabel("Índice", color=SEC, fontsize=11)
+            ax.set_ylabel("Valor", color=SEC, fontsize=11)
+            ax.set_title("Evolución de variables numéricas",
+                         color=INK, fontsize=13, fontweight="bold")
+            ax.yaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+            ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10, edgecolor=BORDER)
+        else:
+            # Subplots: each with its own y-axis scale
+            ncols_l = min(3, n_l)
+            nrows_l = (n_l + ncols_l - 1) // ncols_l
+            fig, axes_l = plt.subplots(nrows_l, ncols_l,
+                                       figsize=(ncols_l * 4.0, nrows_l * 2.8))
+            fig.patch.set_facecolor(LIGHT)
+            ax_list_l = np.array(axes_l).flatten() if n_l > 1 else [axes_l]
+            for i, (c, vs) in enumerate(all_vals):
+                a = ax_list_l[i]; style_ax(a)
+                a.plot(range(len(vs)), vs, color=PALETTE[i % len(PALETTE)],
+                       linewidth=1.6, alpha=0.85)
+                a.set_title(c, color=INK, fontsize=10, fontweight="bold")
+                a.yaxis.grid(True, color=BORDER, linewidth=0.4, zorder=0)
+                a.set_xlabel("Índice", color=SEC, fontsize=9)
+            for j in range(n_l, len(ax_list_l)):
+                ax_list_l[j].set_visible(False)
+            plt.suptitle("Evolución por variable (escalas independientes)",
+                         color=INK, fontsize=13, fontweight="bold", y=1.01)
+        plt.tight_layout(pad=1.4, h_pad=1.6, w_pad=1.2)
+        return jsonify({"img": fig_b64(fig)})
+
+    else:
+        return jsonify({"error": f"Tipo de gráfico desconocido: {plot_type}"}), 400
+
+    plt.tight_layout(pad=1.6)
+    return jsonify({"img": fig_b64(fig)})
+
+# ── Imbalance analysis (nuevo: comprensible) ─────────────────────────────────
+@app.route("/api/imbalance_analyze", methods=["POST"])
+def imbalance_analyze():
+    """Analyze class imbalance for a target column. Returns stats + chart."""
+    body       = request.get_json(force=True, silent=True) or {}
+    target_col = body.get("target_col", "")
+    node_id    = body.get("node", "")
+    D    = _effective_data(node_id)
+    rows = D["raw_rows"]
+    if not rows: return jsonify({"error": "No hay datos. Conecta a un bloque Datos."}), 400
+    if target_col not in D["columns"]:
+        return jsonify({"error": f"Columna '{target_col}' no encontrada"}), 400
+
+    targ = [str(r.get(target_col, "")) for r in rows if not _is_missing(r.get(target_col, ""))]
+    if not targ: return jsonify({"error": "La columna no tiene valores"}), 400
+
+    dist = Counter(targ)
+    total = sum(dist.values())
+    classes = sorted(dist.keys())
+    counts  = [dist[c] for c in classes]
+    pcts    = [round(dist[c] / total * 100, 1) for c in classes]
+    n_cls   = len(classes)
+    ratio   = round(max(counts) / max(1, min(counts)), 2) if n_cls > 1 else 1.0
+
+    # Ideal distribution % per class
+    ideal = round(100 / n_cls, 1) if n_cls > 0 else 100
+
+    # Status classification
+    if ratio < 1.5:
+        status = "balanced"; status_label = "Balanceado ✓"; status_color = MINT
+    elif ratio < 3:
+        status = "mild"; status_label = "Leve desbalanceo ⚠"; status_color = "#F59E0B"
+    elif ratio < 10:
+        status = "moderate"; status_label = "Desbalanceo moderado ⚠"; status_color = "#EF4444"
+    else:
+        status = "severe"; status_label = "Desbalanceo severo ✗"; status_color = "#991B1B"
+
+    # ── Figure: horizontal bars with ideal reference line ─────────────────
+    fig, ax = plt.subplots(figsize=(7, max(3, n_cls * 0.6 + 1.5)))
+    fig.patch.set_facecolor(LIGHT)
+    style_ax(ax)
+
+    bar_colors = [PALETTE[i % len(PALETTE)] for i in range(n_cls)]
+    bars = ax.barh(classes, pcts, color=bar_colors, edgecolor="none", height=0.55)
+
+    # Ideal line
+    ax.axvline(ideal, color=SEC, linewidth=1.4, linestyle="--",
+               label=f"Ideal ({ideal}%)", alpha=0.7)
+
+    for b, p in zip(bars, pcts):
+        ax.text(p + 0.5, b.get_y() + b.get_height()/2,
+                f"{p}%", va="center", color=INK, fontsize=10, fontweight="700")
+
+    ax.set_xlabel("% de muestras", color=SEC, fontsize=11)
+    ax.set_title(f"Distribución de clases — {target_col}", color=INK,
+                 fontsize=12, fontweight="bold")
+    ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
+    ax.set_xlim(0, max(pcts) * 1.2)
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10, edgecolor=BORDER)
+
+    plt.tight_layout(pad=1.4)
+
+    return jsonify({
+        "img": fig_b64(fig),
+        "classes": classes,
+        "counts": counts,
+        "pcts": pcts,
+        "total": total,
+        "ratio": ratio,
+        "ideal_pct": ideal,
+        "status": status,
+        "status_label": status_label,
+        "n_classes": n_cls,
+    })

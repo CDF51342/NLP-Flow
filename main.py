@@ -1,12 +1,16 @@
 """NLP Flow 4 — Native window launcher"""
 import threading, time, os
 import webview
-from server import app, PORT
+from server import app, PORT, cleanup_hf_cache
 
 ICON = os.path.join(os.path.dirname(__file__), "icon.png")
 
 def start_server():
     app.run(port=PORT, debug=False, use_reloader=False, threaded=True)
+
+def on_closed():
+    """Called by pywebview when the window is closed. Clean up HF cache."""
+    cleanup_hf_cache()
 
 if __name__ == "__main__":
     t = threading.Thread(target=start_server, daemon=True)
@@ -22,6 +26,7 @@ if __name__ == "__main__":
         background_color="#f5f5f5",
     )
     window = webview.create_window(**window_kwargs)
+    window.events.closed += on_closed
     start_kwargs = dict(debug=False)
     # pywebview ≥ 4.x accepts icon= in start(); older versions ignore it gracefully
     if os.path.exists(ICON):
