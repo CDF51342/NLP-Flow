@@ -53,13 +53,12 @@
       <div class="palette-item" data-type="inspect" draggable="true">🔬 Análisis</div>
       <div class="palette-item" data-type="plots" draggable="true">📊 Plots</div>
       <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
-      <div class="sb-group-label">📊 Clasificación</div>
-      <div class="palette-item" data-type="classifier" draggable="true">🧠 Clasificador</div>
-      <div class="palette-item" data-type="evaluation" draggable="true">📋 Evaluación</div>
-      <div class="palette-item" data-type="confmatrix" draggable="true">🔲 Conf. Matrix</div>
-      <div class="palette-item" data-type="imbalance" draggable="true">⚖️ Desbalanceo</div>
-      <div class="sb-group-label">📉 Regresión</div>
-      <div class="palette-item" data-type="regression" draggable="true">📉 Regresión</div>
+      <div class="sb-group-label">🤖 Modelos</div>
+      <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
+      <div class="palette-item" data-type="model_eval" draggable="true">📋 Evaluación</div>
+      <div class="sb-group-label">💾 Sesión</div>
+      <div class="palette-item" data-type="save_model" draggable="true">💾 Guardar</div>
+      <div class="palette-item" data-type="load_model" draggable="true">📂 Cargar Modelo</div>
       <div class="sb-group-label">🗂️ NLP</div>
       <div class="palette-item" data-type="training" draggable="true">🧠 Entrenamiento NLP</div>
       <div class="palette-item" data-type="topicmodel" draggable="true">🗂️ Topic Model</div>
@@ -545,29 +544,27 @@ var META = {
   inspect:      { icon: "🔬",  bg: "#f0f8ff", name: "Análisis" },
   plots:        { icon: "📊",  bg: "#fdf5ff", name: "Plots" },
   preprocess:   { icon: "🔧",  bg: "#f5f5f5", name: "Preprocesado" },
-  classifier:   { icon: "🧠",  bg: "#f0fff4", name: "Clasificador" },
-  evaluation:   { icon: "📋",  bg: "#f0f8ff", name: "Evaluación" },
-  confmatrix:   { icon: "🔲",  bg: "#fff8f0", name: "Conf. Matrix" },
-  imbalance:    { icon: "⚖️",  bg: "#fff5f0", name: "Desbalanceo" },
-  regression:   { icon: "📉",  bg: "#fff0f5", name: "Regresión" },
+  linreg:       { icon: "📉",  bg: "#fff0f5", name: "Regresión Lineal" },
+  model_eval:   { icon: "📋",  bg: "#f0faff", name: "Evaluación" },
+  save_model:   { icon: "💾",  bg: "#f0fff4", name: "Guardar" },
+  load_model:   { icon: "📂",  bg: "#f0faff", name: "Cargar Modelo" },
   training:     { icon: "🧠",  bg: "#f5f0ff", name: "Entrenamiento NLP" },
   topicmodel:   { icon: "🗂️", bg: "#f0f4ff", name: "Topic Model" },
   classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP" }
 };
 var ALLOWED = {
   // Exploración de datos — cualquier bloque de exploración puede recibir desde datos o desde preprocesado
-  data:         ["inspect","plots","preprocess","imbalance"],
+  data:         ["inspect","plots","preprocess","linreg"],
   inspect:      [],
-  plots:        [],
-  // Preprocesado → exploración (para ver datos transformados) O → modelos
-  preprocess:   ["inspect","plots","classifier","regression","training","topicmodel","classify"],
-  // Clasificación
-  classifier:   ["evaluation","confmatrix","scatter"],
-  evaluation:   ["confmatrix"],
-  confmatrix:   [],
-  imbalance:    ["classifier"],
-  // Regresión
-  regression:   [],
+  plots:        ["save_model"],
+  // Preprocesado → exploración (para ver datos transformados) O → modelos O → guardar
+  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model"],
+  // Modelos
+  linreg:       ["model_eval","save_model"],
+  model_eval:   ["save_model"],
+  // Sesión
+  save_model:   [],
+  load_model:   ["model_eval","save_model"],
   // NLP
   training:     ["classify"],
   topicmodel:   [],
@@ -653,6 +650,15 @@ function selectNode(n, multi) {
 
 function deleteNode(n) {
   if (!n) return;
+  // If deleting a data/preprocess node, clear plotHistory of connected plots nodes
+  if (n.type === "data" || n.type === "preprocess") {
+    edges.forEach(function(e) {
+      if (e.from === n.id) {
+        var tn = nodeById(e.to);
+        if (tn && tn.type === "plots" && tn.data) tn.data.plotHistory = [];
+      }
+    });
+  }
   edges = edges.filter(function(e) { return e.from !== n.id && e.to !== n.id; });
   n.el.remove();
   nodes = nodes.filter(function(nd) { return nd.id !== n.id; });
@@ -668,6 +674,14 @@ function deleteSelected() {
   if (!selectedNodes.size) return;
   var toDelete = Array.from(selectedNodes).map(function(id) { return nodeById(id); }).filter(Boolean);
   toDelete.forEach(function(n) {
+    if (n.type === "data" || n.type === "preprocess") {
+      edges.forEach(function(e) {
+        if (e.from === n.id) {
+          var tn = nodeById(e.to);
+          if (tn && tn.type === "plots" && tn.data) tn.data.plotHistory = [];
+        }
+      });
+    }
     edges = edges.filter(function(e) { return e.from !== n.id && e.to !== n.id; });
     n.el.remove();
     nodes = nodes.filter(function(nd) { return nd.id !== n.id; });
@@ -892,6 +906,13 @@ window.addEventListener("mouseup", function(e) {
     if (fromN && toN && toId !== connectState.fromNid) {
       var ok = (ALLOWED[fromN.type] || []).indexOf(toN.type) !== -1;
       if (ok) {
+        // If reconnecting a plots node to a different data/preprocess source, clear its history
+        if (toN.type === "plots") {
+          var prevEdge = edges.find(function(ed) { return ed.to === toId; });
+          if (prevEdge && String(prevEdge.from) !== String(connectState.fromNid)) {
+            if (toN.data) toN.data.plotHistory = [];
+          }
+        }
         edges = edges.filter(function(ed) { return ed.to !== toId; });
         edges.push({ from: connectState.fromNid, to: toId });
         markPorts();
@@ -1111,21 +1132,17 @@ function openModal(node) {
   else if (node.type === "inspect")       renderInspect(node);
   else if (node.type === "plots")         renderPlots(node);
   else if (node.type === "preprocess")    renderPre(node);
-  else if (node.type === "regression")    renderRegression(node);
-  else if (node.type === "classifier")    renderClassifier(node);
-  else if (node.type === "evaluation")    renderEvaluation(node);
-  else if (node.type === "confmatrix")    renderConfMatrix(node);
-  else if (node.type === "imbalance")     renderImbalance(node);
+  else if (node.type === "linreg")        renderLinreg(node);
+  else if (node.type === "model_eval")    renderModelEval(node);
+  else if (node.type === "save_model")    renderSaveModel(node);
+  else if (node.type === "load_model")    renderLoadModel(node);
   else if (node.type === "training")     renderTrain(node);
   else if (node.type === "topicmodel")   renderTopicModel(node);
   else if (node.type === "classify")     renderClassify(node);
 
 }
 function closeModal() {
-  // Clear plot history on the node being closed so each session starts fresh
-  if (currentNode && currentNode.data && currentNode.data.plotHistory) {
-    currentNode.data.plotHistory = [];
-  }
+  // plotHistory is intentionally NOT cleared here — it persists until data changes
   // Release any pinned modal height
   var modalEl = document.getElementById("modal");
   if (modalEl) { modalEl.style.height = ""; modalEl.style.transition = ""; }
@@ -1776,8 +1793,14 @@ async function renderClassifier(node) {
 
     node.data.clsTarget = target; node.data.clsModels = models;
     node.data.clsK = k; node.data.clsTrees = trees;
+
+    // Resolve upstream node ID to pass correct data context to server
+    var upRef = resolveDataNode(node.id);
+    var upNodeId = upRef.ok ? upRef.nodeId : "";
+
     node.data.clsLastReq = {target_col:target, models:models, normalize:norm,
       test_size:split, imbalance_strategy:imbal,
+      node: upNodeId,
       hp:{logistic:{C:C}, knn:{k:k}, random_forest:{n_estimators:trees}, svm:{C:C}}};
 
     var statEl  = document.getElementById("clf-status");
@@ -1915,9 +1938,11 @@ async function renderEvaluation(node) {
     if (!target) { toast("Selecciona variable objetivo"); return; }
     var resEl  = document.getElementById("ev-results");
     resEl.innerHTML = '<div class="loading" style="font-size:12px">Ejecutando '+k+'-fold CV…</div>';
+    var evUpRef = clfNode ? resolveDataNode(clfNode.id) : {ok:false};
+    var evNodeId = evUpRef.ok ? evUpRef.nodeId : "";
     var resp = await fetch("/api/tab_classify_cv", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({model:model, target_col:target, k_folds:k, normalize:norm})
+      body: JSON.stringify({model:model, target_col:target, k_folds:k, normalize:norm, node:evNodeId})
     });
     var d = await resp.json();
     if (d.error){ resEl.innerHTML='<div style="color:#ff6b6b">'+d.error+'</div>'; return; }
@@ -2201,242 +2226,1063 @@ async function renderTabClassify(node) {
   mBody.innerHTML = '<div style="padding:20px;color:var(--sec)">Este bloque ha sido reemplazado. Usa los bloques individuales: 🧠 Clasificador → 📋 Evaluación → 🔲 Conf. Matrix.</div>';
 }
 
-// ═══════════════════════════════════════════
-// REGRESSION modal  (OLS · Ridge · LASSO · CV)
-// ═══════════════════════════════════════════
-async function renderRegression(node) {
-  var infoResp = await fetch("/api/tabular_info");
-  var info = await infoResp.json();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LINREG MODAL — Bloque Modelo: Regresión Lineal
+// ═══════════════════════════════════════════════════════════════════
+async function renderLinreg(node) {
+  var info = await _getTabInfo(node);
   if (info.error) {
     mBody.innerHTML = '<div style="padding:20px;color:#ff6b6b">' + info.error + '. Carga primero un dataset tabular.</div>';
     return;
   }
-  var cols = info.columns || [];
-  var numCols = cols.filter(function(c){ return c.type==="numeric"; });
-  var allNames = cols.map(function(c){ return c.name; });
 
+  // ── Resolve upstream context ──────────────────────────────────────────────
+  // Walk the full edge graph upstream from this node to find:
+  //   - the nearest preprocess node (for split info), whether applied or not
+  //   - the data node (for target column)
+  var dataNodeId = "";
+  var prepNodeId = "";
+  var upstreamTarget = "";
+  var splitInfo = { has_split: false, ratio: 0.7, mode: "aleatorio" };
+
+  // BFS upstream — do NOT require applied=true for preprocess, just connected
+  (function() {
+    var visited = {};
+    var queue = [node.id];
+    while (queue.length) {
+      var cur = queue.shift();
+      if (visited[cur]) continue;
+      visited[cur] = true;
+      for (var i = 0; i < edges.length; i++) {
+        if (edges[i].to !== cur) continue;
+        var fromN = nodeById(edges[i].from);
+        if (!fromN) continue;
+        if (fromN.type === "preprocess" && !prepNodeId) {
+          prepNodeId = String(fromN.id);
+          // Read split from node.data (set when user applies split)
+          if (fromN.data && fromN.data.splitRatio) {
+            splitInfo = { has_split: true, ratio: fromN.data.splitRatio, mode: fromN.data.splitMode || "aleatorio" };
+          }
+        }
+        if (fromN.type === "data" && !dataNodeId) {
+          dataNodeId = String(fromN.id);
+        }
+        queue.push(String(fromN.id));
+      }
+    }
+  })();
+
+  // Resolve target: try data node first, then info.target, then last numeric col
+  if (dataNodeId) {
+    var dN = nodeById(dataNodeId);
+    if (dN && dN.data && dN.data.targetCol) upstreamTarget = dN.data.targetCol;
+  }
+  if (!upstreamTarget && info.target) upstreamTarget = info.target;
+  if (!upstreamTarget && info.columns && info.columns.length) {
+    // last column is conventional default
+    upstreamTarget = info.columns[info.columns.length - 1].name;
+  }
+
+  // upstreamId: prefer preprocess node (it has processed rows), else data node
+  var upstreamId = prepNodeId || dataNodeId || "";
+
+  var testPct = Math.round((1 - splitInfo.ratio) * 100);
+
+  // ── Render ────────────────────────────────────────────────────────────────
   mBody.innerHTML =
-    '<div style="display:grid;grid-template-columns:260px 1fr;height:100%">' +
+    '<div style="display:grid;grid-template-columns:280px 1fr;height:100%;gap:0">' +
 
-    // ── LEFT config ─────────────────────────────────────────────────────
-    '<div style="padding:14px;display:flex;flex-direction:column;gap:10px;border-right:1px solid var(--border);overflow-y:auto">' +
+    // ── LEFT config ───────────────────────────────────────────────────────
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:14px;border-right:1px solid var(--border);overflow-y:auto">' +
 
-      '<div class="psec">' +
-        '<div class="ptitle">⚙️ Modelo</div>' +
-        '<div class="fg"><div class="fl">Algoritmo</div>' +
-          '<select class="inp" id="reg-method">' +
-            '<option value="ols">OLS — Regresión Lineal</option>' +
-            '<option value="ridge">Ridge  (L2)</option>' +
-            '<option value="lasso">LASSO  (L1)</option>' +
-          '</select></div>' +
-        '<div class="fg" id="reg-alpha-wrap"><div class="fl">Alpha (λ de regularización)</div>' +
-          '<div class="rrow"><input type="range" id="reg-alpha" min="-3" max="3" step="0.1" value="0">' +
-            '<span id="reg-alphav" style="min-width:50px;font-size:12px;font-weight:700">1.0</span></div></div>' +
-      '</div>' +
-
-      '<div class="psec">' +
-        '<div class="ptitle">📐 Normalización</div>' +
-        '<select class="inp" id="reg-norm">' +
-          '<option value="none">Sin normalización</option>' +
-          '<option value="minmax">Min-Max</option>' +
-          '<option value="zscore" selected>Z-score (recomendado)</option>' +
-        '</select>' +
-      '</div>' +
-
-      '<div class="psec">' +
-        '<div class="ptitle">🎯 Variable objetivo</div>' +
-        '<select class="inp" id="reg-target">' +
-          allNames.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join("") +
-        '</select>' +
-        '<div class="fg" style="margin-top:6px"><div class="fl">Proporción test</div>' +
-          '<div class="rrow"><input type="range" id="reg-split" min="0.1" max="0.5" step="0.05" value="0.3">' +
-            '<span id="reg-splitv" style="min-width:36px;font-size:12px;font-weight:700">30%</span></div></div>' +
-      '</div>' +
-
-      '<button class="btn btn-black" id="btn-reg-run" style="width:100%">▶ Ajustar modelo</button>' +
-
-      '<hr class="sep">' +
-
-      '<div class="psec">' +
-        '<div class="ptitle">🔄 Validación cruzada</div>' +
-        '<div class="fg"><div class="fl">Método</div>' +
-          '<select class="inp" id="cv-method">' +
-            '<option value="ridge">Ridge</option>' +
-            '<option value="lasso">LASSO</option>' +
-          '</select></div>' +
-        '<div class="fg"><div class="fl">Folds (K)</div>' +
-          '<select class="inp" id="cv-folds"><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select></div>' +
-        '<div style="font-size:11px;color:var(--sec);margin-top:4px">Prueba alphas: 0.001 → 100</div>' +
-        '<button class="btn btn-ghost btn-sm" id="btn-reg-cv" style="width:100%;margin-top:8px">🔄 Ejecutar CV</button>' +
-        '<div id="cv-res" style="margin-top:8px"></div>' +
-      '</div>' +
-
-      '<div class="psec">' +
-        '<div class="ptitle">ℹ️ Guía de modelos de regresión</div>' +
-        '<div style="font-size:11px;color:var(--ink);line-height:1.7">' +
-          '<b>OLS:</b> minimiza la suma de cuadrados de residuos. Sin penalización.<br>' +
-          '<b>Ridge (L2):</b> penaliza coeficientes grandes. Estabiliza multicolinealidad.<br>' +
-          '<b>LASSO (L1):</b> fuerza algunos coeficientes a cero → selección de variables.<br>' +
-          '<b>R²:</b> 1.0 = perfecto; 0 = predice solo la media; &lt;0 = peor que la media.<br>' +
-          '<b>CV:</b> elige el α que minimiza el RMSE en validación.' +
+      // Algorithm selector — visual cards
+      '<div>' +
+        '<div class="ptitle" style="margin-bottom:8px">⚙️ Algoritmo</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px" id="lr-algo-group">' +
+          _algoCard("linreg", "OLS — Regresión Lineal", "Sin regularización. Máxima interpretabilidad.", true) +
+          _algoCard("ridge", "Ridge  (L2)", "Penaliza coeficientes grandes. Estabiliza multicolinealidad.", false) +
+          _algoCard("lasso", "LASSO  (L1)", "Fuerza algunos coeficientes a cero → selección automática.", false) +
         '</div>' +
       '</div>' +
+
+      // Hyperparameters — fit_intercept always shown; alpha only for ridge/lasso
+      '<div>' +
+        '<div class="ptitle" style="margin-bottom:8px">🎛️ Hiperparámetros</div>' +
+        '<div style="display:flex;flex-direction:column;gap:8px">' +
+
+          // fit_intercept — auto or fixed value
+          '<div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface)">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:6px">Intercepto (β₀)</div>' +
+            '<div style="display:flex;gap:6px;margin-bottom:6px" id="lr-intercept-tabs">' +
+              '<button class="lr-itab active" data-mode="auto" style="flex:1;padding:5px 0;border-radius:6px;border:2px solid var(--accent);background:rgba(25,230,140,0.08);font-size:11px;font-weight:700;cursor:pointer;color:var(--ink)">Auto (OLS)</button>' +
+              '<button class="lr-itab" data-mode="zero" style="flex:1;padding:5px 0;border-radius:6px;border:2px solid var(--border);background:var(--surface);font-size:11px;font-weight:700;cursor:pointer;color:var(--sec)">Sin intercepto</button>' +
+              '<button class="lr-itab" data-mode="fixed" style="flex:1;padding:5px 0;border-radius:6px;border:2px solid var(--border);background:var(--surface);font-size:11px;font-weight:700;cursor:pointer;color:var(--sec)">Fijar valor</button>' +
+            '</div>' +
+            '<div id="lr-intercept-fixed-wrap" style="display:none;margin-top:4px">' +
+              '<input type="number" id="lr-intercept-val" step="any" placeholder="ej. 0.5" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:var(--surface);color:var(--ink)">' +
+            '</div>' +
+            '<div id="lr-intercept-desc" style="font-size:11px;color:var(--sec);margin-top:6px">El modelo estima el mejor intercepto automáticamente.</div>' +
+          '</div>' +
+
+          // alpha (ridge/lasso only)
+          '<div id="lr-alpha-wrap" style="display:none;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface)">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:6px">λ — Regularización</div>' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<input type="range" id="lr-alpha" min="-3" max="3" step="0.1" value="0" style="flex:1">' +
+              '<span id="lr-alphav" style="min-width:54px;font-size:13px;font-weight:700;color:var(--accent)">1.0</span>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-top:4px">Valores altos = más regularización. λ bajo ≈ OLS.</div>' +
+          '</div>' +
+
+        '</div>' +
+      '</div>' +
+
+      // Normalization — visual cards
+      '<div>' +
+        '<div class="ptitle" style="margin-bottom:8px">📐 Normalización de features</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px" id="lr-norm-group">' +
+          _normCard("none",   "Sin normalización", "Coeficientes en unidades originales. Usa si ya normalizaste en Preprocesado.", true) +
+          _normCard("zscore", "Z-score  (μ=0, σ=1)", "Permite comparar la magnitud de coeficientes entre variables.", false) +
+          _normCard("minmax", "Min-Max  [0, 1]", "Escala al rango 0–1. Sensible a outliers.", false) +
+        '</div>' +
+      '</div>' +
+
+      // Context info: target + split
+      '<div style="background:var(--bg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px">' +
+        '<div style="font-size:12px;display:flex;justify-content:space-between">' +
+          '<span style="color:var(--sec)">Variable objetivo</span>' +
+          '<b style="color:var(--ink)">' + (upstreamTarget || '— definida en Datos') + '</b>' +
+        '</div>' +
+        '<div style="font-size:12px;display:flex;justify-content:space-between">' +
+          '<span style="color:var(--sec)">Partición</span>' +
+          (splitInfo.has_split
+            ? '<b style="color:var(--accent)">'+Math.round(splitInfo.ratio*100)+'% train / '+testPct+'% test · '+splitInfo.mode+'</b>'
+            : '<b style="color:#f59e0b">70/30 aleatorio (sin Preprocesado)</b>') +
+        '</div>' +
+      '</div>' +
+
+      '<button class="btn btn-black" id="btn-lr-run" style="width:100%;margin-top:2px">▶ Entrenar modelo</button>' +
+
     '</div>' +
 
-    // ── RIGHT results ────────────────────────────────────────────────────
-    '<div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">' +
-      '<div id="reg-metrics" style="display:none">' +
-        '<div class="fl" style="margin-bottom:6px">Métricas</div>' +
-        '<div id="reg-metrics-content"></div>' +
-      '</div>' +
-      '<div id="reg-coef" style="display:none">' +
-        '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Coeficientes</div>' +
-        '<div id="reg-coef-img"></div>' +
-      '</div>' +
-      '<div id="reg-plots" style="display:none">' +
-        '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Predicho vs Real + Residuos</div>' +
-        '<div id="reg-plot-img"></div>' +
-      '</div>' +
-      '<div id="reg-cv-plot" style="display:none">' +
-        '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Curva CV (RMSE vs α)</div>' +
-        '<div id="reg-cv-img"></div>' +
-      '</div>' +
-    '</div>' +
+    // ── RIGHT: tab bar + panels ──────────────────────────────────────────
+    '<div style="display:flex;flex-direction:column;height:100%;overflow:hidden">' +
 
+      // Tab bar
+      '<div style="display:flex;border-bottom:1px solid var(--border);padding:0 12px;gap:2px;flex-shrink:0">' +
+        '<button class="lr-main-tab" data-panel="train" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:700;border-bottom:2px solid var(--accent);color:var(--ink)">🏋️ Entrenar</button>' +
+        '<button class="lr-main-tab" data-panel="cv" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:400;border-bottom:2px solid transparent;color:var(--sec)">🔍 CV Hiperparámetro</button>' +
+      '</div>' +
+
+      // ── Panel: Entrenar ────────────────────────────────────────────────
+      '<div id="lr-panel-train" style="flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px">' +
+
+      '<div id="lr-progress-wrap" style="display:none">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+          '<span class="fl" style="font-size:12px">Entrenamiento</span>' +
+          '<span id="lr-pct" style="font-size:11px;color:var(--sec);font-weight:700">0%</span>' +
+        '</div>' +
+        '<div style="background:var(--border);border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">' +
+          '<div id="lr-bar" style="height:100%;width:0%;background:var(--accent);border-radius:8px;transition:width 0.3s ease"></div>' +
+        '</div>' +
+        '<div id="lr-status" style="font-size:12px;color:var(--sec)">Iniciando…</div>' +
+      '</div>' +
+
+      '<div id="lr-quick-results" style="display:none">' +
+        '<div id="lr-metrics-grid"></div>' +
+        '<div style="margin-top:14px">' +
+          '<div class="fl" style="margin-bottom:8px;font-size:12px">Coeficientes — ordenados por magnitud absoluta</div>' +
+          '<div id="lr-coef-img"></div>' +
+        '</div>' +
+        '<div style="margin-top:12px;padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--sec);line-height:1.6">' +
+          '💡 Conecta el bloque <b>Evaluación</b> para ver: residuos, Q-Q plot, VIF, Durbin-Watson y Breusch-Pagan.' +
+        '</div>' +
+      '</div>' +
+
+      '<div id="lr-placeholder" style="color:var(--sec);font-size:12px;padding-top:4px;line-height:1.7">' +
+        'Selecciona el algoritmo y normalización, y pulsa <b>Entrenar modelo</b>.<br>' +
+        (upstreamTarget
+          ? '🎯 Variable objetivo: <b>'+upstreamTarget+'</b>'
+          : '⚠️ Define la variable objetivo en el bloque <b>Datos</b> primero.') +
+      '</div>' +
+
+      '</div>' + // end lr-panel-train
+
+      // ── Panel: CV ─────────────────────────────────────────────────────
+      '<div id="lr-panel-cv" style="flex:1;padding:16px;overflow-y:auto;display:none;flex-direction:column;gap:14px">' +
+
+        // Header info
+        '<div style="padding:12px 14px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--sec);line-height:1.6">' +
+          '<b style="color:var(--ink)">Grid Search + Validación Cruzada</b><br>' +
+          'Prueba todas las combinaciones de <b>hiperparámetro × normalización</b> usando K-fold CV. ' +
+          'El mejor modelo se entrena automáticamente y queda listo para Evaluación.' +
+        '</div>' +
+
+        '<div id="cv-params" style="display:flex;flex-direction:column;gap:12px">' +
+
+          '<div style="padding:12px;background:var(--bg);border-radius:8px">' +
+            '<div class="ptitle" style="margin-bottom:10px">⚙️ Configuración del barrido</div>' +
+            '<div id="cv-hparam-section" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">' +
+              '<div style="display:flex;gap:8px;align-items:flex-end">' +
+                '<div style="flex:1">' +
+                  '<div style="font-size:11px;color:var(--sec);margin-bottom:4px" id="cv-param-label">λ (alpha)</div>' +
+                  '<div style="font-size:10px;color:var(--sec);margin-bottom:3px" id="cv-scale-note">Escala logarítmica · valores = 10^exp</div>' +
+                  '<div style="display:flex;gap:6px">' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Mín exp</div>' +
+                      '<input type="number" id="cv-pmin" value="-4" step="0.5" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Máx exp</div>' +
+                      '<input type="number" id="cv-pmax" value="3" step="0.5" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Pasos</div>' +
+                      '<input type="number" id="cv-steps" value="15" min="3" max="40" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
+                  '</div>' +
+                '</div>' +
+                '<div style="width:80px">' +
+                  '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Folds (K)</div>' +
+                  '<input type="number" id="cv-folds" value="5" min="2" max="15" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px">' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+            // OLS: only folds (no param sweep)
+            '<div id="cv-ols-section" style="display:none;gap:8px">' +
+              '<div style="font-size:12px;color:var(--sec)">OLS no tiene hiperparámetro — se comparan las normalizaciones.</div>' +
+              '<div style="width:100px;margin-top:6px"><div style="font-size:11px;color:var(--sec);margin-bottom:4px">Folds (K)</div>' +
+                '<input type="number" id="cv-folds-ols" value="5" min="2" max="15" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px">' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          '<div style="font-size:11px;color:var(--sec);padding:8px 12px;background:var(--bg);border-radius:8px;line-height:1.6">' +
+            '🔒 <b>Sin data leakage:</b> la normalización se aplica dentro de cada fold mediante un Pipeline sklearn.' +
+          '</div>' +
+
+          '<button class="btn btn-black" id="btn-cv-run" style="width:100%">▶ Ejecutar Grid Search</button>' +
+          '<div id="cv-status" style="font-size:12px;color:var(--sec);text-align:center"></div>' +
+          '<div id="cv-result"></div>' +
+
+        '</div>' +
+
+      '</div>' + // lr-panel-cv
+
+    '</div>' + // right column
     '</div>';
 
-  // ── Alpha slider (log scale 10^x) ─────────────────────────────────────
-  var alphaSlider = document.getElementById("reg-alpha");
-  var alphaLabel  = document.getElementById("reg-alphav");
+  // ── Algo card click ───────────────────────────────────────────────────────
+  document.querySelectorAll(".lr-algo-card").forEach(function(card) {
+    card.onclick = function() {
+      document.querySelectorAll(".lr-algo-card").forEach(function(c){ _setCardActive(c, false); });
+      _setCardActive(this, true);
+      var isRegul = this.dataset.val !== "linreg";
+      document.getElementById("lr-alpha-wrap").style.display = isRegul ? "block" : "none";
+    };
+  });
+
+  // ── Norm card click ───────────────────────────────────────────────────────
+  document.querySelectorAll(".lr-norm-card").forEach(function(card) {
+    card.onclick = function() {
+      document.querySelectorAll(".lr-norm-card").forEach(function(c){ _setCardActive(c, false); });
+      _setCardActive(this, true);
+    };
+  });
+
+  // ── Alpha slider ──────────────────────────────────────────────────────────
+  var alphaSlider = document.getElementById("lr-alpha");
+  var alphaLabel  = document.getElementById("lr-alphav");
   function updateAlpha() {
     var val = Math.pow(10, parseFloat(alphaSlider.value));
     alphaLabel.textContent = val < 0.01 ? val.toExponential(1) : parseFloat(val.toFixed(4));
   }
   alphaSlider.oninput = updateAlpha; updateAlpha();
 
-  // ── Split slider ──────────────────────────────────────────────────────
-  var splitSlider = document.getElementById("reg-split");
-  var splitLabel  = document.getElementById("reg-splitv");
-  splitSlider.oninput = function() { splitLabel.textContent = Math.round(parseFloat(splitSlider.value)*100) + "%"; };
-
-  // ── Show/hide alpha when OLS selected ───────────────────────────────
-  document.getElementById("reg-method").onchange = function() {
-    document.getElementById("reg-alpha-wrap").style.display = this.value === "ols" ? "none" : "flex";
+  // ── Intercept tabs ────────────────────────────────────────────────────────
+  var interceptMode = "auto";
+  var interceptDescs = {
+    auto:  "El modelo estima el mejor intercepto automáticamente.",
+    zero:  "Sin intercepto: la recta pasa forzosamente por el origen.",
+    fixed: "El modelo ajusta solo los coeficientes, el intercepto queda fijo en el valor que indiques."
   };
-  document.getElementById("reg-alpha-wrap").style.display = "none";
+  document.querySelectorAll(".lr-itab").forEach(function(btn) {
+    btn.onclick = function() {
+      interceptMode = this.dataset.mode;
+      document.querySelectorAll(".lr-itab").forEach(function(b) {
+        b.style.border = "2px solid var(--border)";
+        b.style.background = "var(--surface)";
+        b.style.color = "var(--sec)";
+      });
+      this.style.border = "2px solid var(--accent)";
+      this.style.background = "rgba(25,230,140,0.08)";
+      this.style.color = "var(--ink)";
+      document.getElementById("lr-intercept-fixed-wrap").style.display = interceptMode === "fixed" ? "block" : "none";
+      document.getElementById("lr-intercept-desc").textContent = interceptDescs[interceptMode];
+    };
+  });
 
-  // Pre-select target from TAB state
-  var savedTarget = "";
-  try {
-    var stResp = await fetch("/api/session_status"); var stD = await stResp.json();
-    // fallback: pick last column
-    savedTarget = allNames[allNames.length - 1] || "";
-  } catch(e){}
-  if (savedTarget) {
-    var tSel = document.getElementById("reg-target");
-    for (var i=0; i<tSel.options.length; i++) if (tSel.options[i].value===savedTarget) { tSel.selectedIndex=i; break; }
-  }
+  // ── Train ─────────────────────────────────────────────────────────────────
+  document.getElementById("btn-lr-run").onclick = async function() {
+    var algoCard = document.querySelector(".lr-algo-card[data-active='1']");
+    var normCard = document.querySelector(".lr-norm-card[data-active='1']");
+    var method    = algoCard ? algoCard.dataset.val : "linreg";
+    var norm      = normCard ? normCard.dataset.val : "none";
+    var alpha     = Math.pow(10, parseFloat(alphaSlider.value));
+    var fitIntercept = interceptMode !== "zero";
+    var fixedIntercept = null;
+    if (interceptMode === "fixed") {
+      var fval = parseFloat(document.getElementById("lr-intercept-val").value);
+      if (!isNaN(fval)) fixedIntercept = fval;
+    }
+    var testSize = splitInfo.has_split ? (1 - splitInfo.ratio) : 0.3;
+    var upId = upstreamId;
 
-  // ── Run regression ────────────────────────────────────────────────────
-  document.getElementById("btn-reg-run").onclick = async function() {
-    var method  = document.getElementById("reg-method").value;
-    var alpha   = Math.pow(10, parseFloat(alphaSlider.value));
-    var norm    = document.getElementById("reg-norm").value;
-    var target  = document.getElementById("reg-target").value;
-    var split   = parseFloat(splitSlider.value);
-
-    var metricsEl = document.getElementById("reg-metrics");
-    metricsEl.style.display = "block";
-    document.getElementById("reg-metrics-content").innerHTML = '<div class="loading" style="font-size:12px">Ajustando modelo…</div>';
-
-    var resp = await fetch("/api/regression", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({method:method, alpha:alpha, normalize:norm, target_col:target, test_size:split})
-    });
-    var d = await resp.json();
-    if (d.error) {
-      document.getElementById("reg-metrics-content").innerHTML = '<div style="color:#ff6b6b">'+d.error+'</div>'; return;
+    if (!upstreamTarget) {
+      toast("⚠️ Define la variable objetivo en el bloque Datos primero"); return;
     }
 
+    document.getElementById("lr-placeholder").style.display = "none";
+    document.getElementById("lr-quick-results").style.display = "none";
+    document.getElementById("lr-progress-wrap").style.display = "block";
+    document.getElementById("lr-status").textContent = "Iniciando…";
+    document.getElementById("lr-bar").style.width = "0%";
+    document.getElementById("lr-pct").textContent = "0%";
+
+    await fetch("/api/model_train", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        node_id: node.id,
+        model_type: method,
+        alpha: alpha,
+        fit_intercept: fitIntercept,
+        fixed_intercept: fixedIntercept,
+        normalize: norm,
+        target_col: upstreamTarget,
+        test_size: testSize,
+        upstream_id: upId
+      })
+    });
+
+    // Poll
+    var done = false; var errMsg = null;
+    while (!done) {
+      await new Promise(function(r){ setTimeout(r, 180); });
+      var pr = await fetch("/api/model_train_poll");
+      var pd = await pr.json();
+      for (var i=0; i<pd.events.length; i++) {
+        var ev = pd.events[i];
+        document.getElementById("lr-bar").style.width = ev.pct + "%";
+        document.getElementById("lr-pct").textContent = ev.pct + "%";
+        if (ev.msg.startsWith("__done__")) { done=true; break; }
+        if (ev.msg.startsWith("__error__:")) { done=true; errMsg=ev.msg.slice(10); break; }
+        document.getElementById("lr-status").textContent = ev.msg;
+      }
+    }
+
+    if (errMsg) {
+      document.getElementById("lr-status").innerHTML = '<span style="color:#ff6b6b">❌ '+errMsg+'</span>';
+      return;
+    }
+    document.getElementById("lr-status").textContent = "✅ Entrenamiento completado";
+
+    var qr = await fetch("/api/model_result?node_id="+encodeURIComponent(node.id));
+    var d  = await qr.json();
+    if (d.error) {
+      document.getElementById("lr-status").innerHTML = '<span style="color:#ff6b6b">'+d.error+'</span>'; return;
+    }
+
+    node.data.linregTarget  = upstreamTarget;
+    node.data.linregModelId = node.id;
+    node.data.linregResult  = d;
+
     var tm = d.test_metrics, trm = d.train_metrics;
-    document.getElementById("reg-metrics-content").innerHTML =
-      '<div style="font-size:11px;color:var(--sec);margin-bottom:8px">' +
-        d.method.toUpperCase() + (d.method!=="ols"?" · α="+d.alpha:"") +
-        ' · '+d.normalize+' · train='+d.n_train+' / test='+d.n_test +
-      '</div>' +
-      '<div class="mgrid">' +
-        '<div class="mcard mcard-hi"><div class="mval">'+tm.R2+'</div><div class="mlbl">R² (test)</div></div>' +
-        '<div class="mcard mcard-hi"><div class="mval">'+tm.RMSE+'</div><div class="mlbl">RMSE</div></div>' +
-        '<div class="mcard"><div class="mval">'+tm.MAE+'</div><div class="mlbl">MAE</div></div>' +
-        '<div class="mcard"><div class="mval">'+tm.MAPE+'%</div><div class="mlbl">MAPE</div></div>' +
-        '<div class="mcard"><div class="mval">'+tm.MSE+'</div><div class="mlbl">MSE</div></div>' +
-      '</div>' +
-      '<div class="psec" style="margin-top:8px;font-size:11px;color:var(--sec)">' +
-        'Train → R²='+trm.R2+' RMSE='+trm.RMSE+
-      '</div>' +
-      '<div class="crep" style="margin-top:8px">' +
-        '<div class="crep-hdr" style="grid-template-columns:1.5fr 1fr"><span>Variable</span><span>Coeficiente</span></div>' +
-        d.coefficients.slice(0,10).map(function(c){
-          var color = c[1] > 0 ? 'var(--accent)' : '#ef4444';
-          return '<div class="crep-row" style="grid-template-columns:1.5fr 1fr">' +
-            '<span style="font-weight:600">'+c[0]+'</span>' +
-            '<span style="color:'+color+';font-weight:700">'+c[1]+'</span></div>';
-        }).join("") +
-      '</div>';
+    var isCls = d.problem_type === "classification";
+    var algLabel = method === "linreg" ? (isCls ? "Logístico" : "OLS") : method.toUpperCase();
+    var probLabel = isCls ? "🔵 Clasificación" : "🟠 Regresión";
 
-    setNS(node.id, d.method.toUpperCase() + " · R²=" + tm.R2);
-    setNB(node.id, "R²="+tm.R2, tm.R2 > 0.5 ? "badge-ok" : "badge-info");
-    setOK(node.id, true);
+    var metricsHtml;
+    if (isCls) {
+      var isOk = tm.accuracy > 0.7 ? "badge-ok" : "badge-info";
+      metricsHtml =
+        '<div class="mgrid">' +
+          '<div class="mcard mcard-hi"><div class="mval">'+(tm.accuracy*100).toFixed(1)+'%</div><div class="mlbl">Accuracy (test)</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">'+tm.f1+'</div><div class="mlbl">F1 (test)</div></div>' +
+          '<div class="mcard"><div class="mval">'+tm.precision+'</div><div class="mlbl">Precision</div></div>' +
+          '<div class="mcard"><div class="mval">'+tm.recall+'</div><div class="mlbl">Recall</div></div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:8px;padding:8px;background:var(--bg);border-radius:6px">' +
+          'Train → Acc='+(trm.accuracy*100).toFixed(1)+'% · F1='+trm.f1+' · Precision='+trm.precision+' · Recall='+trm.recall +
+        '</div>';
+      setNS(node.id, algLabel+' · Acc='+(tm.accuracy*100).toFixed(1)+'%');
+      setNB(node.id, 'Acc='+(tm.accuracy*100).toFixed(1)+'%', tm.accuracy>0.7?'badge-ok':'badge-info');
+    } else {
+      metricsHtml =
+        '<div class="mgrid">' +
+          '<div class="mcard mcard-hi"><div class="mval">'+tm.R2+'</div><div class="mlbl">R² (test)</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">'+tm.RMSE+'</div><div class="mlbl">RMSE</div></div>' +
+          '<div class="mcard"><div class="mval">'+tm.MAE+'</div><div class="mlbl">MAE</div></div>' +
+          '<div class="mcard"><div class="mval">'+tm.MAPE+'%</div><div class="mlbl">MAPE</div></div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:8px;padding:8px;background:var(--bg);border-radius:6px">' +
+          'Train → R²='+trm.R2+' · RMSE='+trm.RMSE+' · MAE='+trm.MAE +
+        '</div>';
+      setNS(node.id, algLabel+' · R²='+tm.R2);
+      setNB(node.id, 'R²='+tm.R2, tm.R2>0.5?'badge-ok':'badge-info');
+    }
 
-    // Coefficient chart
-    document.getElementById("reg-coef").style.display = "block";
-    document.getElementById("reg-coef-img").innerHTML =
+    document.getElementById("lr-metrics-grid").innerHTML =
+      '<div style="font-size:11px;color:var(--sec);margin-bottom:10px;display:flex;gap:10px;align-items:center">' +
+        '<span style="font-weight:700">'+probLabel+'</span>' +
+        '<span>'+algLabel+(method!=="linreg"?" · λ="+d.alpha:"")+" · "+norm+
+          " · train="+d.n_train+" / test="+d.n_test+" muestras"+'</span>' +
+      '</div>' + metricsHtml;
+
+    document.getElementById("lr-coef-img").innerHTML =
       '<img src="data:image/png;base64,'+d.coef_img+'" style="width:100%;cursor:zoom-in;border-radius:6px" onclick="expandImg(this.src)">';
 
-    // Scatter + residuals
-    document.getElementById("reg-plots").style.display = "block";
-    document.getElementById("reg-plot-img").innerHTML =
-      '<img src="data:image/png;base64,'+d.plot_img+'" style="width:100%;cursor:zoom-in;border-radius:6px" onclick="expandImg(this.src)">';
+    document.getElementById("lr-quick-results").style.display = "block";
+    setOK(node.id, true);
   };
 
-  // ── Cross-validation ──────────────────────────────────────────────────
-  document.getElementById("btn-reg-cv").onclick = async function() {
-    var method  = document.getElementById("cv-method").value;
-    var k       = parseInt(document.getElementById("cv-folds").value);
-    var target  = document.getElementById("reg-target").value;
-    var norm    = document.getElementById("reg-norm").value;
-    var cvResEl = document.getElementById("cv-res");
-    cvResEl.innerHTML = '<div class="loading" style="font-size:12px">Ejecutando CV…</div>';
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll(".lr-main-tab").forEach(function(btn) {
+    btn.onclick = function() {
+      document.querySelectorAll(".lr-main-tab").forEach(function(b) {
+        b.style.borderBottom = "2px solid transparent";
+        b.style.color = "var(--sec)";
+        b.style.fontWeight = "400";
+      });
+      this.style.borderBottom = "2px solid var(--accent)";
+      this.style.color = "var(--ink)";
+      this.style.fontWeight = "700";
+      var panel = this.dataset.panel;
+      document.getElementById("lr-panel-train").style.display = panel === "train" ? "flex" : "none";
+      document.getElementById("lr-panel-cv").style.display    = panel === "cv"    ? "flex" : "none";
+    };
+  });
 
-    var resp = await fetch("/api/regression_cv", {
+  // ── CV panel logic ────────────────────────────────────────────────────────
+  // CV config per model: { label, log, min, max, steps, isInt }
+  var CV_MODEL_CFG = {
+    linreg:   null,   // no hyperparameter
+    ridge:    { label:"λ (alpha)", log:true,  pmin:-4, pmax:3,  steps:20, isInt:false },
+    lasso:    { label:"λ (alpha)", log:true,  pmin:-4, pmax:3,  steps:20, isInt:false },
+    logistic: { label:"C",         log:true,  pmin:-3, pmax:3,  steps:20, isInt:false },
+    knn:      { label:"k vecinos", log:false, pmin:1,  pmax:25, steps:13, isInt:true  },
+  };
+
+  function _updateCvPanel() {
+    var algoCard = document.querySelector(".lr-algo-card[data-active='1']");
+    var method   = algoCard ? algoCard.dataset.val : "linreg";
+    var cfg      = CV_MODEL_CFG[method];
+    var hparamSec = document.getElementById("cv-hparam-section");
+    var olsSec    = document.getElementById("cv-ols-section");
+    if (!cfg) {
+      // OLS: no hyperparameter, only show folds
+      if (hparamSec) hparamSec.style.display = "none";
+      if (olsSec)    olsSec.style.display    = "flex";
+    } else {
+      if (hparamSec) hparamSec.style.display = "flex";
+      if (olsSec)    olsSec.style.display    = "none";
+      var lbl = document.getElementById("cv-param-label");
+      if (lbl) lbl.textContent = cfg.label;
+      var scaleEl = document.getElementById("cv-scale-note");
+      if (scaleEl) scaleEl.textContent = cfg.log ? "Escala logarítmica · valores = 10^exp" : "Escala lineal · valores directos";
+      // Restore defaults from cfg
+      var pminEl = document.getElementById("cv-pmin");
+      var pmaxEl = document.getElementById("cv-pmax");
+      var stepsEl = document.getElementById("cv-steps");
+      if (pminEl && cfg.pmin != null)  pminEl.value  = cfg.pmin;
+      if (pmaxEl && cfg.pmax != null)  pmaxEl.value  = cfg.pmax;
+      if (stepsEl && cfg.steps != null) stepsEl.value = cfg.steps;
+    }
+  }
+
+  // Patch algo card click to also refresh CV panel
+  document.querySelectorAll(".lr-algo-card").forEach(function(card) {
+    var origClick = card.onclick;
+    card.onclick = function() {
+      if (origClick) origClick.call(this);
+      _updateCvPanel();
+    };
+  });
+  _updateCvPanel();
+
+  document.getElementById("btn-cv-run").onclick = async function() {
+    var algoCard = document.querySelector(".lr-algo-card[data-active='1']");
+    var method   = algoCard ? algoCard.dataset.val : "ridge";
+    var cfg      = CV_MODEL_CFG[method];
+    var hasParam = !!cfg;
+
+    var kFolds = parseInt((hasParam
+      ? document.getElementById("cv-folds")
+      : document.getElementById("cv-folds-ols")).value) || 5;
+
+    var paramVals = null;
+    if (hasParam) {
+      var pMin  = parseFloat(document.getElementById("cv-pmin").value);
+      var pMax  = parseFloat(document.getElementById("cv-pmax").value);
+      var steps = parseInt(document.getElementById("cv-steps").value) || 15;
+      paramVals = [];
+      if (cfg.log) {
+        for (var i = 0; i < steps; i++) {
+          paramVals.push(Math.pow(10, pMin + (pMax - pMin) * i / (steps - 1)));
+        }
+      } else {
+        var stepSize = Math.max(1, Math.round((pMax - pMin) / (steps - 1)));
+        for (var v = Math.round(pMin); v <= Math.round(pMax); v += stepSize) {
+          paramVals.push(cfg.isInt ? Math.round(v) : v);
+        }
+      }
+    }
+
+    var cvStatusEl = document.getElementById("cv-status");
+    var cvResultEl = document.getElementById("cv-result");
+    cvStatusEl.textContent = "Ejecutando Grid Search " + kFolds + "-fold…";
+    cvResultEl.innerHTML   = '<div class="loading" style="font-size:12px">Calculando combinaciones…</div>';
+
+    var resp = await fetch("/api/model_cv", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({method:method, k_folds:k, target_col:target, normalize:norm})
+      body: JSON.stringify({
+        upstream_id: upstreamId,
+        node_id:     node.id,
+        target_col:  upstreamTarget,
+        method:      method,
+        k_folds:     kFolds,
+        param_vals:  paramVals
+      })
     });
-    var d = await resp.json();
-    if (d.error) { cvResEl.innerHTML = '<div style="color:#ff6b6b">'+d.error+'</div>'; return; }
+    var cvd = await resp.json();
+    cvStatusEl.textContent = "";
 
-    cvResEl.innerHTML =
-      '<div class="mcard mcard-hi" style="margin-bottom:6px">' +
-        '<div class="mval">α = '+d.best.alpha+'</div>' +
-        '<div class="mlbl">Mejor α → RMSE='+d.best.rmse_mean+'</div>' +
-      '</div>' +
-      '<div class="crep"><div class="crep-hdr" style="grid-template-columns:1fr 1fr 1fr"><span>α</span><span>RMSE medio</span><span>Std</span></div>' +
-      d.results.map(function(r){
-        var isBest = r.alpha === d.best.alpha;
-        return '<div class="crep-row' + (isBest?' crep-acc':'') + '" style="grid-template-columns:1fr 1fr 1fr">' +
-          '<span style="font-weight:'+(isBest?'700':'400')+'">'+r.alpha+'</span>' +
-          '<span style="color:'+(isBest?'var(--accent)':'inherit')+'">'+r.rmse_mean+'</span>' +
-          '<span style="font-size:11px;color:var(--sec)">±'+r.rmse_std+'</span></div>';
-      }).join("") + '</div>';
+    if (cvd.error) {
+      cvResultEl.innerHTML = '<div style="color:#ff6b6b">'+cvd.error+'</div>'; return;
+    }
 
-    document.getElementById("reg-cv-plot").style.display = "block";
-    document.getElementById("reg-cv-img").innerHTML =
-      '<img src="data:image/png;base64,'+d.cv_img+'" style="width:100%;cursor:zoom-in;border-radius:6px" onclick="expandImg(this.src)">';
+    // Store CV result in node for model_eval
+    node.data.cvResult = cvd;
+    // Mark that the best model is already trained (stored server-side)
+    node.data.cvModelReady = true;
+
+    var best     = cvd.best;
+    var normLbls = cvd.norm_labels || {none:"Sin norm.", zscore:"Z-score", minmax:"Min-Max"};
+    var bestNormLbl  = normLbls[best.norm] || best.norm;
+    var bestPvDisp   = cvd.best_pv_display;
+    var isReg        = cvd.problem_type === "regression";
+    var mainMetric   = isReg ? "R²" : "Accuracy";
+    var mainVal      = isReg
+      ? (cvd.test_metrics && cvd.test_metrics.R2 != null ? cvd.test_metrics.R2 : "—")
+      : (cvd.test_metrics && cvd.test_metrics.accuracy != null ? (cvd.test_metrics.accuracy*100).toFixed(1)+"%" : "—");
+    var secMetric  = isReg ? "RMSE" : "F1";
+    var secVal     = isReg
+      ? (cvd.test_metrics && cvd.test_metrics.RMSE != null ? cvd.test_metrics.RMSE : "—")
+      : (cvd.test_metrics && cvd.test_metrics.f1_macro != null ? cvd.test_metrics.f1_macro : "—");
+
+    // Best model summary card
+    var paramLine = hasParam
+      ? '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+(cfg.label||'param')+'</div><div style="font-size:18px;font-weight:800;color:var(--accent)">'+bestPvDisp+'</div></div>'
+      : '';
+    var resultHTML =
+      '<div style="display:flex;flex-direction:column;gap:12px">' +
+
+        // Best model card
+        '<div style="padding:14px;background:var(--bg);border-radius:10px;border:2px solid var(--accent)">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">✅ Mejor modelo encontrado</div>' +
+          '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">' +
+            '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">Normalización</div><div style="font-size:16px;font-weight:700;color:var(--ink)">'+bestNormLbl+'</div></div>' +
+            paramLine +
+            '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+cvd.metric_label+' (CV)</div><div style="font-size:16px;font-weight:700;color:var(--ink)">'+best.score_mean+'</div></div>' +
+            '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+mainMetric+' (test)</div><div style="font-size:16px;font-weight:700;color:var(--ink)">'+mainVal+'</div></div>' +
+            '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+secMetric+' (test)</div><div style="font-size:16px;font-weight:700;color:var(--ink)">'+secVal+'</div></div>' +
+          '</div>' +
+          '<div style="margin-top:10px;font-size:11px;color:var(--sec)">'+cvd.n_train+' train / '+cvd.n_test+' test · '+kFolds+'-fold CV · '+method.toUpperCase()+'</div>' +
+          '<button id="btn-cv-apply" class="btn btn-black" style="width:100%;margin-top:12px;font-size:13px">✅ Usar este modelo para Evaluación</button>' +
+        '</div>' +
+
+        // Grid search chart
+        '<div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:6px">Grid Search — una curva por normalización</div>' +
+          '<img src="data:image/png;base64,'+cvd.cv_img+'" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '</div>' +
+
+      '</div>';
+
+    cvResultEl.innerHTML = resultHTML;
+
+    // "Usar este modelo" → update train panel to reflect best combo, mark as trained
+    document.getElementById("btn-cv-apply").onclick = function() {
+      // Sync algo card (already correct, method didn't change)
+      // Sync norm card to best_norm
+      document.querySelectorAll(".lr-norm-card").forEach(function(c){
+        _setCardActive(c, c.dataset.val === best.norm);
+      });
+      // Sync alpha slider to best param if applicable
+      if (hasParam && best.param_val != null) {
+        var sl = document.getElementById("lr-alpha");
+        if (sl) {
+          sl.value = cfg.log ? Math.log10(best.param_val) : best.param_val;
+          sl.dispatchEvent(new Event("input"));
+        }
+      }
+      // Show train results in train panel using the CV-trained model metrics
+      var qr = document.getElementById("lr-quick-results");
+      var mg = document.getElementById("lr-metrics-grid");
+      var sb = document.getElementById("lr-status");
+      var pb = document.getElementById("lr-pct");
+      if (sb)  sb.textContent = "✅ Entrenamiento completado (Grid Search)";
+      if (pb)  pb.textContent = "100%";
+      if (mg && cvd.test_metrics) {
+        var tm = cvd.test_metrics;
+        var trm = cvd.train_metrics || {};
+        if (isReg) {
+          mg.innerHTML =
+            '<div style="font-size:10px;color:var(--sec);grid-column:1/-1;font-weight:700;margin-bottom:2px">🟠 Regresión</div>' +
+            '<div style="font-size:10px;font-weight:700;color:var(--sec);grid-column:1/-1">'+method.toUpperCase()+' · '+bestNormLbl+(bestPvDisp?' · λ='+bestPvDisp:'')+' · '+cvd.n_train+' train / '+cvd.n_test+' test</div>' +
+            _mCell(tm.R2,   "R² (test)") + _mCell(tm.RMSE, "RMSE") +
+            _mCell(tm.MAE,  "MAE") + _mCell((tm.MAPE||"—"), "MAPE","%") +
+            '<div style="font-size:10px;color:var(--sec);grid-column:1/-1;margin-top:4px">Train → R²='+(trm.R2||"—")+' · RMSE='+(trm.RMSE||"—")+' · MAE='+(trm.MAE||"—")+'</div>';
+        } else {
+          mg.innerHTML =
+            '<div style="font-size:10px;color:var(--sec);grid-column:1/-1;font-weight:700;margin-bottom:2px">🔵 Clasificación</div>' +
+            '<div style="font-size:10px;font-weight:700;color:var(--sec);grid-column:1/-1">'+method.toUpperCase()+' · '+bestNormLbl+(bestPvDisp?' · C='+bestPvDisp:'')+' · '+cvd.n_train+' train / '+cvd.n_test+' test</div>' +
+            _mCell((tm.accuracy*100).toFixed(1), "Accuracy","%") +
+            _mCell(tm.f1_macro,  "F1 macro") +
+            _mCell(tm.precision, "Precisión") +
+            _mCell(tm.recall,    "Recall");
+        }
+      }
+      if (qr) qr.style.display = "block";
+      document.querySelector(".lr-main-tab[data-panel='train']").click();
+      toast("✅ Mejor modelo aplicado: " + method.toUpperCase() + " · " + bestNormLbl + (bestPvDisp ? " · λ=" + bestPvDisp : ""));
+    };
   };
 }
+
+// small helper used in CV apply
+function _mCell(val, label, suffix) {
+  suffix = suffix || "";
+  return '<div style="background:var(--surface);border-radius:6px;padding:8px 10px">' +
+    '<div style="font-size:18px;font-weight:800;color:var(--ink)">'+(val != null ? val : "—")+suffix+'</div>' +
+    '<div style="font-size:10px;color:var(--sec)">'+label+'</div>' +
+  '</div>';
+}
+
+// Helper: render an algorithm selector card
+function _algoCard(val, title, desc, active) {
+  return '<div class="lr-algo-card" data-val="'+val+'" data-active="'+(active?'1':'0')+'" style="'+
+    'padding:10px 12px;border-radius:8px;cursor:pointer;border:2px solid '+(active?'var(--accent)':'var(--border)')+
+    ';background:'+(active?'rgba(25,230,140,0.07)':'var(--surface)')+';transition:all 0.15s">' +
+    '<div style="font-weight:700;font-size:12px;color:var(--ink)">'+title+'</div>' +
+    '<div style="font-size:11px;color:var(--sec);margin-top:2px;line-height:1.4">'+desc+'</div>' +
+  '</div>';
+}
+
+// Helper: render a normalization selector card
+function _normCard(val, title, desc, active) {
+  return '<div class="lr-norm-card" data-val="'+val+'" data-active="'+(active?'1':'0')+'" style="'+
+    'padding:10px 12px;border-radius:8px;cursor:pointer;border:2px solid '+(active?'var(--accent)':'var(--border)')+
+    ';background:'+(active?'rgba(25,230,140,0.07)':'var(--surface)')+';transition:all 0.15s">' +
+    '<div style="font-weight:700;font-size:12px;color:var(--ink)">'+title+'</div>' +
+    '<div style="font-size:11px;color:var(--sec);margin-top:2px;line-height:1.4">'+desc+'</div>' +
+  '</div>';
+}
+
+// Helper: toggle active state on a card
+function _setCardActive(card, active) {
+  card.dataset.active = active ? "1" : "0";
+  card.style.border = "2px solid " + (active ? "var(--accent)" : "var(--border)");
+  card.style.background = active ? "rgba(25,230,140,0.07)" : "var(--surface)";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODEL_EVAL MODAL — Bloque Evaluación (detecta modelo upstream)
+// ═══════════════════════════════════════════════════════════════════
+// Tipos de nodo que pueden alimentar Evaluación (ampliar aquí al añadir nuevos modelos)
+var _EVAL_MODEL_TYPES = ["linreg", "load_model"];
+
+async function renderModelEval(node) {
+  // Busca cualquier nodo upstream que sea un modelo conocido o un Cargar Modelo
+  var modelNode = null;
+  for (var i = 0; i < edges.length; i++) {
+    var fn = nodeById(edges[i].from);
+    if (fn && edges[i].to === node.id && _EVAL_MODEL_TYPES.indexOf(fn.type) !== -1) {
+      modelNode = fn; break;
+    }
+  }
+
+  if (!modelNode) {
+    mBody.innerHTML =
+      '<div style="padding:24px;color:var(--sec);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">' +
+        '<div style="font-size:32px">🔌</div>' +
+        '<div>Conecta un bloque de <b>Modelo</b> o <b>Cargar Modelo</b> a este bloque de Evaluación.</div>' +
+      '</div>';
+    return;
+  }
+
+  // Detectar si hay resultado: linreg usa linregResult, load_model usa loadedMeta
+  var hasResult = false;
+  if (modelNode.type === "load_model") {
+    hasResult = !!(modelNode.data && modelNode.data.loadedMeta);
+  } else {
+    // linreg y futuros modelos: comprobamos en el servidor directamente
+    // linregResult puede estar vacío si vino de CV — consultamos model_result
+    hasResult = !!(modelNode.data && modelNode.data.linregResult);
+    if (!hasResult) {
+      // CV case: el servidor tiene el resultado aunque el cliente no tenga linregResult
+      var chk = await fetch("/api/model_result?node_id=" + encodeURIComponent(modelNode.id)).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+      hasResult = !!(chk && !chk.error && (chk.model_type || chk.method));
+    }
+  }
+
+  mBody.innerHTML =
+    '<div style="display:grid;grid-template-columns:210px 1fr;height:100%;gap:0">' +
+
+    '<div style="padding:14px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--border);overflow-y:auto">' +
+      '<div class="psec">' +
+        '<div class="ptitle">🔗 Modelo conectado</div>' +
+        '<div style="font-size:12px;color:var(--ink);font-weight:600">' + (META[modelNode.type] ? META[modelNode.type].icon : "🤖") + ' ' + (META[modelNode.type] ? META[modelNode.type].name : modelNode.type) + '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:4px">' +
+          (hasResult ? '✅ Listo para evaluar' : '⚠️ Entrena o carga un modelo primero') +
+        '</div>' +
+      '</div>' +
+      '<button class="btn btn-black" id="btn-eval-run" style="width:100%"' + (hasResult ? '' : ' disabled') + '>📊 Evaluar</button>' +
+      (!hasResult ? '<div style="font-size:11px;color:#f59e0b;line-height:1.5">Entrena el modelo o cárgalo desde un .pkl.</div>' : '') +
+      '<div class="psec" style="margin-top:4px">' +
+        '<div class="ptitle">📖 Qué verás</div>' +
+        '<div style="font-size:11px;color:var(--ink);line-height:1.8">' +
+          '📊 <b>Métricas</b> completas<br>' +
+          '📈 <b>Gráficas</b>: predicho vs real, residuos, Q-Q<br>' +
+          '🔢 <b>Coeficientes</b> con intercepto<br>' +
+          '🔬 <b>Supuestos</b>: VIF, Durbin-Watson, Breusch-Pagan' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div style="display:flex;flex-direction:column;height:100%;overflow:hidden">' +
+      '<div id="eval-tabs" style="display:flex;gap:0;flex-shrink:0;border-bottom:1px solid var(--border)">' +
+        _evalTab("metrics","📊 Métricas", true) +
+        _evalTab("plots","📈 Gráficas", false) +
+        _evalTab("coef","🔢 Coeficientes", false) +
+        _evalTab("assump","🔬 Supuestos", false) +
+        _evalTab("cv","🔍 CV", false) +
+      '</div>' +
+      '<div id="eval-body" style="flex:1;overflow-y:auto;padding:16px">' +
+        '<div style="color:var(--sec);font-size:12px">' +
+          (hasResult ? 'Pulsa <b>Evaluar</b> para cargar el análisis completo.' : 'Entrena el modelo primero.') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '</div>';
+
+  // Restore evalData from previous evaluation if available
+  var evalData = node.data.evalResult || null;
+
+  // Tab switching
+  document.querySelectorAll(".me-tab").forEach(function(btn) {
+    btn.onclick = function() {
+      document.querySelectorAll(".me-tab").forEach(function(b){
+        b.style.borderBottom="2px solid transparent"; b.style.color="var(--sec)"; b.style.fontWeight="400";
+      });
+      this.style.borderBottom="2px solid var(--accent)"; this.style.color="var(--ink)"; this.style.fontWeight="700";
+      var clickedTab = this.dataset.tab;
+      // CV tab always renders (shows instructions if no CV data)
+      if (clickedTab === "cv") { _renderEvalTab("cv", evalData || {}, modelNode); return; }
+      // Other tabs only render once evalData is available
+      if (evalData) {
+        _renderEvalTab(clickedTab, evalData, modelNode);
+      } else {
+        var bodyEl = document.getElementById("eval-body");
+        if (bodyEl) bodyEl.innerHTML = '<div style="color:var(--sec);font-size:12px;padding:12px">Pulsa <b>Evaluar</b> primero para ver este apartado.</div>';
+      }
+    };
+  });
+  // Activate first tab visually and render if we have cached evalData
+  var firstTab = document.querySelector(".me-tab");
+  if (firstTab) { firstTab.style.borderBottom="2px solid var(--accent)"; firstTab.style.color="var(--ink)"; firstTab.style.fontWeight="700"; }
+
+  if (evalData) {
+    // Render immediately from cached result
+    _renderEvalTab("metrics", evalData, modelNode);
+  }
+
+  if (!hasResult) return;
+
+  document.getElementById("btn-eval-run").onclick = async function() {
+    var bodyEl = document.getElementById("eval-body");
+    bodyEl.innerHTML = '<div class="loading" style="font-size:12px">Calculando evaluación completa…</div>';
+    // Todos los tipos de modelo usan model_evaluate — load_model inyecta en _MODEL_STORE al cargar
+    var resp = await fetch("/api/model_evaluate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node_id: String(modelNode.id) })
+    });
+    evalData = await resp.json();
+    if (evalData.error) { bodyEl.innerHTML='<div style="color:#ff6b6b">'+evalData.error+'</div>'; return; }
+
+    // Persist evalData on the node so plots/metrics survive popup close
+    node.data.evalResult = evalData;
+
+    // Find active tab — fallback to metrics
+    var activeTabEl = null;
+    document.querySelectorAll(".me-tab").forEach(function(b) {
+      if (b.style.borderBottom && b.style.borderBottom.indexOf("transparent") === -1 && b.style.borderBottom !== "") activeTabEl = b;
+    });
+    _renderEvalTab(activeTabEl ? activeTabEl.dataset.tab : "metrics", evalData, modelNode);
+    var _em = evalData.test_metrics || {};
+    var _isCls = evalData.problem_type === "classification";
+    setNS(node.id, _isCls
+      ? "Evaluado · Acc="+(_em.accuracy!=null?(_em.accuracy*100).toFixed(1)+'%':'—')
+      : "Evaluado · R²="+(_em.R2||'—'));
+    setOK(node.id, true);
+  };
+}
+
+function _evalTab(id, label, active) {
+  return '<button class="me-tab" data-tab="'+id+'" style="padding:8px 14px;border:none;background:none;cursor:pointer;font-size:12px;'+
+    'border-bottom:2px solid '+(active?'var(--accent)':'transparent')+
+    ';color:'+(active?'var(--ink)':'var(--sec)')+
+    ';font-weight:'+(active?'700':'400')+
+    ';transition:all 0.15s">'+label+'</button>';
+}
+
+function _renderEvalTab(tab, d, modelNode) {
+  var bodyEl = document.getElementById("eval-body");
+  if (!bodyEl) return;
+  var isCls = d.problem_type === "classification";
+  var tm = d.test_metrics || {}, trm = d.train_metrics || {};
+
+  var headerHtml =
+    '<div style="font-size:11px;color:var(--sec);margin-bottom:12px;display:flex;gap:10px;align-items:center">' +
+      '<span style="font-weight:700;color:var(--ink)">'+(isCls?'🔵 Clasificación':'🟠 Regresión')+'</span>' +
+      '<span>'+(d.model_type||"OLS").toUpperCase()+(d.model_type&&d.model_type!=="linreg"?" · λ="+d.alpha:"")+" · target: <b>"+d.target_col+"</b>"+" · train="+d.n_train+" / test="+d.n_test+'</span>' +
+    '</div>';
+
+  // Helper: read a metric tolerating both upper and lower case keys
+  function _mv(obj, upper, lower) {
+    if (!obj) return '—';
+    var v = obj[upper] != null ? obj[upper] : (obj[lower] != null ? obj[lower] : null);
+    return v != null ? v : '—';
+  }
+
+  if (tab === "metrics") {
+    var testGrid, trainGrid;
+    if (isCls) {
+      testGrid =
+        '<div class="mgrid" style="margin-bottom:14px">' +
+          '<div class="mcard mcard-hi"><div class="mval">'+(_mv(tm,"accuracy","accuracy")!=='—'?(parseFloat(_mv(tm,"accuracy","accuracy"))*100).toFixed(1)+'%':'—')+'</div><div class="mlbl">Accuracy (test)</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">'+_mv(tm,"f1","f1")+'</div><div class="mlbl">F1</div></div>' +
+          '<div class="mcard"><div class="mval">'+_mv(tm,"precision","precision")+'</div><div class="mlbl">Precision</div></div>' +
+          '<div class="mcard"><div class="mval">'+_mv(tm,"recall","recall")+'</div><div class="mlbl">Recall</div></div>' +
+        '</div>';
+      trainGrid = Object.keys(trm).length
+        ? '<div class="mgrid" style="margin-bottom:14px">' +
+            '<div class="mcard"><div class="mval">'+(_mv(trm,"accuracy","accuracy")!=='—'?(parseFloat(_mv(trm,"accuracy","accuracy"))*100).toFixed(1)+'%':'—')+'</div><div class="mlbl">Accuracy (train)</div></div>' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"f1","f1")+'</div><div class="mlbl">F1</div></div>' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"precision","precision")+'</div><div class="mlbl">Precision</div></div>' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"recall","recall")+'</div><div class="mlbl">Recall</div></div>' +
+          '</div>'
+        : '';
+    } else {
+      testGrid =
+        '<div class="mgrid" style="margin-bottom:14px">' +
+          '<div class="mcard mcard-hi"><div class="mval">'+_mv(tm,"R2","r2")+'</div><div class="mlbl">R² (test)</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">'+_mv(tm,"RMSE","rmse")+'</div><div class="mlbl">RMSE</div></div>' +
+          '<div class="mcard"><div class="mval">'+_mv(tm,"MAE","mae")+'</div><div class="mlbl">MAE</div></div>' +
+          '<div class="mcard"><div class="mval">'+(_mv(tm,"MAPE","mape")!=='—'?_mv(tm,"MAPE","mape")+'%':'—')+'</div><div class="mlbl">MAPE</div></div>' +
+          '<div class="mcard"><div class="mval">'+_mv(tm,"MSE","mse")+'</div><div class="mlbl">MSE</div></div>' +
+        '</div>';
+      trainGrid = Object.keys(trm).length
+        ? '<div class="mgrid" style="margin-bottom:14px">' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"R2","r2")+'</div><div class="mlbl">R² (train)</div></div>' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"RMSE","rmse")+'</div><div class="mlbl">RMSE</div></div>' +
+            '<div class="mcard"><div class="mval">'+_mv(trm,"MAE","mae")+'</div><div class="mlbl">MAE</div></div>' +
+          '</div>'
+        : '';
+    }
+
+    var statsHtml = "";
+    if (!isCls && d.durbin_watson != null) {
+      statsHtml =
+        '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:1.9">' +
+          '<div style="font-weight:700;margin-bottom:4px;color:var(--ink)">Tests estadísticos</div>' +
+          '<div style="display:grid;grid-template-columns:170px 70px 1fr;gap:4px;align-items:center">' +
+            '<span style="color:var(--sec)">Durbin-Watson</span><b>'+d.durbin_watson+'</b><span>'+d.dw_interp+'</span></div>' +
+          '<div style="display:grid;grid-template-columns:170px 70px 1fr;gap:4px;align-items:center">' +
+            '<span style="color:var(--sec)">Breusch-Pagan (LM)</span><b>'+d.breusch_pagan+'</b><span>'+d.bp_interp+'</span></div>' +
+        '</div>';
+    }
+
+    // Confusion matrix for classification
+    var cmHtml = "";
+    if (isCls && d.confusion_matrix) {
+      var classes = d.classes || [];
+      var cm = d.confusion_matrix;
+      var cmCells = cm.map(function(row, ri){
+        return row.map(function(v, ci){
+          var bg = ri===ci ? 'background:rgba(29,185,84,0.18)' : (v>0?'background:rgba(239,68,68,0.10)':'');
+          return '<td style="padding:6px 10px;text-align:center;font-weight:'+(ri===ci?'700':'400')+';'+bg+'">'+v+'</td>';
+        }).join("");
+      });
+      var cmHeader = '<tr><th style="padding:4px 10px;color:var(--sec);font-size:11px"></th>'+
+        classes.map(function(c){ return '<th style="padding:4px 10px;font-size:11px;color:var(--sec)">Pred: '+c+'</th>'; }).join("")+'</tr>';
+      var cmBody = cm.map(function(row, ri){
+        return '<tr><td style="padding:6px 10px;font-size:11px;color:var(--sec);font-weight:600">Real: '+classes[ri]+'</td>'+cmCells[ri]+'</tr>';
+      }).join("");
+      cmHtml =
+        '<div style="margin-top:14px"><div class="fl" style="margin-bottom:8px">Matriz de confusión (test)</div>' +
+          '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px">'+cmHeader+cmBody+'</table></div>' +
+        '</div>';
+    }
+
+    bodyEl.innerHTML = headerHtml +
+      '<div class="fl" style="margin-bottom:6px">Métricas en test</div>' + testGrid +
+      (trainGrid ? '<div class="fl" style="margin-bottom:6px">Métricas en train</div>' + trainGrid : '') +
+      statsHtml + cmHtml;
+
+  } else if (tab === "plots") {
+    function _imgCard(title, b64) {
+      if (!b64) return '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+title+': no disponible para modelo cargado desde .pkl.</div>';
+      return '<div><div class="fl" style="font-size:12px;margin-bottom:4px">'+title+'</div>' +
+        '<img src="data:image/png;base64,'+b64+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)"></div>';
+    }
+    if (isCls) {
+      bodyEl.innerHTML = headerHtml + '<div style="display:flex;flex-direction:column;gap:16px">' +
+        _imgCard("Matriz de confusión", d.cm_img) + '</div>';
+    } else {
+      bodyEl.innerHTML = headerHtml +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          _imgCard("Predicho vs Real", d.pred_img) +
+          _imgCard("Residuos vs Ajustados", d.resid_img) +
+          '<div style="grid-column:span 2">' + _imgCard("Q-Q Plot de residuos (normalidad)", d.qq_img) + '</div>' +
+        '</div>';
+    }
+
+  } else if (tab === "coef") {
+    var coefs = d.coefficients || [];
+    var coefLabel = isCls ? "Peso / Importancia" : "Coeficiente";
+    var coefImg = d.coef_img
+      ? '<div style="margin-bottom:12px"><img src="data:image/png;base64,'+d.coef_img+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)"></div>'
+      : '';
+    var coefTable = coefs.length
+      ? '<div class="crep">' +
+          '<div class="crep-hdr" style="grid-template-columns:1.8fr 1fr"><span>Variable</span><span>'+coefLabel+'</span></div>' +
+          coefs.map(function(c){
+            var color = c[1]>0?'var(--accent)':'#ef4444';
+            return '<div class="crep-row" style="grid-template-columns:1.8fr 1fr">' +
+              '<span style="font-weight:600">'+c[0]+'</span>' +
+              '<span style="color:'+color+';font-weight:700">'+c[1]+'</span></div>';
+          }).join("") +
+          (!isCls && d.intercept!=null
+            ? '<div class="crep-row" style="grid-template-columns:1.8fr 1fr;border-top:2px solid var(--border);margin-top:4px">' +
+                '<span style="color:var(--sec)">Intercepto (β₀)</span><span style="font-weight:600">'+d.intercept+'</span></div>'
+            : '') +
+        '</div>'
+      : '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">Coeficientes no disponibles para este modelo.</div>';
+    bodyEl.innerHTML = headerHtml + coefImg + coefTable;
+
+  } else if (tab === "cv") {
+    // Priority: server-side cv_summary (always available after evaluate) → client cvResult
+    var cvd = d.cv_summary
+      || (modelNode && modelNode.data && modelNode.data.cvResult)
+      || null;
+
+    if (!cvd || !cvd.cv_img) {
+      bodyEl.innerHTML = headerHtml +
+        '<div style="padding:20px;color:var(--sec);font-size:13px;line-height:1.7">' +
+          (cvd
+            ? '⚠️ La imagen del CV no está disponible en el .pkl guardado.'
+            : 'No se ha ejecutado CV para este modelo.<br>Ve al bloque Modelo → pestaña <b>🔍 CV Hiperparámetro</b>, ejecuta el barrido, y pulsa <b>Evaluar</b> de nuevo.') +
+        '</div>';
+      return;
+    }
+
+    var best   = cvd.best || {};
+    var pLabel = cvd.param_label || "Parámetro";
+    // Use pre-formatted display string from server; fall back to numeric formatting
+    var pVal    = best.param_val;
+    var bestFmt = cvd.best_pv_display != null
+      ? cvd.best_pv_display
+      : (pVal != null
+          ? (pVal < 0.01 ? Number(pVal).toExponential(2) : parseFloat(Number(pVal).toFixed(4)))
+          : '—');
+
+    bodyEl.innerHTML = headerHtml +
+      '<div style="display:flex;flex-direction:column;gap:14px">' +
+        '<div style="display:flex;gap:12px">' +
+          '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Mejor '+pLabel+'</div>' +
+            '<div style="font-size:26px;font-weight:800;color:var(--accent)">'+bestFmt+'</div>' +
+          '</div>' +
+          '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+(cvd.metric_label||'Métrica')+' óptimo</div>' +
+            '<div style="font-size:26px;font-weight:800;color:var(--ink)">'+(best.score_mean||'—')+'</div>' +
+          '</div>' +
+          '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Folds</div>' +
+            '<div style="font-size:26px;font-weight:800;color:var(--ink)">'+(cvd.k_folds||'—')+'</div>' +
+          '</div>' +
+        '</div>' +
+        '<img src="data:image/png;base64,'+cvd.cv_img+'" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '<div style="font-size:11px;color:var(--sec);padding:8px 12px;background:var(--bg);border-radius:8px;line-height:1.6">' +
+          '<b>Método:</b> '+((cvd.method||'—').toUpperCase())+' · <b>Problema:</b> '+(cvd.problem_type||'—')+' · ' +
+          '<b>Sin data leakage:</b> normalización dentro de cada fold (Pipeline sklearn).' +
+        '</div>' +
+      '</div>';
+
+  } else if (tab === "assump") {
+    if (isCls) {
+      // Classification-specific: class distribution, no VIF/DW
+      var classes = d.classes || [];
+      bodyEl.innerHTML = headerHtml +
+        '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:1.9">' +
+          '<div style="font-weight:700;margin-bottom:8px;color:var(--ink)">Supuestos de clasificación</div>' +
+          '<div style="color:var(--sec)">Clases detectadas: <b>'+classes.join(", ")+'</b></div>' +
+          '<div style="margin-top:8px;color:var(--sec);line-height:1.7">' +
+            'La Regresión Logística asume:<br>' +
+            '• Independencia entre observaciones<br>' +
+            '• Ausencia de multicolinealidad extrema entre features<br>' +
+            '• Tamaño de muestra suficiente por clase' +
+          '</div>' +
+        '</div>';
+    } else {
+      var vifRows = d.vif && d.vif.length
+        ? d.vif.map(function(v){
+            var color = v.vif>10?'#ef4444':v.vif>5?'#f59e0b':'var(--accent)';
+            var label = v.vif>10?'⚠️ Alta':v.vif>5?'⚡ Moderada':'✅ OK';
+            return '<div class="crep-row" style="grid-template-columns:1.8fr 0.7fr 0.8fr">' +
+              '<span>'+v.feature+'</span>' +
+              '<span style="color:'+color+';font-weight:700">'+v.vif+'</span>' +
+              '<span style="font-size:11px">'+label+'</span></div>';
+          }).join("")
+        : '<div style="color:var(--sec);font-size:12px;padding:8px">No hay suficientes datos para calcular VIF.</div>';
+
+      bodyEl.innerHTML = headerHtml +
+        '<div style="display:flex;flex-direction:column;gap:16px">' +
+          '<div>' +
+            '<div class="fl" style="margin-bottom:8px">Tests de supuestos del modelo</div>' +
+            '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:2">' +
+              '<div style="display:grid;grid-template-columns:180px 75px 1fr;align-items:center;gap:4px">' +
+                '<span style="color:var(--sec)">Durbin-Watson</span><b>'+(d.durbin_watson||'—')+'</b><span>'+(d.dw_interp||'')+'</span></div>' +
+              '<div style="display:grid;grid-template-columns:180px 75px 1fr;align-items:center;gap:4px">' +
+                '<span style="color:var(--sec)">Breusch-Pagan (LM)</span><b>'+(d.breusch_pagan||'—')+'</b><span>'+(d.bp_interp||'')+'</span></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-top:8px;line-height:1.7">' +
+              '<b>Durbin-Watson:</b> rango [0,4]. Cerca de 2 = sin autocorrelación en residuos.<br>' +
+              '<b>Breusch-Pagan:</b> LM &gt; 3.84 (χ²₁ al 5%) sugiere heterocedasticidad.' +
+            '</div>' +
+          '</div>' +
+          '<div>' +
+            '<div class="fl" style="margin-bottom:8px">VIF — Detección de multicolinealidad</div>' +
+            '<div class="crep">' +
+              '<div class="crep-hdr" style="grid-template-columns:1.8fr 0.7fr 0.8fr"><span>Variable</span><span>VIF</span><span>Estado</span></div>' +
+              vifRows +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-top:8px;line-height:1.7">' +
+              'VIF &lt; 5 → sin problema · VIF 5–10 → multicolinealidad moderada · VIF &gt; 10 → coeficientes inestables.' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+}
+
 
 // ═══════════════════════════════════════════
 // TABULAR PREPROCESSING modal
@@ -2596,6 +3442,9 @@ async function renderTabPreprocess(node) {
         '<div class="mcard"><div class="mval">' + d.n_test + '</div><div class="mlbl">Test</div></div>' +
         '<div class="mcard"><div class="mval">' + Math.round(d.ratio*100) + '%</div><div class="mlbl">Proporción</div></div>' +
       '</div>' + distHtml;
+    // Persist split info in node.data so downstream Modelo blocks can read it
+    node.data.splitRatio = d.ratio;
+    node.data.splitMode  = mode === "random" ? "aleatorio" : "estratificado";
   };
 
   // ── Apply preprocessing ──────────────────────────────────────────────────
@@ -3130,6 +3979,13 @@ async function renderData(node) {
     }
     d = await rd.json(); if (d.error) { toast(d.error); return; }
     node.data.loaded = true; node.data.task = d.task;
+    // New data loaded — clear plotHistory of any connected plots nodes
+    edges.forEach(function(e) {
+      if (e.from === node.id) {
+        var dn = nodeById(e.to);
+        if (dn && dn.type === "plots" && dn.data) dn.data.plotHistory = [];
+      }
+    });
     // Persist target col so downstream Plots block can use it
     if (d.target) node.data.targetCol = d.target;
     else if (d.columns && d.columns.length) node.data.targetCol = d.columns[d.columns.length-1].name || d.columns[d.columns.length-1];
@@ -4372,6 +5228,11 @@ function _renderTabPreV2(container, tabInfo, node, dataNodeId, prepNodeId) {
     }
 
     resEl.innerHTML = html;
+    // Persist split info so downstream model blocks can read it
+    if (!isCv) {
+      node.data.splitRatio = ratio;
+      node.data.splitMode  = splitMode === "random" ? "aleatorio" : "estratificado";
+    }
     toast("✓ Partición calculada — "+splitMode+(isCv?" ("+cvFoldType+")":""));
   };
 }
@@ -4822,6 +5683,627 @@ var HP_DEFS = {
       '<div style="font-size:11px;color:var(--sec);margin-top:4px">Sin límite de profundidad sobreajusta. Recomendado: 5–12 para texto.</div>';
   }
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 💾 GUARDAR  — comportamiento basado en el tipo del bloque upstream conectado
+// • Preprocesado → CSV preprocesado (+ partición si la tiene)
+// • Modelo       → .pkl del modelo (solo ese)
+// • Evaluación   → ZIP con métricas (JSON+CSV) y plots de ese bloque
+// • Plots        → ZIP con los plots generados por el usuario
+// ══════════════════════════════════════════════════════════════════════════════
+async function renderSaveModel(node) {
+  showModalLoading("Comprobando qué hay disponible…");
+
+  // ── 1. Nodo upstream directo ──────────────────────────────────────────────
+  var upstreamNodeIds = [];
+  edges.forEach(function(e) { if (String(e.to) === String(node.id)) upstreamNodeIds.push(e.from); });
+
+  // ── 2. Identificar tipo del bloque upstream directo ───────────────────────
+  var upNode = upstreamNodeIds.length ? nodeById(upstreamNodeIds[0]) : null;
+  var upType = upNode ? upNode.type : null;
+
+  // ── 3. Constantes de UI ───────────────────────────────────────────────────
+  var MODEL_TYPES = ["linreg", "load_model", "knn"];  // ampliar con nuevos modelos
+  var _sHdr = function(t) {
+    return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin:14px 0 6px">' + t + '</div>';
+  };
+  var _chkRow = function(id, label, sublabel, checked) {
+    var isChecked = (checked === false) ? '' : 'checked';
+    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface);margin-bottom:6px">' +
+      '<input type="checkbox" class="sv-chk" data-id="' + id + '" ' + isChecked + ' style="margin-top:2px;accent-color:var(--accent)">' +
+      '<div><div style="font-size:12px;font-weight:600;color:var(--ink)">' + label + '</div>' +
+      (sublabel ? '<div style="font-size:11px;color:var(--sec);margin-top:1px">' + sublabel + '</div>' : '') +
+      '</div></label>';
+  };
+
+  // Radio row — para secciones de selección única (evaluación)
+  var _radioRow = function(name, id, label, sublabel, checked) {
+    var isChecked = checked ? 'checked' : '';
+    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface);margin-bottom:6px">' +
+      '<input type="radio" name="' + name + '" class="sv-radio" data-id="' + id + '" ' + isChecked + ' style="margin-top:2px;accent-color:var(--accent)">' +
+      '<div><div style="font-size:12px;font-weight:600;color:var(--ink)">' + label + '</div>' +
+      (sublabel ? '<div style="font-size:11px;color:var(--sec);margin-top:1px">' + sublabel + '</div>' : '') +
+      '</div></label>';
+  };
+
+  var sectionsHtml = "";
+  var ctx = {};   // datos de contexto que necesita el handler de descarga
+
+  // ── 4. PREPROCESADO ───────────────────────────────────────────────────────
+  if (upType === "preprocess") {
+    // Detect whether the preprocess node has tabular or NLP data by checking
+    // what the data node upstream of preprocess contains
+    var dataNode = null;
+    edges.forEach(function(e) {
+      if (String(e.to) === String(upNode.id)) {
+        var n = nodeById(e.from);
+        if (n && n.type === "data") dataNode = n;
+      }
+    });
+    var isNlpPre = dataNode && dataNode.data && dataNode.data.task &&
+                   dataNode.data.task !== "tabular" && dataNode.data.task !== "regression" && dataNode.data.task !== "classification";
+    // Also detect from preprocess node itself: if it has applied steps it's active
+    var hasPreproc = upNode.data && upNode.data.applied;
+    var hasSplit   = upNode.data && upNode.data.splitRatio;
+
+    if (!isNlpPre) {
+      // Tabular — radio: dataset completo O zip train/test
+      sectionsHtml += _sHdr("📊 Dataset preprocesado");
+      sectionsHtml += _radioRow("preproc_export", "preproc__csv__" + upNode.id,
+        "Dataset completo preprocesado (.csv)",
+        "Todas las filas y columnas transformadas",
+        !hasSplit);   // default si no hay partición
+      if (hasSplit) {
+        sectionsHtml += _radioRow("preproc_export", "preproc__split__" + upNode.id,
+          "Partición train + test (.zip con dos .csv)",
+          "Ratio " + upNode.data.splitRatio + " · " + (upNode.data.splitMode || "aleatorio"),
+          true);   // default si hay partición
+      }
+    } else {
+      // NLP
+      var status = await fetch("/api/save_status").then(function(r){ return r.json(); }).catch(function(){ return {}; });
+      var nlp = status.nlp || {};
+      sectionsHtml += _sHdr("📝 Corpus NLP");
+      sectionsHtml += _chkRow("nlp__raw", "Corpus original (.csv)", (nlp.n_texts || "?") + " documentos");
+      if (nlp.has_processed) sectionsHtml += _chkRow("nlp__processed", "Corpus preprocesado (.csv)", "");
+      ctx.nlp = nlp;
+    }
+
+  // ── 5. MODELO (linreg, knn, …) ────────────────────────────────────────────
+  } else if (MODEL_TYPES.indexOf(upType) !== -1) {
+    var status = await fetch("/api/save_status").then(function(r){ return r.json(); }).catch(function(){ return {}; });
+    var allTabModels = status.tab_models || [];
+    var mEntry = allTabModels.find(function(m){ return String(m.node_id) === String(upNode.id); });
+    if (mEntry) {
+      var lbl = (mEntry.model_type || upType).toUpperCase() + (mEntry.target_col ? " → " + mEntry.target_col : "");
+      var sub = (mEntry.problem_type || "") +
+                (mEntry.n_train ? " · " + mEntry.n_train + " train / " + mEntry.n_test + " test" : "") +
+                (upNode.data && upNode.data.cvResult ? " · CV" : "");
+      sectionsHtml += _sHdr("🤖 Modelo entrenado");
+      sectionsHtml += _chkRow("model__" + upNode.id, lbl + " (.pkl)", sub);
+    }
+    ctx.allTabModels = allTabModels;
+
+  // ── 6. EVALUACIÓN ─────────────────────────────────────────────────────────
+  } else if (upType === "model_eval") {
+    // Recorre hacia atrás desde model_eval para encontrar el node_id del modelo
+    // (linreg, load_model, knn…) cuyo resultado está en _MODEL_STORE del servidor
+    var evalModelNodeId = null;
+    edges.forEach(function(e) {
+      if (String(e.to) === String(upNode.id)) {
+        var n = nodeById(e.from);
+        if (n && MODEL_TYPES.indexOf(n.type) !== -1) evalModelNodeId = String(n.id);
+      }
+    });
+    // Fallback: si el bloque model_eval está conectado directamente a load_model
+    if (!evalModelNodeId) {
+      edges.forEach(function(e) {
+        if (String(e.to) === String(upNode.id)) {
+          var n = nodeById(e.from);
+          if (n && n.type === "load_model") evalModelNodeId = String(n.id);
+        }
+      });
+    }
+
+    if (evalModelNodeId) {
+      sectionsHtml += _sHdr("📊 Resultados de Evaluación");
+      sectionsHtml += _radioRow("eval_export", "eval__zip",          "Todo en un .zip (métricas + plots)", "JSON · CSV · PNGs disponibles", true);
+      sectionsHtml += _radioRow("eval_export", "eval__metrics__json", "Solo métricas (.json)", "", false);
+      sectionsHtml += _radioRow("eval_export", "eval__metrics__csv",  "Solo métricas (.csv)",  "", false);
+    } else {
+      sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+        '⚠️ Pulsa <b>Evaluar</b> en el bloque Evaluación antes de guardar.</div>';
+    }
+    ctx.evalModelNodeId = evalModelNodeId;
+    ctx.evalNode = upNode;
+
+  // ── 7. PLOTS ──────────────────────────────────────────────────────────────
+  } else if (upType === "plots") {
+    var hist = (upNode.data && upNode.data.plotHistory) || [];
+    if (hist.length) {
+      sectionsHtml += _sHdr("📦 Exportar plots");
+      sectionsHtml += _radioRow("plots_export", "plots__zip__" + upNode.id,
+        "Todos los plots en un .zip",
+        hist.length + " imagen" + (hist.length !== 1 ? "es" : "") + " · " +
+        hist.map(function(p){ return p.label; }).join(", ").slice(0, 60) + (hist.length > 3 ? "…" : ""),
+        true);
+    } else {
+      sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+        '🫙 El bloque Plots no tiene gráficas generadas todavía.<br>' +
+        '<span style="font-size:11px">Genera al menos una gráfica y vuelve aquí.</span></div>';
+    }
+    ctx.plotsNode = upNode;
+
+  // ── 8. Sin conexión o tipo desconocido ────────────────────────────────────
+  } else {
+    sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+      '🫙 Conecta este bloque a un bloque de Preprocesado, Modelo, Evaluación o Plots.' +
+      '</div>';
+  }
+
+  var hasAnything = sectionsHtml.indexOf("sv-chk") !== -1 || sectionsHtml.indexOf("sv-radio") !== -1;
+
+  mBody.innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:0;max-width:520px">' +
+      (hasAnything
+        ? '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">Selecciona qué quieres exportar del bloque conectado.</div>'
+        : '') +
+      sectionsHtml +
+      (hasAnything
+        ? '<button class="btn btn-black" id="btn-sv-download" style="width:100%;margin-top:14px">💾 Guardar seleccionados…</button>'
+        : '') +
+      '<div id="sv-status" style="font-size:12px;color:var(--sec);text-align:center;margin-top:8px"></div>' +
+    '</div>';
+
+  if (!hasAnything) return;
+
+  // ── 9. Handler de descarga ────────────────────────────────────────────────
+  document.getElementById("btn-sv-download").onclick = async function() {
+    var statEl  = document.getElementById("sv-status");
+    // Collect checked checkboxes + selected radio buttons
+    var checked = Array.from(document.querySelectorAll(".sv-chk:checked")).map(function(c){ return c.dataset.id; });
+    var radioSel = document.querySelector(".sv-radio:checked");
+    if (radioSel) checked.push(radioSel.dataset.id);
+    if (!checked.length) { statEl.textContent = "⚠️ Selecciona al menos un elemento."; return; }
+    statEl.textContent = "Guardando…";
+    var saved = 0, errors = [];
+
+    // Helper: descarga un Blob con diálogo o fallback
+    async function _saveBlob(blob, fname, mime) {
+      if (window.showSaveFilePicker) {
+        try {
+          var ext = fname.split(".").pop();
+          var accept = {};
+          accept[mime || "application/octet-stream"] = ["." + ext];
+          var fh = await window.showSaveFilePicker({ suggestedName: fname,
+            types: [{ description: fname, accept: accept }] });
+          var w = await fh.createWritable();
+          await w.write(blob); await w.close();
+          return true;
+        } catch(e) { if (e.name === "AbortError") return false; }
+      }
+      _triggerDownload(blob, fname);
+      return true;
+    }
+
+    // Helper: base64 PNG string (with or without data URI prefix) → Blob
+    function _b64toBlob(src) {
+      if (!src) return new Blob([], { type: "image/png" });
+      var b64 = src.indexOf(",") !== -1 ? src.split(",")[1] : src;
+      try {
+        var bin = atob(b64);
+        var arr = new Uint8Array(bin.length);
+        for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+        return new Blob([arr], { type: "image/png" });
+      } catch(e) { return new Blob([], { type: "image/png" }); }
+    }
+
+    // Helper: construye ZIP en cliente (requiere JSZip — si no está, descarga individualmente)
+    async function _saveZip(files, zipName) {
+      // files: [{name, blob}]
+      if (window.JSZip) {
+        var zip = new JSZip();
+        files.forEach(function(f) { zip.file(f.name, f.blob); });
+        var zblob = await zip.generateAsync({ type: "blob" });
+        return await _saveBlob(zblob, zipName, "application/zip");
+      } else {
+        // Fallback: guardar cada archivo individualmente
+        for (var i = 0; i < files.length; i++) {
+          await _saveBlob(files[i].blob, files[i].name, "image/png");
+        }
+        return true;
+      }
+    }
+
+    // Helper: pide al servidor el zip de evaluación
+    async function _fetchEvalZip(modelNodeId) {
+      var controller = new AbortController();
+      var tid = setTimeout(function(){ controller.abort(); }, 30000);
+      try {
+        var resp = await fetch("/api/export_eval_zip", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node_id: String(modelNodeId) }),
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        if (!resp.ok) {
+          var errJson = await resp.json().catch(function(){ return {}; });
+          throw new Error(errJson.error || ("HTTP " + resp.status));
+        }
+        return await resp.blob();
+      } catch(e) {
+        clearTimeout(tid);
+        throw e;
+      }
+    }
+
+    for (var i = 0; i < checked.length; i++) {
+      var id = checked[i];
+
+      // ── Preprocesado: dataset completo CSV ───────────────────────────────
+      if (id.startsWith("preproc__csv__")) {
+        var nid   = id.replace("preproc__csv__", "");
+        var dname = "dataset_preprocessed.csv";
+        var pick  = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_tab_csv", default_name: dname, extra: { node_id: nid } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/export_tab_csv?node_id=" + encodeURIComponent(nid));
+          if (resp.ok) { _triggerDownload(await resp.blob(), dname); saved++; } else errors.push(dname);
+        } else { saved++; }
+
+      // ── Preprocesado: ZIP train + test ────────────────────────────────────
+      } else if (id.startsWith("preproc__split__")) {
+        var nid        = id.replace("preproc__split__", "");
+        var splitRatio = (upNode && upNode.data && upNode.data.splitRatio) || 0.7;
+        statEl.textContent = "Construyendo ZIP train/test…";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_split_zip",
+            default_name: "dataset_split.zip", extra: { node_id: nid, ratio: splitRatio } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/export_split_zip", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node_id: nid, ratio: splitRatio })
+          });
+          if (resp.ok) { _triggerDownload(await resp.blob(), "dataset_split.zip"); saved++; }
+          else errors.push("dataset_split.zip");
+        } else { saved++; }
+
+      // ── NLP corpus ────────────────────────────────────────────────────────
+      } else if (id === "nlp__raw" || id === "nlp__processed") {
+        var ep    = "/api/export_csv";
+        var dname = ((ctx.nlp && ctx.nlp.dataset_name) || "corpus") + (id === "nlp__processed" ? "_processed" : "_raw") + ".csv";
+        var pick  = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: ep, default_name: dname })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) { window.location.href = ep; saved++; } else saved++;
+
+      // ── Modelo .pkl ───────────────────────────────────────────────────────
+      } else if (id.startsWith("model__")) {
+        var nid   = id.replace("model__", "");
+        var minfo = (ctx.allTabModels||[]).find(function(m){ return String(m.node_id) === String(nid); }) || {};
+        var dname = (minfo.model_type || "model") + (minfo.target_col ? "_" + minfo.target_col : "") + ".pkl";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/save_tab_model", default_name: dname, extra: { node_id: nid } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/save_tab_model", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node_id: nid, filename: dname.replace(".pkl","") })
+          });
+          if (resp.ok) { await _saveBlob(await resp.blob(), dname); saved++; } else errors.push(dname);
+        } else { saved++; }
+
+      // ── Evaluación: métricas JSON ─────────────────────────────────────────
+      } else if (id === "eval__metrics__json") {
+        var mNid = ctx.evalModelNodeId;
+        if (!mNid) { errors.push("eval_metrics.json: sin modelo"); continue; }
+        statEl.textContent = "Guardando eval_metrics.json…";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_eval_metrics",
+            default_name: "eval_metrics.json", extra: { node_id: mNid, format: "json" } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/export_eval_metrics?format=json&node_id=" + encodeURIComponent(mNid));
+          if (resp.ok) { _triggerDownload(await resp.blob(), "eval_metrics.json"); saved++; }
+          else errors.push("eval_metrics.json");
+        } else { saved++; }
+
+      // ── Evaluación: métricas CSV ──────────────────────────────────────────
+      } else if (id === "eval__metrics__csv") {
+        var mNid = ctx.evalModelNodeId;
+        if (!mNid) { errors.push("eval_metrics.csv: sin modelo"); continue; }
+        statEl.textContent = "Guardando eval_metrics.csv…";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_eval_metrics",
+            default_name: "eval_metrics.csv", extra: { node_id: mNid, format: "csv" } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/export_eval_metrics?format=csv&node_id=" + encodeURIComponent(mNid));
+          if (resp.ok) { _triggerDownload(await resp.blob(), "eval_metrics.csv"); saved++; }
+          else errors.push("eval_metrics.csv");
+        } else { saved++; }
+
+      // ── Evaluación: ZIP completo ──────────────────────────────────────────
+      } else if (id === "eval__zip") {
+        var mNid = ctx.evalModelNodeId;
+        if (!mNid) { errors.push("eval.zip: sin modelo conectado"); continue; }
+        statEl.textContent = "Construyendo ZIP… (puede tardar unos segundos)";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_eval_zip",
+            default_name: "evaluacion.zip", extra: { node_id: mNid } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          // Fallback: descarga directa
+          try {
+            var zblob = await _fetchEvalZip(mNid);
+            _triggerDownload(zblob, "evaluacion.zip");
+            saved++;
+          } catch(e) { errors.push("evaluacion.zip: " + (e.message || "error")); }
+        } else { saved++; }
+
+      // ── Evaluación: plot individual ───────────────────────────────────────
+      } else if (id.startsWith("eval__plot__")) {
+        var idx    = parseInt(id.replace("eval__plot__", ""));
+        var ph     = ctx.evalNode && ctx.evalNode.data && ctx.evalNode.data.plotHistory;
+        var imgSrc = ph && ph[idx] && (ph[idx].img || ph[idx].src);
+        if (!imgSrc) { errors.push("plot eval " + idx); continue; }
+        _triggerDownload(_b64toBlob(imgSrc), (ph[idx].label || ("eval_plot_" + idx)) + ".png");
+        saved++;
+
+      // ── Plots: ZIP de todos (vía servidor para diálogo nativo) ────────────
+      } else if (id.startsWith("plots__zip__")) {
+        var pNid  = id.replace("plots__zip__", "");
+        var pNode = nodeById(parseInt(pNid));
+        var ph    = pNode && pNode.data && pNode.data.plotHistory;
+        if (!ph || !ph.length) { errors.push("plots.zip: no hay gráficas"); continue; }
+        statEl.textContent = "Construyendo ZIP de plots…";
+        // Enviar plots al servidor para ZIP + diálogo nativo
+        var plotsPayload = ph.map(function(p, idx) {
+          return { label: p.label || ("plot_" + (idx+1)), img: p.img || p.src || "" };
+        });
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/export_plots_zip",
+            default_name: "plots.zip", extra: { plots: plotsPayload } })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          // Fallback: fetch directo + _triggerDownload
+          var resp = await fetch("/api/export_plots_zip", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ plots: plotsPayload })
+          });
+          if (resp.ok) { _triggerDownload(await resp.blob(), "plots.zip"); saved++; }
+          else errors.push("plots.zip: " + (pick.error || "error"));
+        } else { saved++; }
+      }
+    }
+
+    var msg = "✓ " + saved + " guardado" + (saved !== 1 ? "s" : "");
+    if (errors.length) msg += " · ⚠️ " + errors.join(", ");
+    statEl.textContent = msg;
+    setNS(node.id, saved + " ficheros"); setNB(node.id, "guardado", "badge-ok"); setOK(node.id, true);
+  };
+}
+
+function _triggerDownload(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 📂 CARGAR MODELO
+// ══════════════════════════════════════════════════════════════════════════════
+async function renderLoadModel(node) {
+  var mode = node.data.loadMode || "saved"; // "saved" | "new"
+  var loaded = node.data.loadedMeta || null;
+
+  function buildUI() {
+    mBody.innerHTML =
+      '<div style="padding:16px;display:flex;flex-direction:column;gap:14px;max-width:520px">' +
+
+      // ── Selector de qué cargar (futuro: CSV, sesión…) ──────────────────
+      '<div class="fg"><div class="fl">¿Qué quieres cargar?</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">' +
+          '<label class="algo-btn" style="padding:10px">' +
+            '<input type="radio" name="lm-what" value="model" checked>' +
+            '<span style="font-size:12px">🤖 Modelo (.pkl)</span></label>' +
+          '<label class="algo-btn" style="padding:10px;opacity:.45;pointer-events:none" title="Próximamente">' +
+            '<input type="radio" name="lm-what" value="csv" disabled>' +
+            '<span style="font-size:12px">📄 CSV (próx.)</span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Dropzone PKL ───────────────────────────────────────────────────
+      '<div class="fg"><div class="fl">Fichero .pkl</div>' +
+        '<div class="dropzone" id="lm-dz">📂 Suelta el .pkl o haz clic para buscar</div>' +
+        '<input type="file" accept=".pkl" id="lm-fi" style="display:none">' +
+      '</div>' +
+
+      // ── Modo de evaluación ─────────────────────────────────────────────
+      '<div class="fg" id="lm-mode-wrap" style="display:' + (loaded ? 'block' : 'none') + '">' +
+        '<div class="fl" style="margin-bottom:6px">Modo de evaluación</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+          '<label class="algo-btn" style="padding:10px">' +
+            '<input type="radio" name="lm-mode" value="saved" ' + (mode==="saved"?"checked":"") + '>' +
+            '<span style="font-size:11px;line-height:1.4">🗂️ Usar test set<br><span style="color:var(--sec)">del entrenamiento original</span></span></label>' +
+          '<label class="algo-btn" style="padding:10px">' +
+            '<input type="radio" name="lm-mode" value="new" ' + (mode==="new"?"checked":"") + '>' +
+            '<span style="font-size:11px;line-height:1.4">📤 Datos nuevos<br><span style="color:var(--sec)">sube un CSV distinto</span></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Dropzone CSV nuevos datos ──────────────────────────────────────
+      '<div id="lm-csv-wrap" style="display:none">' +
+        '<div class="fg"><div class="fl">CSV con datos nuevos</div>' +
+          '<div class="dropzone" id="lm-csv-dz">📄 Suelta el CSV o haz clic</div>' +
+          '<input type="file" accept=".csv" id="lm-csv-fi" style="display:none">' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:4px">' +
+          'Debe tener las mismas columnas que el dataset de entrenamiento.' +
+        '</div>' +
+      '</div>' +
+
+      // ── Info del modelo cargado ────────────────────────────────────────
+      '<div id="lm-info" style="display:' + (loaded ? 'block' : 'none') + ';padding:10px 14px;background:var(--tinted);border-radius:8px;border:1px solid var(--border)">' +
+        (loaded ? _lmInfoHtml(loaded) : '') +
+      '</div>' +
+
+      '<button class="btn btn-black" id="btn-lm-eval" style="width:100%;display:' + (loaded ? 'block' : 'none') + '">▶ Evaluar</button>' +
+      '<div id="lm-results" style="margin-top:4px"></div>' +
+    '</div>';
+
+    // Wire dropzone PKL
+    var dz = document.getElementById("lm-dz");
+    var fi = document.getElementById("lm-fi");
+    dz.onclick = function() { fi.click(); };
+    dz.ondragover = function(e) { e.preventDefault(); dz.classList.add("over"); };
+    dz.ondragleave = function() { dz.classList.remove("over"); };
+    dz.ondrop = function(e) { e.preventDefault(); dz.classList.remove("over"); handlePkl(e.dataTransfer.files[0]); };
+    fi.onchange = function(e) { handlePkl(e.target.files[0]); };
+
+    // Wire mode radios
+    document.querySelectorAll('input[name="lm-mode"]').forEach(function(r) {
+      r.addEventListener("change", function() {
+        mode = r.value; node.data.loadMode = mode;
+        document.getElementById("lm-csv-wrap").style.display = mode === "new" ? "block" : "none";
+      });
+    });
+    if (mode === "new") document.getElementById("lm-csv-wrap").style.display = "block";
+
+    // Wire CSV nuevos datos
+    var csvDz = document.getElementById("lm-csv-dz");
+    var csvFi = document.getElementById("lm-csv-fi");
+    if (csvDz) {
+      csvDz.onclick = function() { csvFi.click(); };
+      csvDz.ondragover = function(e) { e.preventDefault(); csvDz.classList.add("over"); };
+      csvDz.ondragleave = function() { csvDz.classList.remove("over"); };
+      csvDz.ondrop = function(e) { e.preventDefault(); csvDz.classList.remove("over"); node.data.newCsvFile = e.dataTransfer.files[0]; csvDz.textContent = "📄 " + node.data.newCsvFile.name; };
+      csvFi.onchange = function(e) { node.data.newCsvFile = e.target.files[0]; csvDz.textContent = "📄 " + node.data.newCsvFile.name; };
+    }
+
+    // Eval button
+    document.getElementById("btn-lm-eval").onclick = runEval;
+  }
+
+  function _lmInfoHtml(meta) {
+    var tm = meta.test_metrics || {};
+    var isReg = meta.problem_type === "regression";
+    var metricLabel = isReg
+      ? (tm.r2  != null ? '✅ Test R²: <b>' + tm.r2  + '</b>' : '')
+      : (tm.f1  != null ? '✅ Test F1: <b>' + tm.f1  + '</b>' : '');
+    return '<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:4px">Modelo cargado</div>' +
+      '<div style="font-size:11px;color:var(--sec);line-height:1.7">' +
+        '🧮 Tipo: <b>' + (meta.model_type || '—').toUpperCase() + '</b><br>' +
+        '🎯 Variable objetivo: <b>' + (meta.target_col || '—') + '</b><br>' +
+        '📊 Problema: <b>' + (meta.problem_type || '—') + '</b><br>' +
+        '📐 Features: <b>' + ((meta.features || []).length) + '</b><br>' +
+        metricLabel +
+      '</div>';
+  }
+
+  async function handlePkl(file) {
+    if (!file) return;
+    var dz = document.getElementById("lm-dz");
+    dz.textContent = "⏳ Cargando " + file.name + "…";
+    var fd = new FormData(); fd.append("file", file); fd.append("node_id", String(node.id));
+    var resp = await fetch("/api/load_tab_model", { method: "POST", body: fd });
+    var d = await resp.json();
+    if (d.error) { toast(d.error); dz.textContent = "📂 Suelta el .pkl o haz clic para buscar"; return; }
+    dz.textContent = "✓ " + file.name;
+    loaded = d; node.data.loadedMeta = d;
+    document.getElementById("lm-mode-wrap").style.display = "block";
+    document.getElementById("lm-info").style.display = "block";
+    document.getElementById("lm-info").innerHTML = _lmInfoHtml(d);
+    document.getElementById("btn-lm-eval").style.display = "block";
+    setNS(node.id, (d.model_type || "modelo").toUpperCase() + " · " + (d.target_col || ""));
+    setNB(node.id, "cargado", "badge-info");
+  }
+
+  async function runEval() {
+    var resEl = document.getElementById("lm-results");
+    resEl.innerHTML = '<div class="loading" style="font-size:12px">Evaluando…</div>';
+    var body = { node_id: String(node.id), mode: mode };
+    if (mode === "new" && node.data.newCsvFile) {
+      var fd = new FormData();
+      fd.append("file", node.data.newCsvFile);
+      fd.append("node_id", String(node.id));
+      fd.append("mode", "new");
+      var resp = await fetch("/api/eval_tab_model", { method: "POST", body: fd });
+      var d = await resp.json();
+      if (!resp.ok && d.error) {
+        resEl.innerHTML = '<div style="color:#ff6b6b;font-size:12px;white-space:pre-wrap">' + d.error + '</div>';
+        return;
+      }
+      _renderEvalResult(d, resEl);
+    } else {
+      var resp = await fetch("/api/eval_tab_model", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      var d = await resp.json();
+      _renderEvalResult(d, resEl);
+    }
+  }
+
+  function _renderEvalResult(d, resEl) {
+    if (d.error) { resEl.innerHTML = '<div style="color:#ff6b6b;font-size:12px;white-space:pre-wrap">' + d.error + '</div>'; return; }
+    // If server inferred target_col (was empty in pkl), update the info panel
+    if (d.target_col && loaded && !loaded.target_col) {
+      loaded.target_col = d.target_col;
+      var infoEl = document.getElementById("lm-info");
+      if (infoEl) infoEl.innerHTML = _lmInfoHtml(loaded);
+    }
+    var m = d.metrics || {};
+    var isReg = d.problem_type === "regression";
+    var metricsHtml = isReg
+      ? '<div class="mgrid">' +
+          '<div class="mcard mcard-hi"><div class="mval">' + (m.r2||'—') + '</div><div class="mlbl">R²</div></div>' +
+          '<div class="mcard"><div class="mval">' + (m.rmse||'—') + '</div><div class="mlbl">RMSE</div></div>' +
+          '<div class="mcard"><div class="mval">' + (m.mae||'—') + '</div><div class="mlbl">MAE</div></div>' +
+        '</div>'
+      : '<div class="mgrid">' +
+          '<div class="mcard mcard-hi"><div class="mval">' + (m.f1||'—') + '</div><div class="mlbl">F1</div></div>' +
+          '<div class="mcard"><div class="mval">' + (m.accuracy||'—') + '</div><div class="mlbl">Accuracy</div></div>' +
+          '<div class="mcard"><div class="mval">' + (m.precision||'—') + '</div><div class="mlbl">Precision</div></div>' +
+          '<div class="mcard"><div class="mval">' + (m.recall||'—') + '</div><div class="mlbl">Recall</div></div>' +
+        '</div>';
+    var skippedWarn = (d.skipped_rows > 0)
+      ? '<div style="margin-top:6px;padding:6px 8px;background:#7c3a1e22;border-radius:6px;font-size:11px;color:#f59e0b">⚠️ ' + d.skipped_rows + ' fila' + (d.skipped_rows > 1 ? 's eliminadas' : ' eliminada') + ' por valores no numéricos o vacíos.</div>'
+      : '';
+    resEl.innerHTML =
+      '<hr class="sep">' +
+      '<div class="fl" style="margin-bottom:6px">Resultado evaluación' + (d.source === "new" ? " (datos nuevos, " + (d.n_rows||0) + " filas)" : " (test set original)") + '</div>' +
+      metricsHtml +
+      skippedWarn +
+      (d.cm_img ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">Matriz de confusión</div>' +
+        '<img src="data:image/png;base64,' + d.cm_img + '" style="width:100%;cursor:zoom-in;border-radius:6px" onclick="expandImg(this.src)"></div>' : '') +
+      (d.report_txt ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">Classification report</div>' +
+        '<pre style="font-size:10px;background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;color:var(--ink)">' + d.report_txt + '</pre></div>' : '');
+    setOK(node.id, true);
+    setNB(node.id, isReg ? "R²=" + (m.r2||'—') : "F1=" + (m.f1||'—'), "badge-ok");
+  }
+
+  buildUI();
+}
 
 async function renderTrain(node) {
   mBody.innerHTML =

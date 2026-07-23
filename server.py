@@ -1,4 +1,7 @@
 """NLP Flow 4 — Flask API with SSE progress streaming + session persistence"""
+# ── MODEL STORE: trained model objects keyed by node_id ──────────────────────
+_MODEL_STORE: dict = {}    # { node_id: result_dict }
+_NODE_MODELS: dict = {}   # { node_id: sklearn model object }
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, send_file
 import re, io, base64, csv, json, time, threading, zipfile, os, pickle, tempfile, shutil
 from collections import Counter
@@ -281,23 +284,28 @@ def _build_tab_datasets():
         "desc": "100 pacientes · variables médicas → riesgo (0/1) · ~5% valores ausentes"
     }
 
-    # ── 2. California Housing (regression, 200 rows synthetic) ──────────────
+    # ── 2. California Housing (regression, 400 rows realistic) ───────────────
     _rnd.seed(7)
+    import math as _math
     rows_ca = []
     cols_ca = ["MedInc","HouseAge","AveRooms","AveBedrms","Population",
                "AveOccup","Latitude","Longitude","MedHouseVal"]
-    for _ in range(200):
+    for _ in range(400):
         medinc  = round(_rnd.uniform(0.5, 15.0), 4)
         age     = _rnd.randint(1, 52)
         rooms   = round(_rnd.uniform(1.5, 10.0), 4)
         bedrms  = round(_rnd.uniform(0.8, 3.5), 4)
-        pop     = _rnd.randint(50, 3500)
-        occup   = round(_rnd.uniform(1.5, 6.0), 4)
+        pop     = _rnd.randint(50, 35000)
+        occup   = round(_rnd.uniform(1.5, 8.0), 4)
         lat     = round(_rnd.uniform(32.5, 42.0), 4)
         lon     = round(_rnd.uniform(-124.5, -114.0), 4)
-        # synthetic target: income + rooms + age drive value
-        base = 0.45*medinc + 0.08*rooms + 0.01*age - 0.0002*pop + _rnd.gauss(0,0.3)
-        val  = round(max(0.15, min(5.0, base + 1.0)), 4)
+        coast_bonus = _math.exp(-0.3 * (lon + 120)**2) * 0.8
+        overcrowd   = max(0, occup - 3.5) * (-0.25)
+        noise       = _rnd.gauss(0, 0.65)
+        base = (0.42*medinc + 0.06*rooms - 0.04*bedrms
+                + 0.005*age - 0.000012*pop
+                + coast_bonus + overcrowd + noise)
+        val = round(max(0.15, min(5.0, base + 0.9)), 4)
         rows_ca.append({
             "MedInc": str(medinc),
             "HouseAge": str(age),
@@ -307,13 +315,41 @@ def _build_tab_datasets():
             "AveOccup": str(occup),
             "Latitude": str(lat),
             "Longitude": str(lon),
-            "MedHouseVal": str(val) if _rnd.random()>0.03 else "",
+            "MedHouseVal": str(val) if _rnd.random() > 0.03 else "",
         })
     TAB_DATASETS["california_housing"] = {
         "name": "🏠 California Housing (regresión)",
         "task": "regression", "target": "MedHouseVal",
         "columns": cols_ca, "rows": rows_ca,
-        "desc": "200 distritos · variables demográficas → valor medio vivienda (×$100k)"
+        "desc": "400 distritos · variables demográficas → valor medio vivienda (×$100k)"
+    }
+
+    # ── 3. Ruido Puro — dataset completamente aleatorio para probar ───────────
+    _rnd2 = __import__("random").Random(99)
+    rows_noise = []
+    cols_noise = ["X1","X2","X3","X4","X5","X6","Y"]
+    for _ in range(300):
+        x1 = round(_rnd2.gauss(0, 10), 3)
+        x2 = round(_rnd2.uniform(-50, 50), 3)
+        x3 = round(_rnd2.gauss(100, 30), 3)
+        x4 = round(_rnd2.uniform(0, 1), 4)
+        x5 = round(_rnd2.gauss(-5, 20), 3)
+        x6 = round(_rnd2.uniform(1, 100), 3)
+        # Y barely related to inputs — mostly noise
+        y_val = round(
+            0.15*x1 - 0.05*x2 + _rnd2.gauss(0, 25),   # signal swamped by noise
+            3
+        )
+        rows_noise.append({
+            "X1": str(x1), "X2": str(x2), "X3": str(x3),
+            "X4": str(x4), "X5": str(x5), "X6": str(x6),
+            "Y":  str(y_val) if _rnd2.random() > 0.05 else "",
+        })
+    TAB_DATASETS["pure_noise"] = {
+        "name": "🎲 Ruido Puro (regresión)",
+        "task": "regression", "target": "Y",
+        "columns": cols_noise, "rows": rows_noise,
+        "desc": "300 filas · 6 features aleatorias → Y casi independiente. R² esperado: 0.01–0.15"
     }
 
 _build_tab_datasets()
@@ -1214,8 +1250,9 @@ def tabular_preprocess():
     })
 
 def _try_float(v):
-    try: float(v); return True
-    except: return False
+    """Return the float value if v is convertible, else None."""
+    try: return float(v)
+    except: return None
 
 # ── Box plot (for outlier detection) ─────────────────────────────────────────
 @app.route("/api/plot_boxplot")
@@ -1274,7 +1311,10 @@ def _build_Xy(rows, cols, target_col, normalize="none"):
     Rows with a missing target are dropped; missing numeric features are
     mean-imputed.
     """
-    feature_cols = [c for c in cols if c != target_col]
+    # Strictly exclude target from features — compare by exact string match
+    feature_cols = [c for c in cols if str(c).strip() != str(target_col).strip()]
+    if not feature_cols:
+        return None, f"No hay columnas de features después de excluir '{target_col}'", []
 
     # Determine which feature cols are numeric vs categorical
     all_vals = {c: [r.get(c, "") for r in rows] for c in feature_cols}
@@ -1457,64 +1497,327 @@ def run_regression():
 
 @app.route("/api/regression_cv", methods=["POST"])
 def regression_cv():
-    """K-fold cross-validation over a list of alpha values for Ridge / LASSO."""
-    body       = request.get_json(force=True, silent=True) or {}
-    target_col = body.get("target_col", _TAB.get("target_col",""))
-    method     = body.get("method", "ridge")
-    alphas     = body.get("alphas", [0.001, 0.01, 0.1, 1.0, 10.0, 100.0])
-    k_folds    = int(body.get("k_folds", 5))
-    normalize  = body.get("normalize", "zscore")
+    """Legacy alias — delegates to model_cv."""
+    return model_cv()
 
-    rows = S["raw_rows"]
-    cols = S["columns"]
-    if not rows or not target_col:
-        return jsonify({"error": "No data or no target"}), 400
+@app.route("/api/model_cv", methods=["POST"])
+def model_cv():
+    """Grid Search + K-fold CV across hyperparameter × normalization combinations.
 
-    X, y, feat_names = _build_Xy(rows, cols, target_col, normalize)
+    For models with a main hyperparameter (ridge λ, lasso λ, logistic C, knn k):
+      - Sweeps all param_vals × all normalizations → 2-D grid
+      - Returns one curve per normalization, best combo overall
+      - Trains final model with best combo and stores in _MODEL_STORE[node_id]
+
+    For OLS (no hyperparameter):
+      - Sweeps normalizations only → single bar chart
+      - Trains final model with best normalization
+    """
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+    body        = request.get_json(force=True, silent=True) or {}
+    upstream_id = str(body.get("upstream_id", "")) or None
+    node_id     = str(body.get("node_id", "")) or None
+    target_col  = str(body.get("target_col", "")) or _TAB.get("target_col", "")
+    method      = str(body.get("method", "ridge"))
+    param_vals  = body.get("param_vals", None)   # explicit list from UI or None
+    k_folds     = int(body.get("k_folds", 5))
+    # normalizations to sweep (always all three for grid search)
+    norm_sweep  = ["none", "zscore", "minmax"]
+    norm_labels = {"none": "Sin norm.", "zscore": "Z-score", "minmax": "Min-Max"}
+
+    # ── Resolve data ──────────────────────────────────────────────────────
+    D    = _effective_data(upstream_id) if upstream_id else None
+    rows = (D["raw_rows"] if D else None) or S["raw_rows"]
+    cols = (D["columns"]  if D else None) or S["columns"]
+    if not rows:
+        return jsonify({"error": "No hay datos cargados"}), 400
+    if not target_col:
+        target_col = (D["target"] if D else None) or _TAB.get("target_col","") or (cols[-1] if cols else "")
+
+    # Build raw X, y (no scaler — Pipeline handles per fold)
+    result_xy = _build_Xy(rows, cols, target_col, normalize="none")
+    if result_xy[0] is None:
+        return jsonify({"error": result_xy[1]}), 400
+    X, y_raw, feat_names = result_xy
+
+    # ── Detect problem type ───────────────────────────────────────────────
+    tgt_vals = [r.get(target_col,"") for r in rows if not _is_missing(r.get(target_col,""))]
+    tgt_type = _col_type(tgt_vals)
+    _reg_methods = {"ridge", "lasso", "linreg"}
+    _cls_methods = {"logistic", "knn"}
+    if method in _reg_methods:
+        is_cls = False
+    elif method in _cls_methods:
+        is_cls = True
+    else:
+        is_cls = not _is_numeric_type(tgt_type) or len(set(str(v).strip() for v in tgt_vals)) <= 10
+
+    # ── Encode y ──────────────────────────────────────────────────────────
+    if is_cls:
+        def _tstr(v):
+            try:
+                f = float(v); return str(int(f)) if f == int(f) else str(f)
+            except: return str(v).strip()
+        classes   = sorted(set(_tstr(v) for v in y_raw))
+        label_map = {c: i for i, c in enumerate(classes)}
+        y         = np.array([label_map[_tstr(v)] for v in y_raw])
+    else:
+        y = y_raw.astype(float)
+
     if len(X) < k_folds * 2:
-        return jsonify({"error": "Not enough data for CV"}), 400
+        return jsonify({"error": f"Pocos datos para {k_folds}-fold CV. Necesitas al menos {k_folds*2} filas."}), 400
 
-    kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
-    results = []
-    for a in alphas:
-        if method == "lasso":
-            mdl = Lasso(alpha=float(a), max_iter=5000)
+    # ── CV config per model ───────────────────────────────────────────────
+    MODEL_CV_CFG = {
+        "ridge":    {"param": "alpha", "label": "λ (alpha)", "log": True,
+                     "default": [0.0001,0.001,0.01,0.1,1.0,10.0,100.0,1000.0]},
+        "lasso":    {"param": "alpha", "label": "λ (alpha)", "log": True,
+                     "default": [0.0001,0.001,0.01,0.1,1.0,10.0,100.0]},
+        "linreg":   {"param": None,    "label": None,        "log": False,
+                     "default": [1]},
+        "logistic": {"param": "C",     "label": "C (inv. regularización)", "log": True,
+                     "default": [0.001,0.01,0.1,1.0,10.0,100.0,1000.0]},
+        "knn":      {"param": "k",     "label": "k (vecinos)", "log": False,
+                     "default": [1,3,5,7,9,11,15,21]},
+    }
+    cfg   = MODEL_CV_CFG.get(method, MODEL_CV_CFG["ridge"])
+    pvals = param_vals if param_vals else cfg["default"]
+    has_param = cfg["param"] is not None
+
+    # ── Scoring ───────────────────────────────────────────────────────────
+    if is_cls:
+        cv_split = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+        scoring  = "f1_macro"
+        metric_label = "F1 (macro)"
+        higher_is_better = True
+    else:
+        cv_split = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+        scoring  = "neg_mean_squared_error"
+        metric_label = "RMSE"
+        higher_is_better = False
+
+    def _make_scaler_step(norm):
+        if norm == "zscore":  return ("scaler", StandardScaler())
+        if norm == "minmax":  return ("scaler", MinMaxScaler())
+        return None
+
+    def _make_estimator(pv):
+        pv = float(pv)
+        if method == "ridge":    return Ridge(alpha=pv)
+        if method == "lasso":    return Lasso(alpha=pv, max_iter=10000)
+        if method == "logistic": return LogisticRegression(C=pv, max_iter=2000, random_state=42, solver="saga")
+        if method == "knn":
+            from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+            return KNeighborsClassifier(n_neighbors=int(pv)) if is_cls else KNeighborsRegressor(n_neighbors=int(pv))
+        return LinearRegression()
+
+    def _cv_score(est, scaler_step):
+        if scaler_step:
+            pipe = Pipeline([scaler_step, ("model", est)])
         else:
-            mdl = Ridge(alpha=float(a))
-        scores = cross_val_score(mdl, X, y, cv=kf,
-                                 scoring="neg_mean_squared_error")
-        rmse_scores = [float((-s)**0.5) for s in scores]
-        results.append({
-            "alpha": float(a),
-            "rmse_mean": round(float(np.mean(rmse_scores)), 4),
-            "rmse_std":  round(float(np.std(rmse_scores)),  4),
-        })
+            pipe = est
+        raw = cross_val_score(pipe, X, y, cv=cv_split, scoring=scoring)
+        if not is_cls:
+            scores = [float((-s)**0.5) for s in raw]
+        else:
+            scores = [float(s) for s in raw]
+        return round(float(np.mean(scores)), 4), round(float(np.std(scores)), 4)
 
-    best = min(results, key=lambda r: r["rmse_mean"])
+    # ── Grid search: param_vals × normalizations ──────────────────────────
+    # results_by_norm: { norm: [ {param_val, score_mean, score_std}, ... ] }
+    results_by_norm = {}
+    all_combos      = []   # flat list for finding global best
 
-    # ── CV curve plot ─────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(7, 4))
-    fig.patch.set_facecolor(LIGHT); style_ax(ax)
-    alphas_f = [r["alpha"] for r in results]
-    means    = [r["rmse_mean"] for r in results]
-    stds     = [r["rmse_std"]  for r in results]
-    ax.semilogx(alphas_f, means, color=PALETTE[0], linewidth=2, marker="o", markersize=6)
-    ax.fill_between(alphas_f,
-                    [m - s for m, s in zip(means, stds)],
-                    [m + s for m, s in zip(means, stds)],
-                    alpha=0.18, color=PALETTE[0])
-    ax.axvline(best["alpha"], color=MINT, linewidth=1.6, linestyle="--",
-               label=f"Best α={best['alpha']}  RMSE={best['rmse_mean']}")
-    ax.set_xlabel("α (log scale)", color=SEC, fontsize=11)
-    ax.set_ylabel("CV RMSE", color=SEC, fontsize=11)
-    ax.set_title(f"{method.upper()} — {k_folds}-fold CV", color=INK, fontsize=12, fontweight="bold")
-    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
-    ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
-    plt.tight_layout(pad=1.4)
+    effective_pvals = pvals if has_param else [None]
+
+    for norm in norm_sweep:
+        scaler_step = _make_scaler_step(norm)
+        norm_results = []
+        for pv in effective_pvals:
+            est = _make_estimator(pv if pv is not None else 1.0)
+            mean_s, std_s = _cv_score(est, scaler_step)
+            entry = {
+                "param_val":  pv,
+                "norm":       norm,
+                "score_mean": mean_s,
+                "score_std":  std_s,
+            }
+            norm_results.append(entry)
+            all_combos.append(entry)
+        results_by_norm[norm] = norm_results
+
+    # Global best combo
+    if higher_is_better:
+        best_combo = max(all_combos, key=lambda r: r["score_mean"])
+    else:
+        best_combo = min(all_combos, key=lambda r: r["score_mean"])
+
+    best_norm  = best_combo["norm"]
+    best_pv    = best_combo["param_val"]
+    best_score = best_combo["score_mean"]
+
+    # ── Train final model with best combo (full train set) ────────────────
+    # Use the same split as model_train would use (from preprocess or 70/30)
+    split_info = D.get("split") if D else None
+    if split_info and split_info.get("train_idx") is not None:
+        tr_idx = split_info["train_idx"]
+        te_idx = split_info["test_idx"]
+        X_tr, X_te = X[tr_idx], X[te_idx]
+        y_tr, y_te = y[tr_idx], y[te_idx]
+    else:
+        from sklearn.model_selection import train_test_split as tts
+        X_tr, X_te, y_tr, y_te = tts(X, y, test_size=0.3, random_state=42)
+
+    # Apply best normalization to final model
+    if best_norm == "zscore":
+        from sklearn.preprocessing import StandardScaler as SS
+        sc = SS(); X_tr_s = sc.fit_transform(X_tr); X_te_s = sc.transform(X_te)
+    elif best_norm == "minmax":
+        from sklearn.preprocessing import MinMaxScaler as MMS
+        sc = MMS(); X_tr_s = sc.fit_transform(X_tr); X_te_s = sc.transform(X_te)
+    else:
+        sc = None; X_tr_s = X_tr; X_te_s = X_te
+
+    final_est = _make_estimator(best_pv if best_pv is not None else 1.0)
+    final_est.fit(X_tr_s, y_tr)
+    y_tr_pred = final_est.predict(X_tr_s)
+    y_te_pred = final_est.predict(X_te_s)
+
+    if not is_cls:
+        train_m = _reg_metrics(y_tr, y_tr_pred)
+        test_m  = _reg_metrics(y_te, y_te_pred)
+    else:
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+        train_m = {"accuracy": round(float(accuracy_score(y_tr, y_tr_pred)), 4)}
+        test_m  = {
+            "accuracy":  round(float(accuracy_score(y_te, y_te_pred)), 4),
+            "f1_macro":  round(float(f1_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
+            "precision": round(float(precision_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
+            "recall":    round(float(recall_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
+        }
+
+    coefs = []
+    if hasattr(final_est, "coef_"):
+        coefs = list(zip(feat_names, [round(float(c), 6) for c in final_est.coef_]))
+        coefs = sorted(coefs, key=lambda x: abs(x[1]), reverse=True)
+    intercept = round(float(final_est.intercept_), 6) if hasattr(final_est, "intercept_") else 0.0
+
+    # Store in _MODEL_STORE so model_eval can read it
+    if node_id:
+        _MODEL_STORE[node_id] = {
+            "method":        method,
+            "normalize":     best_norm,
+            "alpha":         best_pv,
+            "problem_type":  "classification" if is_cls else "regression",
+            "feat_names":    feat_names,
+            "coefficients":  coefs,
+            "intercept":     intercept,
+            "n_train":       int(len(X_tr)),
+            "n_test":        int(len(X_te)),
+            "train_metrics": train_m,
+            "test_metrics":  test_m,
+            "X_te":          X_te_s.tolist(),
+            "y_te":          y_te.tolist(),
+            "y_te_pred":     y_te_pred.tolist(),
+            "X_tr":          X_tr_s.tolist(),
+            "y_tr":          y_tr.tolist(),
+            "y_tr_pred":     y_tr_pred.tolist(),
+            "scaler":        sc,
+            "model_obj":     final_est,
+            "from_cv":       True,
+            # CV summary fields — used by model_evaluate to populate CV tab
+            "cv_img":           None,   # filled below after plot is generated
+            "param_label":      cfg["label"],
+            "metric_label":     metric_label,
+            "k_folds":          k_folds,
+            "best":             best_combo,
+            "best_pv_display":  None,   # filled below after formatting
+        }
+
+    # ── Plot: one curve per normalization ─────────────────────────────────
+    use_log = cfg["log"] and has_param and len(set(float(p) for p in pvals if p)) > 1 and min(float(p) for p in pvals if p) > 0
+
+    if has_param:
+        # Line chart: X = param values, one line per normalization
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        fig.patch.set_facecolor(BG); style_ax(ax)
+
+        norm_colors = {"none": PALETTE[0], "zscore": PALETTE[1], "minmax": PALETTE[2]}
+        for ni, norm in enumerate(norm_sweep):
+            nr = results_by_norm[norm]
+            xs  = [r["param_val"] for r in nr]
+            ms  = [r["score_mean"] for r in nr]
+            sts = [r["score_std"]  for r in nr]
+            col = norm_colors[norm]
+            plot_fn = ax.semilogx if use_log else ax.plot
+            plot_fn(xs, ms, color=col, linewidth=2, marker="o", markersize=5,
+                    label=norm_labels[norm], zorder=3+ni)
+            ax.fill_between(xs, [m-s for m,s in zip(ms,sts)], [m+s for m,s in zip(ms,sts)],
+                            alpha=0.12, color=col, zorder=2)
+
+        # Mark global best
+        if best_pv is not None:
+            ax.axvline(best_pv, color=MINT, linewidth=1.8, linestyle="--", zorder=6,
+                       label=f"Mejor: {norm_labels[best_norm]}, {cfg['label']}={round(best_pv,4)} → {metric_label}={best_score}")
+
+        ax.set_xlabel((cfg["label"] or "Parámetro") + (" (log)" if use_log else ""), color=SEC, fontsize=11)
+        ax.set_ylabel(metric_label + " (CV)", color=SEC, fontsize=11)
+        ax.set_title(f"{method.upper()} — Grid Search {k_folds}-fold · {metric_label}", color=INK, fontsize=12, fontweight="bold")
+        ax.legend(facecolor=BG, labelcolor=INK, fontsize=9, loc="best")
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+        plt.tight_layout(pad=1.4)
+    else:
+        # OLS: bar chart comparing normalizations
+        fig, ax = plt.subplots(figsize=(6, 3.5))
+        fig.patch.set_facecolor(BG); style_ax(ax)
+        bar_names   = [norm_labels[n] for n in norm_sweep]
+        bar_scores  = [results_by_norm[n][0]["score_mean"] for n in norm_sweep]
+        bar_stds    = [results_by_norm[n][0]["score_std"]  for n in norm_sweep]
+        bar_colors  = [MINT if n == best_norm else PALETTE[0] for n in norm_sweep]
+        ax.bar(bar_names, bar_scores, color=bar_colors, alpha=0.85, edgecolor="none",
+               yerr=bar_stds, capsize=5, error_kw={"ecolor": SEC, "linewidth":1.2})
+        ax.set_ylabel(metric_label + " (CV)", color=SEC, fontsize=11)
+        ax.set_title(f"OLS — Comparación de normalizaciones ({k_folds}-fold)", color=INK, fontsize=12, fontweight="bold")
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+        plt.tight_layout(pad=1.4)
+
     cv_img = fig_b64(fig)
 
-    return jsonify({"results": results, "best": best,
-                    "method": method, "k_folds": k_folds, "cv_img": cv_img})
+    # Format best param for display
+    if best_pv is not None:
+        if cfg.get("isInt"):
+            best_pv_display = str(int(round(best_pv)))
+        elif best_pv < 0.01:
+            best_pv_display = f"{best_pv:.2e}"
+        else:
+            best_pv_display = str(round(best_pv, 4))
+    else:
+        best_pv_display = None
+
+    # Backfill cv_img + best_pv_display into _MODEL_STORE now that they're available
+    if node_id and node_id in _MODEL_STORE:
+        _MODEL_STORE[node_id]["cv_img"] = cv_img
+        _MODEL_STORE[node_id]["best_pv_display"] = best_pv_display
+
+    return jsonify({
+        "results_by_norm": results_by_norm,
+        "best":            best_combo,
+        "best_pv_display": best_pv_display,
+        "method":          method,
+        "param_label":     cfg["label"],
+        "metric_label":    metric_label,
+        "k_folds":         k_folds,
+        "problem_type":    "classification" if is_cls else "regression",
+        "cv_img":          cv_img,
+        "has_param":       has_param,
+        "train_metrics":   train_m,
+        "test_metrics":    test_m,
+        "n_train":         int(len(X_tr)),
+        "n_test":          int(len(X_te)),
+        "norm_labels":     norm_labels,
+    })
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LAB 4 — TABULAR CLASSIFICATION
@@ -1728,6 +2031,7 @@ def tab_classify():
 def tab_classify_cv():
     """K-fold cross-validation for one classifier."""
     body       = request.get_json(force=True, silent=True) or {}
+    node_id    = str(body.get("node", ""))
     target_col = body.get("target_col", "")
     model_name = body.get("model", "logistic")
     normalize  = body.get("normalize", "zscore")
@@ -1735,10 +2039,12 @@ def tab_classify_cv():
     hp         = body.get("hp", {})
 
     from sklearn.model_selection import StratifiedKFold, cross_val_score
-    rows = S["raw_rows"]
+    D    = _effective_data(node_id) if node_id else None
+    rows = (D["raw_rows"] if D else None) or S["raw_rows"]
+    all_cols = (D["columns"] if D else None) or S["columns"]
     if not rows: return jsonify({"error": "No data"}), 400
 
-    cols = [c for c in S["columns"] if c != target_col]
+    cols = [c for c in all_cols if c != target_col]
     X, y_raw, feat_names = _build_Xy(rows, cols, target_col, normalize=normalize)
     if X is None: return jsonify({"error": y_raw}), 400
 
@@ -3471,9 +3777,76 @@ def export_report():
     )
 
 
+@app.route("/api/export_tab_csv")
+def export_tab_csv():
+    """
+    Export a tabular dataset as CSV.
+    ?node_id=<id>            → full preprocessed dataset for that node
+    ?node_id=<id>&split=train → train split (from model result stored for that node)
+    ?node_id=<id>&split=test  → test split
+    """
+    node_id = request.args.get("node_id", "")
+    split   = request.args.get("split", "")   # "train", "test", or ""
+
+    base_name = re.sub(r"[^\w\-]", "_", _TAB.get("dataset_name") or node_id or "dataset")
+
+    # ── Split mode: reconstruct from raw_rows using stored ratio ─────────────
+    if split in ("train", "test"):
+        import math, random as _rnd
+
+        # Get the raw preprocessed rows for this node
+        D = _effective_data(node_id) if node_id and node_id != "global" else None
+        rows = (D["raw_rows"] if D else None) or _TAB.get("raw_rows", [])
+        if not rows:
+            return jsonify({"error": "No hay datos preprocesados disponibles para exportar la partición"}), 400
+
+        # Ratio is passed as query param from the client (e.g. "0.7")
+        ratio_str = request.args.get("ratio", "0.7")
+        try:
+            ratio = float(ratio_str)
+        except ValueError:
+            ratio = 0.7
+        ratio = max(0.1, min(0.95, ratio))
+
+        n_total = len(rows)
+        n_train = math.floor(n_total * ratio)
+        # Reproducible shuffle using a fixed seed so train/test are consistent
+        rng = _rnd.Random(42)
+        indices = list(range(n_total))
+        rng.shuffle(indices)
+        train_idx = set(indices[:n_train])
+
+        selected = [rows[i] for i in indices if (split == "train") == (i in train_idx)]
+        cols = list(rows[0].keys()) if rows else []
+        buf = io.StringIO()
+        w   = csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        w.writerows(selected)
+        fname = base_name + f"_{split}.csv"
+        return send_file(io.BytesIO(buf.getvalue().encode("utf-8")),
+                         mimetype="text/csv", as_attachment=True, download_name=fname)
+
+    # ── Full dataset mode ──────────────────────────────────────────────────
+    D = _effective_data(node_id) if node_id and node_id != "global" else None
+    rows = (D["raw_rows"] if D else None) or _TAB.get("raw_rows", [])
+    if not rows:
+        return jsonify({"error": "No hay datos tabulares cargados"}), 400
+    cols = list(rows[0].keys()) if rows else []
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=cols)
+    w.writeheader()
+    w.writerows(rows)
+    return send_file(
+        io.BytesIO(buf.getvalue().encode("utf-8")),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=base_name + ".csv"
+    )
+
+
 @app.route("/api/export_model")
 def export_model():
-    """Export the trained model + vectorizer as a .pkl file."""
+    """Export the trained model + vectorizer as a .pkl file (NLP flow legacy)."""
     if S["model"] is None:
         return jsonify({"error": "No trained model"}), 400
 
@@ -3494,6 +3867,720 @@ def export_model():
     )
 
 
+@app.route("/api/save_tab_model", methods=["POST"])
+def save_tab_model():
+    """
+    Save the full tabular model result as a .pkl.
+    Body: { node_id: str, filename: str }
+    The .pkl contains: sklearn model, preprocessing info, X_test/y_test,
+    metrics, confusion matrix, feature names, target col, classes.
+    """
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+    fname   = re.sub(r"[^\w\-]", "_", body.get("filename", "modelo")) + ".pkl"
+
+    result = _MODEL_STORE.get(node_id) or _mtrain_result
+    if not result:
+        return jsonify({"error": "No hay modelo entrenado. Entrena primero."}), 400
+
+    # Rebuild sklearn model object from _MODEL_STORE metadata
+    # We store the full result dict; also persist the raw sklearn model if available
+    # Normalise keys: CV uses "method"/"feat_names"/"X_te"/"y_te"/"y_te_pred"
+    # Train-direct uses "model_type"/"features"/"_Xte"/"_yte"/"_yte_pred"
+    _model_type  = result.get("model_type") or result.get("method")
+    _features    = result.get("features")   or result.get("feat_names", [])
+    _target_col  = result.get("target_col") or _TAB.get("target_col", "")
+    _X_test      = result.get("_Xte")       or result.get("X_te")
+    _y_test      = result.get("_yte")       or result.get("y_te")
+    _y_pred      = result.get("_yte_pred")  or result.get("y_te_pred")
+    _X_train     = result.get("_Xtr")       or result.get("X_tr")
+    _y_train     = result.get("_ytr")       or result.get("y_tr")
+
+    payload = {
+        # ── Identity ──────────────────────────────────────────────────────
+        "nlpflow_version": "4",
+        "model_type":      _model_type,
+        "problem_type":    result.get("problem_type"),
+        "target_col":      _target_col,
+        "features":        _features,
+        "classes":         result.get("classes", []),
+        "normalize":       result.get("normalize"),
+        "alpha":           result.get("alpha"),
+        "fit_intercept":   result.get("fit_intercept"),
+        "fixed_intercept": result.get("fixed_intercept"),
+        "intercept":       result.get("intercept"),
+        # ── Metrics ───────────────────────────────────────────────────────
+        "train_metrics":   result.get("train_metrics"),
+        "test_metrics":    result.get("test_metrics"),
+        "confusion_matrix":result.get("confusion_matrix"),
+        "coefficients":    result.get("coefficients"),
+        # ── Test set (for re-evaluation without new data) ─────────────────
+        "X_test":          _X_test,
+        "y_test":          _y_test,
+        "y_pred":          _y_pred,
+        "X_train":         _X_train,
+        "y_train":         _y_train,
+        # ── Dataset info ──────────────────────────────────────────────────
+        "n_train":         result.get("n_train"),
+        "n_test":          result.get("n_test"),
+        # ── CV summary (if model was trained via grid search) ─────────────
+        "from_cv":         result.get("from_cv", False),
+        "cv_img":          result.get("cv_img"),
+        "param_label":     result.get("param_label"),
+        "metric_label":    result.get("metric_label"),
+        "k_folds":         result.get("k_folds"),
+        "best":            result.get("best"),
+        "best_pv_display": result.get("best_pv_display"),
+    }
+
+    # Attach the live sklearn model object — try str and int keys
+    def _get_model(nid):
+        m = _NODE_MODELS.get(nid)
+        if m is None and str(nid).isdigit():
+            m = _NODE_MODELS.get(int(nid))
+        if m is None:
+            m = _NODE_MODELS.get(str(nid))
+        return m
+    payload["sklearn_model"] = _get_model(node_id)
+    print(f"[save_tab_model] target_col={payload.get('target_col')!r}, sklearn_model found: {payload['sklearn_model'] is not None}")
+
+    model_buf = io.BytesIO()
+    joblib.dump(payload, model_buf)
+    model_buf.seek(0)
+    return send_file(
+        model_buf,
+        mimetype="application/octet-stream",
+        as_attachment=True,
+        download_name=fname
+    )
+
+
+# Storage for loaded tabular models per node
+_LOADED_TAB_MODELS: dict = {}
+
+
+@app.route("/api/load_tab_model", methods=["POST"])
+def load_tab_model():
+    """
+    Receive a .pkl file and store it for the given node.
+    Returns metadata for the UI.
+    """
+    node_id = str(request.form.get("node_id", "load_default"))
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file received"}), 400
+    try:
+        payload = joblib.load(io.BytesIO(f.read()))
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el .pkl: {e}"}), 400
+
+    if not isinstance(payload, dict) or "model_type" not in payload:
+        return jsonify({"error": "El fichero no parece un modelo de NLP Flow."}), 400
+
+    _LOADED_TAB_MODELS[node_id] = payload
+
+    # Also inject into _MODEL_STORE so model_evaluate works transparently
+    # Map .pkl keys → _MODEL_STORE schema (same as train-direct result)
+    _MODEL_STORE[node_id] = {
+        "model_type":      payload.get("model_type"),
+        "problem_type":    payload.get("problem_type"),
+        "target_col":      payload.get("target_col"),
+        "features":        payload.get("features", []),
+        "classes":         payload.get("classes", []),
+        "normalize":       payload.get("normalize"),
+        "alpha":           payload.get("alpha"),
+        "intercept":       payload.get("intercept"),
+        "coefficients":    payload.get("coefficients"),
+        "train_metrics":   payload.get("train_metrics"),
+        "test_metrics":    payload.get("test_metrics"),
+        "confusion_matrix":payload.get("confusion_matrix"),
+        "coef_img":        None,   # will be regenerated by model_evaluate
+        "n_train":         payload.get("n_train"),
+        "n_test":          payload.get("n_test"),
+        # CV summary (present if model was trained via grid search and saved with pkl)
+        "from_cv":          payload.get("from_cv", False),
+        "cv_img":           payload.get("cv_img"),
+        "param_label":      payload.get("param_label"),
+        "metric_label":     payload.get("metric_label"),
+        "k_folds":          payload.get("k_folds"),
+        "best":             payload.get("best"),
+        "best_pv_display":  payload.get("best_pv_display"),
+        # test arrays for plots/tests (use both key schemas for compatibility)
+        "_Xte":      payload.get("X_test"),
+        "_yte":      payload.get("y_test"),
+        "_yte_pred": payload.get("y_pred"),
+        "_Xtr":      payload.get("X_train"),
+        "_ytr":      payload.get("y_train"),
+    }
+    if payload.get("sklearn_model") is not None:
+        _NODE_MODELS[node_id] = payload["sklearn_model"]
+
+    # Normalise metric keys to lowercase for consistent frontend display
+    def _norm_metrics(m):
+        if not m: return m
+        return {k.lower(): v for k, v in m.items()}
+
+    target_col_out = payload.get("target_col") or ""
+    print(f"[load_tab_model] target_col from pkl: {target_col_out!r}")
+
+    return jsonify({
+        "model_type":   payload.get("model_type"),
+        "problem_type": payload.get("problem_type"),
+        "target_col":   target_col_out,
+        "features":     payload.get("features", []),
+        "classes":      payload.get("classes", []),
+        "n_train":      payload.get("n_train"),
+        "n_test":       payload.get("n_test"),
+        "train_metrics": _norm_metrics(payload.get("train_metrics")),
+        "test_metrics":  _norm_metrics(payload.get("test_metrics")),
+    })
+
+
+@app.route("/api/export_eval_metrics", methods=["GET"])
+def export_eval_metrics():
+    """
+    Export train + test metrics from the last model_evaluate call.
+    ?node_id=<id>&format=json|csv
+    """
+    node_id = str(request.args.get("node_id", ""))
+    fmt     = request.args.get("format", "json")
+
+    print(f"\n[export_eval_metrics] node_id={repr(node_id)}, format={fmt}")
+    print(f"[export_eval_metrics] claves en _MODEL_STORE: {list(_MODEL_STORE.keys())}")
+
+    result = _MODEL_STORE.get(node_id)
+    if result is None and node_id.isdigit():
+        result = _MODEL_STORE.get(int(node_id))
+    if result is None and len(_MODEL_STORE) == 1:
+        result = next(iter(_MODEL_STORE.values()))
+        print(f"[export_eval_metrics] usando único resultado disponible")
+    if result is None:
+        result = _mtrain_result
+    if not result:
+        print(f"[export_eval_metrics] ERROR: sin resultado")
+        return jsonify({"error": "No hay resultados de evaluación"}), 400
+
+    train_m = result.get("train_metrics") or {}
+    test_m  = result.get("test_metrics")  or {}
+    data = {
+        "model_type":   result.get("model_type") or result.get("method"),
+        "problem_type": result.get("problem_type"),
+        "target_col":   result.get("target_col"),
+        "n_train":      result.get("n_train"),
+        "n_test":       result.get("n_test"),
+        "train_metrics": train_m,
+        "test_metrics":  test_m,
+    }
+
+    if fmt == "csv":
+        import csv as _csv
+        buf = io.StringIO()
+        w   = _csv.writer(buf)
+        w.writerow(["split", "metric", "value"])
+        for k, v in train_m.items():
+            w.writerow(["train", k, v])
+        for k, v in test_m.items():
+            w.writerow(["test", k, v])
+        content = buf.getvalue().encode("utf-8")
+        return send_file(io.BytesIO(content), mimetype="text/csv",
+                         as_attachment=True, download_name="eval_metrics.csv")
+    else:
+        import json as _json
+        content = _json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        return send_file(io.BytesIO(content), mimetype="application/json",
+                         as_attachment=True, download_name="eval_metrics.json")
+
+
+@app.route("/api/export_split_zip", methods=["POST"])
+def export_split_zip():
+    """
+    Build a ZIP with train.csv + test.csv using the preprocessed dataset
+    and the split ratio/seed stored for a given node.
+    Body: { node_id, ratio, mode }
+    """
+    import zipfile as _zf, math as _math, random as _rnd
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+    try:
+        ratio = float(body.get("ratio", 0.7))
+    except (ValueError, TypeError):
+        ratio = 0.7
+    ratio = max(0.1, min(0.95, ratio))
+
+    print(f"\n[export_split_zip] ── Inicio ─────────────────────────────")
+    print(f"[export_split_zip]   node_id={node_id!r}, ratio={ratio}")
+
+    D = _effective_data(node_id) if node_id and node_id != "global" else None
+    rows = (D["raw_rows"] if D else None) or _TAB.get("raw_rows", [])
+    if not rows:
+        return jsonify({"error": "No hay datos preprocesados disponibles"}), 400
+
+    cols    = list(rows[0].keys())
+    n_total = len(rows)
+    n_train = _math.floor(n_total * ratio)
+
+    rng     = _rnd.Random(42)
+    indices = list(range(n_total))
+    rng.shuffle(indices)
+    train_rows = [rows[i] for i in indices[:n_train]]
+    test_rows  = [rows[i] for i in indices[n_train:]]
+
+    print(f"[export_split_zip]   total={n_total}, train={len(train_rows)}, test={len(test_rows)}")
+
+    def _rows_to_csv(rws):
+        buf = io.StringIO()
+        w   = csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rws)
+        return buf.getvalue().encode("utf-8")
+
+    train_csv = _rows_to_csv(train_rows)
+    test_csv  = _rows_to_csv(test_rows)
+
+    zip_buf = io.BytesIO()
+    with _zf.ZipFile(zip_buf, "w", _zf.ZIP_DEFLATED) as zf:
+        zf.writestr("train.csv", train_csv)
+        print(f"[export_split_zip]   ✓ train.csv ({len(train_csv)} bytes)")
+        zf.writestr("test.csv",  test_csv)
+        print(f"[export_split_zip]   ✓ test.csv  ({len(test_csv)} bytes)")
+
+    size = zip_buf.tell()
+    zip_buf.seek(0)
+    print(f"[export_split_zip]   ZIP total: {size} bytes")
+    print(f"[export_split_zip] ── Fin ──────────────────────────────────\n")
+
+    return send_file(zip_buf, mimetype="application/zip",
+                     as_attachment=True, download_name="dataset_split.zip")
+
+
+@app.route("/api/export_plots_zip", methods=["POST"])
+def export_plots_zip():
+    """
+    Receive a list of { label, img } (base64 PNG) from the Plots block
+    and return a ZIP file containing all of them as PNGs.
+    Also supports native dialog via pick_export_path.
+    """
+    import zipfile as _zf, base64 as _b64, re as _re
+    body  = request.get_json(force=True, silent=True) or {}
+    plots = body.get("plots", [])   # [{ label: str, img: "data:image/png;base64,..." }]
+
+    print(f"\n[export_plots_zip] ── Inicio ─────────────────────────────")
+    print(f"[export_plots_zip]   plots recibidos: {len(plots)}")
+
+    if not plots:
+        return jsonify({"error": "No hay plots para exportar"}), 400
+
+    zip_buf = io.BytesIO()
+    with _zf.ZipFile(zip_buf, "w", _zf.ZIP_DEFLATED) as zf:
+        for i, p in enumerate(plots):
+            raw_b64 = p.get("img", "")
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            label = p.get("label") or f"plot_{i+1}"
+            # Sanitise filename
+            fname = _re.sub(r"[^\w\-\. ]", "_", label).strip() + ".png"
+            try:
+                raw = _b64.b64decode(raw_b64)
+                zf.writestr(fname, raw)
+                print(f"[export_plots_zip]   ✓ {fname} ({len(raw)} bytes)")
+            except Exception as e:
+                print(f"[export_plots_zip]   ✗ {fname}: {e}")
+
+    size = zip_buf.tell()
+    zip_buf.seek(0)
+    print(f"[export_plots_zip]   ZIP total: {size} bytes")
+    print(f"[export_plots_zip] ── Fin ──────────────────────────────────\n")
+
+    return send_file(zip_buf, mimetype="application/zip",
+                     as_attachment=True, download_name="plots.zip")
+
+
+@app.route("/api/export_eval_zip", methods=["POST"])
+def export_eval_zip():
+    """
+    Build a ZIP with metrics (JSON + CSV) and all available plots
+    for the given model node_id. All steps are logged to terminal.
+    """
+    import zipfile, json as _json, csv as _csv, base64 as _b64
+
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+
+    print(f"\n[export_eval_zip] ── Inicio ──────────────────────────────")
+    print(f"[export_eval_zip]   node_id recibido: {repr(node_id)}")
+    print(f"[export_eval_zip]   claves en _MODEL_STORE: {list(_MODEL_STORE.keys())}")
+
+    # Buscar resultado: primero por node_id exacto, luego como int, luego el último disponible
+    result = _MODEL_STORE.get(node_id)
+    if result is None and node_id.isdigit():
+        result = _MODEL_STORE.get(int(node_id))
+    if result is None:
+        # Fallback: usar el único resultado si solo hay uno, o el más reciente
+        if len(_MODEL_STORE) == 1:
+            result = next(iter(_MODEL_STORE.values()))
+            print(f"[export_eval_zip]   node_id no encontrado, usando único resultado en _MODEL_STORE")
+        elif _mtrain_result:
+            result = _mtrain_result
+            print(f"[export_eval_zip]   usando _mtrain_result como fallback")
+
+    if not result:
+        print(f"[export_eval_zip]   ERROR: no hay resultados de evaluación")
+        return jsonify({"error": "Sin resultados de evaluación. Pulsa Evaluar primero."}), 400
+
+    print(f"[export_eval_zip]   resultado encontrado: model_type={result.get('model_type') or result.get('method')}, "
+          f"problem_type={result.get('problem_type')}")
+
+    train_m = result.get("train_metrics") or {}
+    test_m  = result.get("test_metrics")  or {}
+    print(f"[export_eval_zip]   métricas train: {list(train_m.keys())}")
+    print(f"[export_eval_zip]   métricas test:  {list(test_m.keys())}")
+
+    metrics_data = {
+        "model_type":    result.get("model_type") or result.get("method"),
+        "problem_type":  result.get("problem_type"),
+        "target_col":    result.get("target_col"),
+        "n_train":       result.get("n_train"),
+        "n_test":        result.get("n_test"),
+        "train_metrics": train_m,
+        "test_metrics":  test_m,
+    }
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+
+        # ── eval_metrics.json ──────────────────────────────────────────────
+        json_str = _json.dumps(metrics_data, indent=2, ensure_ascii=False)
+        zf.writestr("eval_metrics.json", json_str)
+        print(f"[export_eval_zip]   ✓ eval_metrics.json  ({len(json_str)} bytes)")
+
+        # ── eval_metrics.csv ───────────────────────────────────────────────
+        csv_buf = io.StringIO()
+        w = _csv.writer(csv_buf)
+        w.writerow(["split", "metric", "value"])
+        for k, v in train_m.items(): w.writerow(["train", k, v])
+        for k, v in test_m.items():  w.writerow(["test",  k, v])
+        csv_str = csv_buf.getvalue()
+        zf.writestr("eval_metrics.csv", csv_str)
+        print(f"[export_eval_zip]   ✓ eval_metrics.csv   ({len(csv_str)} bytes)")
+
+        # ── Plots (base64 → PNG, todos en raíz del ZIP, sin subdirectorios) ─
+        PLOT_KEYS = [
+            ("pred_img",  "plot_pred_vs_real.png"),
+            ("resid_img", "plot_residuos.png"),
+            ("qq_img",    "plot_qq.png"),
+            ("coef_img",  "plot_coeficientes.png"),
+            ("cm_img",    "plot_confusion_matrix.png"),
+        ]
+        for key, fname in PLOT_KEYS:
+            b64 = result.get(key)
+            if b64:
+                try:
+                    raw = _b64.b64decode(b64)
+                    zf.writestr(fname, raw)
+                    print(f"[export_eval_zip]   ✓ {fname}  ({len(raw)} bytes)")
+                except Exception as e:
+                    print(f"[export_eval_zip]   ✗ {fname}  error al decodificar: {e}")
+            else:
+                print(f"[export_eval_zip]   – {fname}  no disponible (no cacheado)")
+
+    zip_size = zip_buf.tell()
+    zip_buf.seek(0)
+    print(f"[export_eval_zip]   ZIP total: {zip_size} bytes")
+    print(f"[export_eval_zip] ── Fin ────────────────────────────────────\n")
+
+    return send_file(zip_buf, mimetype="application/zip",
+                     as_attachment=True, download_name="evaluacion.zip")
+
+
+@app.route("/api/eval_tab_model", methods=["POST"])
+def eval_tab_model():
+    """
+    Evaluate a loaded tabular model.
+    Mode 'saved'  → use stored X_test / y_test from the .pkl
+    Mode 'new'    → receive a CSV, apply same column schema, run predict
+    """
+    import sklearn.metrics as skm
+
+    # Support both JSON and multipart (new CSV mode)
+    if request.content_type and "multipart" in request.content_type:
+        node_id = str(request.form.get("node_id", "load_default"))
+        mode    = request.form.get("mode", "new")
+        csv_file = request.files.get("file")
+    else:
+        body    = request.get_json(force=True, silent=True) or {}
+        node_id = str(body.get("node_id", "load_default"))
+        mode    = body.get("mode", "saved")
+        csv_file = None
+
+    print(f"\n[eval_tab_model] content_type={request.content_type!r}")
+    print(f"[eval_tab_model] node_id={node_id!r}, mode={mode!r}, csv_file={csv_file is not None}")
+    print(f"[eval_tab_model] _LOADED_TAB_MODELS keys: {list(_LOADED_TAB_MODELS.keys())}")
+    print(f"[eval_tab_model] _MODEL_STORE keys:       {list(_MODEL_STORE.keys())}")
+    print(f"[eval_tab_model] _NODE_MODELS keys:       {list(_NODE_MODELS.keys())}")
+
+    payload = _LOADED_TAB_MODELS.get(node_id)
+
+    # Fallback: rebuild payload from _MODEL_STORE (train result) + _NODE_MODELS (sklearn obj)
+    if not payload:
+        ms = _MODEL_STORE.get(node_id) or _MODEL_STORE.get(int(node_id) if node_id.isdigit() else None)
+        mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+        if ms:
+            print(f"[eval_tab_model] payload not in _LOADED_TAB_MODELS — rebuilding from _MODEL_STORE")
+            payload = dict(ms)
+            if mdl:
+                payload["sklearn_model"] = mdl
+        else:
+            print(f"[eval_tab_model] ERROR: no payload found for node_id={node_id!r}")
+
+    if not payload:
+        return jsonify({"error": "No hay modelo cargado para este nodo. Carga el .pkl primero."}), 400
+
+    print(f"[eval_tab_model] payload keys: {[k for k in payload.keys() if k != 'sklearn_model']}")
+    print(f"[eval_tab_model] model_type={payload.get('model_type')!r}, problem_type={payload.get('problem_type')!r}")
+    print(f"[eval_tab_model] features ({len(payload.get('features',[]))}): {payload.get('features',[][:5])}")
+
+    problem_type = payload.get("problem_type", "regression")
+    classes      = payload.get("classes", [])
+
+    def _compute_metrics(y_true, y_pred, problem_type, classes):
+        if problem_type == "regression":
+            from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+            import math
+            r2   = round(float(r2_score(y_true, y_pred)), 4)
+            rmse = round(float(math.sqrt(mean_squared_error(y_true, y_pred))), 4)
+            mae  = round(float(mean_absolute_error(y_true, y_pred)), 4)
+            return {"r2": r2, "rmse": rmse, "mae": mae}
+        else:
+            avg = "binary" if len(classes) == 2 else "macro"
+            return {
+                "accuracy":  round(float(skm.accuracy_score(y_true, y_pred)), 4),
+                "f1":        round(float(skm.f1_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "precision": round(float(skm.precision_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "recall":    round(float(skm.recall_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+            }
+
+    def _cm_img(y_true, y_pred, classes):
+        import numpy as np, matplotlib.pyplot as plt
+        cm = skm.confusion_matrix(y_true, y_pred, labels=list(range(len(classes))))
+        fig, ax = plt.subplots(figsize=(max(4, len(classes)), max(3.5, len(classes) * 0.8)))
+        fig.patch.set_facecolor(LIGHT); style_ax(ax)
+        ax.imshow(cm, cmap="Blues", aspect="auto")
+        ax.set_xticks(range(len(classes))); ax.set_xticklabels(classes, rotation=30, ha="right", color=INK)
+        ax.set_yticks(range(len(classes))); ax.set_yticklabels(classes, color=INK)
+        ax.set_xlabel("Predicho", color=SEC, fontsize=11)
+        ax.set_ylabel("Real", color=SEC, fontsize=11)
+        ax.set_title("Matriz de confusión", color=INK, fontsize=12, fontweight="bold")
+        for i in range(len(classes)):
+            for j in range(len(classes)):
+                ax.text(j, i, str(cm[i, j]), ha="center", va="center",
+                        color="white" if cm[i, j] > cm.max() / 2 else INK, fontsize=13, fontweight="bold")
+        plt.tight_layout(pad=1.4)
+        return fig_b64(fig)
+
+    # ── Mode: saved test set ───────────────────────────────────────────────
+    print(f"[eval_tab_model] routing to mode={mode!r}")
+    if mode == "saved":
+        X_test = payload.get("X_test")
+        y_test = payload.get("y_test")
+        y_pred = payload.get("y_pred")
+        if X_test is None or y_test is None:
+            return jsonify({"error": "El .pkl no contiene test set guardado."}), 400
+
+        import numpy as np
+        y_test = np.array(y_test)
+        y_pred = np.array(y_pred) if y_pred is not None else None
+
+        # Try to re-predict with live model if available
+        mdl = payload.get("sklearn_model")
+        if mdl is not None:
+            try: y_pred = mdl.predict(np.array(X_test))
+            except Exception: pass
+
+        if y_pred is None:
+            return jsonify({"error": "No hay predicciones ni modelo sklearn en el .pkl."}), 400
+
+        metrics = _compute_metrics(y_test, y_pred, problem_type, classes)
+        cm_img  = None
+        report  = None
+        if problem_type != "regression" and classes:
+            cm_img = _cm_img(y_test, y_pred, classes)
+            report = skm.classification_report(y_test, y_pred,
+                         target_names=classes, zero_division=0)
+        return jsonify({
+            "source":       "saved",
+            "problem_type": problem_type,
+            "metrics":      metrics,
+            "cm_img":       cm_img,
+            "report_txt":   report,
+        })
+
+    # ── Mode: new CSV ─────────────────────────────────────────────────────
+    if mode == "new":
+        if not csv_file:
+            return jsonify({"error": "No se recibió ningún CSV."}), 400
+        mdl = payload.get("sklearn_model")
+
+        # Fallback: reconstruct from _NODE_MODELS in case the .pkl was saved without sklearn_model
+        if mdl is None:
+            mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+            if mdl:
+                print(f"[eval_tab_model/new] sklearn_model recovered from _NODE_MODELS")
+
+        # Last resort: rebuild a linear model from saved coefficients
+        if mdl is None:
+            coefs = payload.get("coefficients")
+            intercept = payload.get("intercept")
+            model_type = payload.get("model_type", "")
+            if coefs is not None and model_type == "linreg":
+                import numpy as np
+                # coefficients may be [(name, val), ...] or [val, ...]
+                if coefs and isinstance(coefs[0], (list, tuple)):
+                    coef_vals = [float(c[1]) for c in coefs]
+                else:
+                    coef_vals = [float(c) for c in coefs]
+                coef_arr = np.array(coef_vals, dtype=np.float64)
+                intercept_val = float(intercept) if intercept is not None else 0.0
+                class _LinearPredictor:
+                    def __init__(self, coef, intercept):
+                        self.coef_ = coef
+                        self.intercept_ = intercept
+                    def predict(self, X):
+                        import numpy as _np
+                        X = _np.array(X, dtype=_np.float64)
+                        return X.dot(self.coef_) + self.intercept_
+                mdl = _LinearPredictor(coef_arr, intercept_val)
+                print(f"[eval_tab_model/new] sklearn_model reconstructed from coefficients (coef shape={coef_arr.shape})")
+
+        if mdl is None:
+            return jsonify({"error": "El .pkl no contiene el modelo sklearn.\nGuarda el modelo de nuevo (el .pkl actual es de una versión anterior)."}), 400
+
+        import csv as csvmod, numpy as np
+        txt = csv_file.read().decode("utf-8", errors="replace")
+        reader = csvmod.DictReader(io.StringIO(txt))
+        rows   = [r for r in reader]
+        if not rows:
+            return jsonify({"error": "CSV vacío."}), 400
+
+        target_col = payload.get("target_col") or ""
+        features   = payload.get("features", [])
+        normalize  = payload.get("normalize", "none")
+
+        csv_cols = list(rows[0].keys())
+
+        # If target_col missing from payload (old .pkl), infer from CSV columns not in features
+        if not target_col:
+            extra_cols = [c for c in csv_cols if c not in features]
+            if len(extra_cols) == 1:
+                target_col = extra_cols[0]
+                print(f"[eval_tab_model/new] target_col inferred from CSV: {target_col!r}")
+            elif len(extra_cols) > 1:
+                print(f"[eval_tab_model/new] multiple extra cols, cannot infer target: {extra_cols}")
+
+        # Validate that required feature columns exist in the uploaded CSV
+        missing    = [f for f in features if f not in csv_cols]
+        has_target = bool(target_col and target_col in csv_cols)
+        print(f"[eval_tab_model/new] CSV cols ({len(csv_cols)}): {csv_cols}")
+        print(f"[eval_tab_model/new] Required features ({len(features)}): {features}")
+        print(f"[eval_tab_model/new] target_col={target_col!r}, present={has_target}")
+        print(f"[eval_tab_model/new] Missing cols: {missing}")
+        if missing:
+            return jsonify({
+                "error": f"El CSV no contiene las columnas necesarias para este modelo.\n"
+                         f"Faltan ({len(missing)}): {', '.join(missing[:10])}" +
+                         (f" … y {len(missing)-10} más" if len(missing) > 10 else "")
+            }), 400
+
+        # Build X using only the feature columns
+        feat_cols = features if features else [k for k in csv_cols if k != target_col]
+        X_rows = []
+        valid_rows = []
+        skipped = 0
+        for r in rows:
+            row_x = []
+            row_ok = True
+            for c in feat_cols:
+                v = r.get(c, "")
+                fv = _try_float(v)
+                if fv is None or _is_missing(v):
+                    row_ok = False
+                    break
+                row_x.append(float(fv))
+            if row_ok:
+                X_rows.append(row_x)
+                valid_rows.append(r)
+            else:
+                skipped += 1
+
+        if skipped > 0:
+            print(f"[eval_tab_model/new] {skipped} filas eliminadas por valores no numéricos")
+
+        if not X_rows:
+            return jsonify({"error": "El dataset no contiene filas válidas para este modelo.\n"
+                                     "Todas las filas tienen valores no numéricos o vacíos en las columnas requeridas.\n"
+                                     "Usa un dataset con datos numéricos válidos."}), 400
+
+        rows = valid_rows   # use only valid rows for y_true calculation below
+        X_new = np.array(X_rows, dtype=float)
+
+        # Normalise if model was trained with normalisation
+        if normalize and normalize != "none" and X_new.shape[0] > 0:
+            from sklearn.preprocessing import StandardScaler, MinMaxScaler
+            sc = StandardScaler() if normalize == "standard" else MinMaxScaler()
+            X_new = sc.fit_transform(X_new)
+
+        # Align feature count to trained model
+        n_feat = len(features)
+        if X_new.shape[1] < n_feat:
+            X_new = np.hstack([X_new, np.zeros((X_new.shape[0], n_feat - X_new.shape[1]))])
+        elif X_new.shape[1] > n_feat:
+            X_new = X_new[:, :n_feat]
+
+        print(f"[eval_tab_model/new] X_new shape: {X_new.shape}")
+
+        try:
+            y_pred_new = mdl.predict(X_new)
+            print(f"[eval_tab_model/new] predict OK, y_pred_new shape={y_pred_new.shape}")
+        except Exception as e:
+            import traceback
+            print(f"[eval_tab_model/new] predict ERROR: {e}")
+            print(traceback.format_exc())
+            return jsonify({"error": f"Error al predecir: {e}"}), 400
+        if has_target and problem_type != "regression":
+            def _tstr(v):
+                try: f = float(v); return str(int(f)) if f == int(f) else str(f)
+                except: return str(v).strip()
+            cls_list = payload.get("classes", [])
+            lmap = {c: i for i, c in enumerate(cls_list)}
+            y_true_enc = np.array([lmap.get(_tstr(r.get(target_col, "")), 0) for r in rows])
+            metrics = _compute_metrics(y_true_enc, y_pred_new, problem_type, classes)
+            cm_img  = _cm_img(y_true_enc, y_pred_new, classes) if classes else None
+            report  = skm.classification_report(y_true_enc, y_pred_new,
+                          target_names=classes, zero_division=0) if classes else None
+        elif has_target and problem_type == "regression":
+            y_true_f = np.array([float(r.get(target_col, 0)) for r in rows])
+            metrics  = _compute_metrics(y_true_f, y_pred_new.astype(float), problem_type, classes)
+            cm_img   = None
+            report   = None
+        else:
+            # No target in CSV — just return predictions
+            metrics = {}
+            cm_img  = None
+            report  = "Sin columna objetivo en el CSV — no se pueden calcular métricas."
+
+        return jsonify({
+            "source":       "new",
+            "problem_type": problem_type,
+            "target_col":   target_col,
+            "metrics":      metrics,
+            "cm_img":       cm_img,
+            "report_txt":   report,
+            "n_rows":       len(rows),
+            "skipped_rows": skipped,
+        })
+
+    return jsonify({"error": "Modo desconocido."}), 400
+
+
 @app.route("/api/session_status")
 def session_status():
     """Quick summary of what's available to save."""
@@ -3506,6 +4593,54 @@ def session_status():
         "task":           S["task"],
         "n_texts":        len(S["texts"]),
         "active_steps":   S["active_steps"],
+    })
+
+
+@app.route("/api/save_status")
+def save_status():
+    """
+    Returns what is currently available to save across all sources:
+    tabular datasets, trained models, plots, NLP corpus.
+    """
+    # ── Tabular models ────────────────────────────────────────────────────
+    tab_models = []
+    for nid, res in _MODEL_STORE.items():
+        mtype  = res.get("model_type") or res.get("method") or "modelo"
+        target = res.get("target_col") or _TAB.get("target_col", "")
+        prob   = res.get("problem_type", "")
+        ntrain = res.get("n_train", "?")
+        ntest  = res.get("n_test",  "?")
+        tab_models.append({
+            "node_id":      nid,
+            "model_type":   mtype,
+            "target_col":   target,
+            "problem_type": prob,
+            "n_train":      ntrain,
+            "n_test":       ntest,
+        })
+
+    # ── Tabular datasets ──────────────────────────────────────────────────
+    tab_datasets = []
+    for nid, d in _TAB_DATA.items() if hasattr(globals(), "_TAB_DATA") else []:
+        tab_datasets.append({"node_id": nid, "name": d.get("name", nid), "rows": len(d.get("raw_rows", []))})
+    # Also check _TAB global
+    if _TAB.get("raw_rows"):
+        tab_datasets.append({"node_id": "global", "name": _TAB.get("dataset_name", "dataset"), "rows": len(_TAB["raw_rows"])})
+
+    # ── NLP corpus ────────────────────────────────────────────────────────
+    nlp = {}
+    if S["texts"]:
+        nlp["has_raw"]       = True
+        nlp["has_processed"] = bool(S["processed_texts"] and S["processed_texts"] != S["texts"])
+        nlp["n_texts"]       = len(S["texts"])
+        nlp["dataset_name"]  = S["dataset_name"] or "corpus"
+
+    # ── Plots (stored in plotHistory per node via client — server doesn't hold them) ──
+    # plots are base64 in browser memory; we signal the client to include them
+    return jsonify({
+        "tab_models":   tab_models,
+        "tab_datasets": tab_datasets,
+        "nlp":          nlp,
     })
 
 
@@ -3944,6 +5079,220 @@ def pick_export_path():
                     if r.get("report_txt"): lines.append("\n" + r["report_txt"])
             content_bytes = "\n".join(lines).encode("utf-8")
             file_types = ("Text File (*.txt)", "All files (*.*)")
+
+        # ── Tabular model .pkl ────────────────────────────────────────────
+        elif endpoint == "/api/save_tab_model":
+            extra   = body.get("extra", {})
+            node_id = str(extra.get("node_id", ""))
+            result  = _MODEL_STORE.get(node_id) or _mtrain_result
+            if not result:
+                return jsonify({"error": "No hay modelo entrenado"}), 400
+            _model_type = result.get("model_type") or result.get("method") or "modelo"
+            _features   = result.get("features")   or result.get("feat_names", [])
+            _target_col = result.get("target_col") or _TAB.get("target_col", "")
+            _X_test  = result.get("_Xte") or result.get("X_te")
+            _y_test  = result.get("_yte") or result.get("y_te")
+            _y_pred  = result.get("_yte_pred") or result.get("y_te_pred")
+            _X_train = result.get("_Xtr") or result.get("X_tr")
+            _y_train = result.get("_ytr") or result.get("y_tr")
+            pkl_payload = {
+                "nlpflow_version": "4",
+                "model_type":   _model_type,
+                "problem_type": result.get("problem_type"),
+                "target_col":   _target_col,
+                "features":     _features,
+                "classes":      result.get("classes", []),
+                "normalize":    result.get("normalize"),
+                "alpha":        result.get("alpha"),
+                "intercept":    result.get("intercept"),
+                "train_metrics":result.get("train_metrics"),
+                "test_metrics": result.get("test_metrics"),
+                "confusion_matrix": result.get("confusion_matrix"),
+                "coefficients": result.get("coefficients"),
+                "X_test": _X_test, "y_test": _y_test, "y_pred": _y_pred,
+                "X_train": _X_train, "y_train": _y_train,
+                "n_train": result.get("n_train"), "n_test": result.get("n_test"),
+                "sklearn_model": _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if str(node_id).isdigit() else node_id),
+                # CV fields — present when model was trained via grid search
+                "from_cv":        result.get("from_cv", False),
+                "cv_img":         result.get("cv_img"),
+                "param_label":    result.get("param_label"),
+                "metric_label":   result.get("metric_label"),
+                "k_folds":        result.get("k_folds"),
+                "best":           result.get("best"),
+                "best_pv_display":result.get("best_pv_display"),
+            }
+            model_buf = io.BytesIO()
+            joblib.dump(pkl_payload, model_buf)
+            content_bytes = model_buf.getvalue()
+            file_types = ("Pickle File (*.pkl)", "All files (*.*)")
+
+        # ── Tabular dataset .csv ──────────────────────────────────────────
+        elif endpoint == "/api/export_tab_csv":
+            extra   = body.get("extra", {})
+            node_id = str(extra.get("node_id", ""))
+            D = _effective_data(node_id) if node_id and node_id != "global" else None
+            rows = (D["raw_rows"] if D else None) or _TAB.get("raw_rows", [])
+            if not rows:
+                return jsonify({"error": "No hay datos tabulares"}), 400
+            cols = list(rows[0].keys()) if rows else []
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=cols)
+            w.writeheader(); w.writerows(rows)
+            content_bytes = buf.getvalue().encode("utf-8")
+            file_types = ("CSV File (*.csv)", "All files (*.*)")
+
+        elif endpoint == "/api/export_split_zip":
+            import zipfile as _zfs, math as _ms, random as _rs
+            extra   = body.get("extra", {})
+            node_id = str(extra.get("node_id", ""))
+            try:
+                ratio = float(extra.get("ratio", 0.7))
+            except (ValueError, TypeError):
+                ratio = 0.7
+            ratio = max(0.1, min(0.95, ratio))
+            D    = _effective_data(node_id) if node_id and node_id != "global" else None
+            rows = (D["raw_rows"] if D else None) or _TAB.get("raw_rows", [])
+            if not rows:
+                return jsonify({"error": "No hay datos preprocesados"}), 400
+            cols    = list(rows[0].keys())
+            n_train = _ms.floor(len(rows) * ratio)
+            rng     = _rs.Random(42)
+            idxs    = list(range(len(rows))); rng.shuffle(idxs)
+            tr_rows = [rows[i] for i in idxs[:n_train]]
+            te_rows = [rows[i] for i in idxs[n_train:]]
+            def _to_csv(rws):
+                buf2 = io.StringIO()
+                w2   = csv.DictWriter(buf2, fieldnames=cols)
+                w2.writeheader(); w2.writerows(rws)
+                return buf2.getvalue().encode("utf-8")
+            zip_io3 = io.BytesIO()
+            print(f"\n[pick_export_path/split_zip] {len(tr_rows)} train + {len(te_rows)} test")
+            with _zfs.ZipFile(zip_io3, "w", _zfs.ZIP_DEFLATED) as zf3:
+                tr_csv = _to_csv(tr_rows); zf3.writestr("train.csv", tr_csv)
+                te_csv = _to_csv(te_rows); zf3.writestr("test.csv",  te_csv)
+                print(f"  ✓ train.csv ({len(tr_csv)} bytes)")
+                print(f"  ✓ test.csv  ({len(te_csv)} bytes)")
+            content_bytes = zip_io3.getvalue()
+            print(f"  ZIP total: {len(content_bytes)} bytes")
+            file_types = ("ZIP File (*.zip)", "All files (*.*)")
+
+        elif endpoint == "/api/export_plots_zip":
+            import zipfile as _zfp, base64 as _b64p, re as _rep
+            extra  = body.get("extra", {})
+            plots  = extra.get("plots", [])
+            if not plots:
+                return jsonify({"error": "No hay plots"}), 400
+            zip_io2 = io.BytesIO()
+            print(f"\n[pick_export_path/plots_zip] Construyendo ZIP con {len(plots)} plots")
+            with _zfp.ZipFile(zip_io2, "w", _zfp.ZIP_DEFLATED) as zf2:
+                for i, p in enumerate(plots):
+                    raw_b64 = p.get("img", "")
+                    if "," in raw_b64: raw_b64 = raw_b64.split(",", 1)[1]
+                    label = p.get("label") or f"plot_{i+1}"
+                    fname = _rep.sub(r"[^\w\-\. ]", "_", label).strip() + ".png"
+                    try:
+                        raw = _b64p.b64decode(raw_b64)
+                        zf2.writestr(fname, raw)
+                        print(f"  ✓ {fname} ({len(raw)} bytes)")
+                    except Exception as e:
+                        print(f"  ✗ {fname}: {e}")
+            content_bytes = zip_io2.getvalue()
+            print(f"  ZIP total: {len(content_bytes)} bytes")
+            file_types = ("ZIP File (*.zip)", "All files (*.*)")
+
+        elif endpoint == "/api/export_eval_zip":
+            import zipfile as _zf, json as _json, csv as _csv2, base64 as _b64
+            extra   = body.get("extra", {})
+            node_id = str(extra.get("node_id", ""))
+            result  = _MODEL_STORE.get(node_id)
+            if result is None and node_id.isdigit():
+                result = _MODEL_STORE.get(int(node_id))
+            if result is None and len(_MODEL_STORE) == 1:
+                result = next(iter(_MODEL_STORE.values()))
+            if result is None:
+                result = _mtrain_result
+            if not result:
+                return jsonify({"error": "Sin resultados. Pulsa Evaluar primero."}), 400
+
+            train_m = result.get("train_metrics") or {}
+            test_m  = result.get("test_metrics")  or {}
+            metrics_data = {
+                "model_type":   result.get("model_type") or result.get("method"),
+                "problem_type": result.get("problem_type"),
+                "target_col":   result.get("target_col"),
+                "n_train":      result.get("n_train"),
+                "n_test":       result.get("n_test"),
+                "train_metrics": train_m,
+                "test_metrics":  test_m,
+            }
+            zip_io = io.BytesIO()
+            print(f"\n[pick_export_path/eval_zip] Construyendo ZIP para node_id={node_id}")
+            with _zf.ZipFile(zip_io, "w", _zf.ZIP_DEFLATED) as zf:
+                json_str = _json.dumps(metrics_data, indent=2, ensure_ascii=False)
+                zf.writestr("eval_metrics.json", json_str)
+                print(f"  ✓ eval_metrics.json ({len(json_str)} bytes)")
+
+                csv_io = io.StringIO()
+                cw = _csv2.writer(csv_io)
+                cw.writerow(["split", "metric", "value"])
+                for k, v in train_m.items(): cw.writerow(["train", k, v])
+                for k, v in test_m.items():  cw.writerow(["test",  k, v])
+                csv_str = csv_io.getvalue()
+                zf.writestr("eval_metrics.csv", csv_str)
+                print(f"  ✓ eval_metrics.csv  ({len(csv_str)} bytes)")
+
+                PLOT_KEYS = [
+                    ("pred_img",  "plot_pred_vs_real.png"),
+                    ("resid_img", "plot_residuos.png"),
+                    ("qq_img",    "plot_qq.png"),
+                    ("coef_img",  "plot_coeficientes.png"),
+                    ("cm_img",    "plot_confusion_matrix.png"),
+                ]
+                for key, fname in PLOT_KEYS:
+                    b64 = result.get(key)
+                    if b64:
+                        raw = _b64.b64decode(b64)
+                        zf.writestr(fname, raw)
+                        print(f"  ✓ {fname} ({len(raw)} bytes)")
+                    else:
+                        print(f"  – {fname} no disponible")
+
+            content_bytes = zip_io.getvalue()
+            print(f"  ZIP total: {len(content_bytes)} bytes")
+            file_types = ("ZIP File (*.zip)", "All files (*.*)")
+
+        elif endpoint == "/api/export_eval_metrics":
+            import json as _json2, csv as _csv3
+            extra   = body.get("extra", {})
+            node_id = str(extra.get("node_id", ""))
+            fmt     = extra.get("format", "json")
+            result  = _MODEL_STORE.get(node_id)
+            if result is None and node_id.isdigit():
+                result = _MODEL_STORE.get(int(node_id))
+            if result is None and len(_MODEL_STORE) == 1:
+                result = next(iter(_MODEL_STORE.values()))
+            if result is None:
+                result = _mtrain_result
+            if not result:
+                return jsonify({"error": "Sin resultados de evaluación"}), 400
+
+            train_m = result.get("train_metrics") or {}
+            test_m  = result.get("test_metrics")  or {}
+            if fmt == "csv":
+                csv_io2 = io.StringIO()
+                cw2 = _csv3.writer(csv_io2)
+                cw2.writerow(["split", "metric", "value"])
+                for k, v in train_m.items(): cw2.writerow(["train", k, v])
+                for k, v in test_m.items():  cw2.writerow(["test",  k, v])
+                content_bytes = csv_io2.getvalue().encode("utf-8")
+                file_types = ("CSV File (*.csv)", "All files (*.*)")
+            else:
+                data = {"model_type": result.get("model_type") or result.get("method"),
+                        "problem_type": result.get("problem_type"),
+                        "train_metrics": train_m, "test_metrics": test_m}
+                content_bytes = _json2.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+                file_types = ("JSON File (*.json)", "All files (*.*)")
 
         else:
             return jsonify({"error": "Unknown endpoint"}), 400
@@ -4392,3 +5741,671 @@ def imbalance_analyze():
         "status_label": status_label,
         "n_classes": n_cls,
     })
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION: MODELOS — Linear Regression block + Model Evaluation block
+# Endpoints:
+#   POST /api/model_train       — train a model, stream SSE progress
+#   GET  /api/model_train_poll  — polled progress (for non-SSE clients)
+#   POST /api/model_evaluate    — full evaluation of last trained model
+#   GET  /api/model_result      — quick summary of last trained model
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _vif_numpy(X, feat_names):
+    """Compute VIF for each column of X using numpy OLS (no statsmodels needed).
+    Returns list of {feature, vif} dicts. VIF = 1/(1-R²_j) where R²_j is the
+    R² from regressing column j on all other columns.
+    """
+    results = []
+    n, p = X.shape
+    for j in range(p):
+        y_j = X[:, j]
+        X_other = np.delete(X, j, axis=1)
+        # Add intercept column
+        Xb = np.column_stack([np.ones(n), X_other])
+        try:
+            # OLS via normal equations: beta = (XtX)^-1 Xt y
+            beta, _, _, _ = np.linalg.lstsq(Xb, y_j, rcond=None)
+            y_hat = Xb @ beta
+            ss_res = float(np.sum((y_j - y_hat) ** 2))
+            ss_tot = float(np.sum((y_j - np.mean(y_j)) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+            vif = 1.0 / (1.0 - r2) if r2 < 0.9999 else 999.0
+        except Exception:
+            vif = float("nan")
+        results.append({"feature": feat_names[j], "vif": round(float(vif), 3)})
+    return results
+
+
+def _durbin_watson(residuals):
+    """Durbin-Watson statistic: d = sum((e_t - e_{t-1})^2) / sum(e_t^2).
+    Values near 2 → no autocorrelation; <1 or >3 → concern.
+    """
+    e = np.array(residuals)
+    diff = np.diff(e)
+    dw = float(np.sum(diff ** 2) / np.sum(e ** 2)) if np.sum(e ** 2) > 1e-12 else 2.0
+    return round(dw, 4)
+
+
+def _breusch_pagan_numpy(residuals, X_fitted):
+    """Simplified Breusch-Pagan test using OLS of squared residuals on fitted values.
+    Returns (bp_stat, interpretation_string). Not a formal p-value but indicative.
+    """
+    e2 = residuals ** 2
+    Xb = np.column_stack([np.ones(len(X_fitted)), X_fitted])
+    try:
+        beta, _, _, _ = np.linalg.lstsq(Xb, e2, rcond=None)
+        e2_hat = Xb @ beta
+        ss_res = float(np.sum((e2 - e2_hat) ** 2))
+        ss_tot = float(np.sum((e2 - np.mean(e2)) ** 2))
+        r2_aux = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+        bp = float(len(residuals) * r2_aux)
+    except Exception:
+        bp = float("nan")
+    return round(bp, 4)
+
+
+def _qq_plot_b64(residuals):
+    """Generate a Q-Q plot of residuals vs theoretical normal quantiles."""
+    n = len(residuals)
+    sorted_r = np.sort(residuals)
+    # Theoretical quantiles using Blom formula
+    probs = (np.arange(1, n + 1) - 0.375) / (n + 0.25)
+    # Approx normal quantile via rational approximation (Abramowitz & Stegun)
+    def _norm_ppf(p):
+        p = np.clip(p, 1e-10, 1 - 1e-10)
+        sign = np.where(p < 0.5, -1.0, 1.0)
+        p2 = np.where(p < 0.5, p, 1.0 - p)
+        t = np.sqrt(-2.0 * np.log(p2))
+        c0, c1, c2 = 2.515517, 0.802853, 0.010328
+        d1, d2, d3 = 1.432788, 0.189269, 0.001308
+        num = c0 + c1 * t + c2 * t ** 2
+        den = 1.0 + d1 * t + d2 * t ** 2 + d3 * t ** 3
+        return sign * (t - num / den)
+    theoretical = _norm_ppf(probs)
+
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+    ax.scatter(theoretical, sorted_r, color=PALETTE[0], alpha=0.7, s=24, edgecolors="none", zorder=3)
+    # Reference line
+    mn, mx = float(theoretical.min()), float(theoretical.max())
+    std_r = float(np.std(sorted_r)) if np.std(sorted_r) > 1e-12 else 1.0
+    mean_r = float(np.mean(sorted_r))
+    ax.plot([mn, mx], [mean_r + mn * std_r, mean_r + mx * std_r],
+            color=MINT, linewidth=1.8, linestyle="--", label="Línea normal")
+    ax.set_xlabel("Cuantiles teóricos (normal)", color=SEC, fontsize=10)
+    ax.set_ylabel("Cuantiles de residuos", color=SEC, fontsize=10)
+    ax.set_title("Q-Q Plot de residuos", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    return fig_b64(fig)
+
+
+def _residuals_plot_b64(y_pred, residuals):
+    """Residuals vs fitted values plot."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+    ax.axhline(0, color=MINT, linewidth=1.6, linestyle="--")
+    ax.scatter(y_pred, residuals, color=PALETTE[1], alpha=0.65, s=26, edgecolors="none", zorder=3)
+    ax.set_xlabel("Valores ajustados", color=SEC, fontsize=10)
+    ax.set_ylabel("Residuos", color=SEC, fontsize=10)
+    ax.set_title("Residuos vs valores ajustados", color=INK, fontsize=12, fontweight="bold")
+    ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    return fig_b64(fig)
+
+
+def _pred_vs_actual_b64(y_true, y_pred, r2):
+    """Predicted vs actual scatter."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+    mn_v = min(float(y_true.min()), float(y_pred.min()))
+    mx_v = max(float(y_true.max()), float(y_pred.max()))
+    ax.scatter(y_true, y_pred, color=PALETTE[0], alpha=0.65, s=26, edgecolors="none", zorder=3)
+    ax.plot([mn_v, mx_v], [mn_v, mx_v], color=MINT, linewidth=1.8, linestyle="--", label="Ideal")
+    ax.set_xlabel("Real", color=SEC, fontsize=10)
+    ax.set_ylabel("Predicho", color=SEC, fontsize=10)
+    ax.set_title(f"Predicho vs Real  (R²={round(r2,4)})", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
+    ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    return fig_b64(fig)
+
+
+def _coef_bar_b64(coefs_sorted, title="Coeficientes"):
+    """Horizontal bar chart of coefficients."""
+    names_c = [c[0] for c in coefs_sorted]
+    vals_c  = [c[1] for c in coefs_sorted]
+    colors_c = [PALETTE[0] if v >= 0 else PALETTE[1] for v in vals_c]
+    fig2, ax3 = plt.subplots(figsize=(7, max(3, len(coefs_sorted) * 0.38 + 1.2)))
+    fig2.patch.set_facecolor(LIGHT); style_ax(ax3)
+    ax3.barh(names_c, vals_c, color=colors_c, edgecolor="none", alpha=0.85)
+    ax3.axvline(0, color=SEC, linewidth=0.8)
+    ax3.set_xlabel("Coeficiente", color=SEC, fontsize=10)
+    ax3.set_title(title, color=INK, fontsize=12, fontweight="bold")
+    ax3.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+    plt.tight_layout(pad=1.4)
+    return fig_b64(fig2)
+
+
+# ── /api/model_train ──────────────────────────────────────────────────────────
+
+_mtrain_progress: list = []   # [{pct, msg}]
+_mtrain_lock = threading.Lock()
+_mtrain_result: dict = {}     # last train result stored here
+
+@app.route("/api/model_train", methods=["POST"])
+def model_train():
+    """Train a model with polled progress. Stores result in _MODEL_STORE[node_id]."""
+    body        = request.get_json(force=True, silent=True) or {}
+    node_id       = str(body.get("node_id", "linreg_default"))
+    model_type    = str(body.get("model_type", "linreg"))   # linreg | ridge | lasso
+    alpha         = float(body.get("alpha", 1.0))
+    fit_intercept    = bool(body.get("fit_intercept", True))
+    fixed_intercept  = body.get("fixed_intercept", None)     # float or None
+    if fixed_intercept is not None:
+        try: fixed_intercept = float(fixed_intercept)
+        except: fixed_intercept = None
+    normalize     = str(body.get("normalize", "none"))       # none | minmax | zscore
+    test_size     = float(body.get("test_size", 0.3))
+    seed          = int(body.get("seed", 42))
+    upstream_id   = str(body.get("upstream_id", "")) or None
+    target_col    = str(body.get("target_col", ""))
+
+    # Resolve data — do this BEFORE the thread so we capture a snapshot
+    D = _effective_data(upstream_id) if upstream_id else None
+    snap_rows = list((D["raw_rows"] if D else None) or S["raw_rows"])
+    snap_cols = list((D["columns"]  if D else None) or S["columns"])
+
+    # Resolve target: explicit arg > slot target > _TAB > last column
+    if not target_col:
+        target_col = str(
+            (D["target"] if D else None)
+            or _TAB.get("target_col", "")
+            or (snap_cols[-1] if snap_cols else "")
+        )
+
+    # SAFETY: if target_col is still not in snap_cols, use the last column
+    if target_col and snap_cols and target_col not in snap_cols:
+        target_col = snap_cols[-1]
+
+    # Detect problem type — method takes priority over data heuristics
+    _tgt_vals = [r.get(target_col, "") for r in snap_rows if not _is_missing(r.get(target_col, ""))]
+    _tgt_type = _col_type(_tgt_vals)
+    _reg_methods = {"ridge", "lasso", "linreg"}
+    if model_type in _reg_methods:
+        # Explicit regression model → always regression
+        _is_classification = False
+    else:
+        # Auto-detect: categorical dtype or very few unique numeric values (≤10)
+        _is_classification = not _is_numeric_type(_tgt_type)
+        if _is_numeric_type(_tgt_type):
+            _unique_tgt = set(str(v).strip() for v in _tgt_vals)
+            if len(_unique_tgt) <= 10:
+                _is_classification = True
+
+    # Snapshot all params for the thread (avoid closure over mutable request state)
+    _nid   = node_id
+    _mtype = model_type
+    _alpha = alpha
+    _fi    = fit_intercept
+    _fxint = fixed_intercept   # float or None
+    _norm  = normalize
+    _tsz   = test_size
+    _seed  = seed
+    _tgt   = target_col
+    _is_cls = _is_classification
+
+    def _run():
+        global _mtrain_result
+        def _push(pct, msg):
+            with _mtrain_lock:
+                _mtrain_progress.append({"pct": pct, "msg": msg})
+
+        try:
+            prob_label = "clasificación" if _is_cls else "regresión"
+            _push(5, f"Preparando datos… {len(snap_rows)} filas · problema detectado: {prob_label}")
+            time.sleep(0.08)
+
+            if not snap_rows:
+                _push(100, "__error__:No hay datos cargados. Carga un dataset en el bloque Datos primero.")
+                return
+            if not _tgt:
+                _push(100, "__error__:No se ha definido variable objetivo. Defínela en el bloque Datos.")
+                return
+            if _tgt not in snap_cols:
+                _push(100, f"__error__:Columna objetivo '{_tgt}' no encontrada en las columnas disponibles.")
+                return
+
+            _push(20, f"Construyendo matriz de features… ({len(snap_rows)} filas, {len(snap_cols)} cols, target='{_tgt}')")
+            time.sleep(0.05)
+            result_xy = _build_Xy(snap_rows, snap_cols, _tgt, _norm)
+            if result_xy[0] is None:
+                _push(100, f"__error__:{result_xy[1]}")
+                return
+            X, y, feat_names = result_xy
+            if len(X) < 10:
+                _push(100, "__error__:Necesitas al menos 10 filas válidas para entrenar.")
+                return
+
+            # ── CLASIFICACIÓN ────────────────────────────────────────────────
+            if _is_cls:
+                # Encode labels
+                def _tstr(v):
+                    try:
+                        f = float(v); return str(int(f)) if f == int(f) else str(f)
+                    except: return str(v).strip()
+                classes = sorted(set(_tstr(v) for v in y))
+                label_map = {c: i for i, c in enumerate(classes)}
+                y_enc = np.array([label_map[_tstr(v)] for v in y])
+
+                _push(38, f"Dividiendo… {X.shape[0]} filas × {X.shape[1]} features · {len(classes)} clases · test={_tsz}")
+                time.sleep(0.05)
+                Xtr, Xte, ytr, yte = train_test_split(X, y_enc, test_size=_tsz, random_state=_seed, stratify=y_enc if len(classes)<=20 else None)
+
+                _push(52, f"Entrenando modelo de clasificación ({_mtype})…")
+                time.sleep(0.05)
+                # Map linreg/ridge/lasso → classification equivalents
+                if _mtype in ("ridge", "lasso", "linreg"):
+                    mdl = LogisticRegression(C=1.0/max(_alpha,1e-6), max_iter=2000, random_state=42, solver="saga")
+                else:
+                    mdl = LogisticRegression(max_iter=2000, random_state=42)
+                mdl.fit(Xtr, ytr)
+
+                _push(75, "Calculando métricas de clasificación…")
+                from sklearn.metrics import (accuracy_score, f1_score, precision_score,
+                                             recall_score, confusion_matrix, classification_report)
+                ytr_pred = mdl.predict(Xtr)
+                yte_pred = mdl.predict(Xte)
+                avg = "binary" if len(classes)==2 else "macro"
+                def _cls_metrics(yt, yp):
+                    return {
+                        "accuracy":  round(float(accuracy_score(yt, yp)), 4),
+                        "f1":        round(float(f1_score(yt, yp, average=avg, zero_division=0)), 4),
+                        "precision": round(float(precision_score(yt, yp, average=avg, zero_division=0)), 4),
+                        "recall":    round(float(recall_score(yt, yp, average=avg, zero_division=0)), 4),
+                    }
+                train_m = _cls_metrics(ytr, ytr_pred)
+                test_m  = _cls_metrics(yte, yte_pred)
+                cm = confusion_matrix(yte, yte_pred, labels=list(range(len(classes)))).tolist()
+
+                # Coefs (only for logistic, 2-class → single coef vector)
+                if hasattr(mdl, "coef_"):
+                    coef_arr = mdl.coef_[0] if mdl.coef_.shape[0]==1 else np.mean(np.abs(mdl.coef_), axis=0)
+                    coefs_sorted = sorted(zip(feat_names, [round(float(c),6) for c in coef_arr]),
+                                          key=lambda x: abs(x[1]), reverse=True)
+                else:
+                    coefs_sorted = []
+
+                _push(88, "Generando gráfica de coeficientes…")
+                coef_img = _coef_bar_b64(coefs_sorted, title=f"Importancia de features — {_mtype.upper()}")
+
+                res = {
+                    "node_id":      _nid,
+                    "model_type":   _mtype,
+                    "problem_type": "classification",
+                    "alpha":        _alpha,
+                    "normalize":    _norm,
+                    "n_train":      int(len(Xtr)),
+                    "n_test":       int(len(Xte)),
+                    "target_col":   _tgt,
+                    "features":     feat_names,
+                    "classes":      classes,
+                    "coefficients": coefs_sorted,
+                    "train_metrics": train_m,
+                    "test_metrics":  test_m,
+                    "confusion_matrix": cm,
+                    "coef_img":     coef_img,
+                    "_Xte":  Xte.tolist(), "_yte":  yte.tolist(), "_yte_pred": yte_pred.tolist(),
+                    "_Xtr":  Xtr.tolist(), "_ytr":  ytr.tolist(),
+                }
+
+            # ── REGRESIÓN ────────────────────────────────────────────────────
+            else:
+                try:
+                    y_float = y.astype(float)
+                except Exception:
+                    _push(100, "__error__:La variable objetivo no es numérica. Revisa el dataset.")
+                    return
+
+                _push(38, f"Dividiendo… {X.shape[0]} filas × {X.shape[1]} features · test={_tsz}")
+                time.sleep(0.05)
+                Xtr, Xte, ytr, yte = train_test_split(X, y_float, test_size=_tsz, random_state=_seed)
+
+                _push(52, "Entrenando modelo de regresión…")
+                time.sleep(0.05)
+                ytr_fit = ytr - _fxint if _fxint is not None else ytr
+                use_fi  = _fi if _fxint is None else False
+                if _mtype == "ridge":
+                    mdl = Ridge(alpha=_alpha, fit_intercept=use_fi)
+                elif _mtype == "lasso":
+                    mdl = Lasso(alpha=_alpha, max_iter=10000, fit_intercept=use_fi)
+                else:
+                    mdl = LinearRegression(fit_intercept=use_fi)
+                mdl.fit(Xtr, ytr_fit)
+
+                _push(75, "Calculando métricas…")
+                ytr_pred = mdl.predict(Xtr) + (_fxint or 0)
+                yte_pred = mdl.predict(Xte) + (_fxint or 0)
+                train_m  = _reg_metrics(ytr, ytr_pred)
+                test_m   = _reg_metrics(yte, yte_pred)
+
+                coefs_sorted = sorted(zip(feat_names, [round(float(c),6) for c in mdl.coef_]),
+                                      key=lambda x: abs(x[1]), reverse=True)
+
+                _push(88, "Generando gráfica de coeficientes…")
+                title_str = f"{_mtype.upper()} · λ={_alpha}" if _mtype != "linreg" else "OLS"
+                coef_img  = _coef_bar_b64(coefs_sorted, title=f"Coeficientes — {title_str}")
+
+                res = {
+                    "node_id":      _nid,
+                    "model_type":   _mtype,
+                    "problem_type": "regression",
+                    "alpha":        _alpha,
+                    "normalize":    _norm,
+                    "n_train":      int(len(Xtr)),
+                    "n_test":       int(len(Xte)),
+                    "target_col":   _tgt,
+                    "features":     feat_names,
+                    "coefficients": list(coefs_sorted),
+                    "fit_intercept":   _fi,
+                    "fixed_intercept": _fxint,
+                    "intercept": (
+                        round(_fxint, 6) if _fxint is not None
+                        else (round(float(mdl.intercept_), 6) if use_fi else 0.0)
+                    ),
+                    "train_metrics": train_m,
+                    "test_metrics":  test_m,
+                    "coef_img":      coef_img,
+                    "_Xte":  Xte.tolist(), "_yte":  yte.tolist(), "_yte_pred": yte_pred.tolist(),
+                    "_Xtr":  Xtr.tolist(), "_ytr":  ytr.tolist(),
+                }
+
+            _MODEL_STORE[_nid] = res
+            _NODE_MODELS[_nid] = mdl   # persist sklearn object for save_tab_model
+            _mtrain_result     = res
+            _push(100, "__done__")
+
+        except Exception as exc:
+            import traceback
+            _push(100, f"__error__:{exc} | {traceback.format_exc().splitlines()[-1]}")
+
+    with _mtrain_lock:
+        _mtrain_progress.clear()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/model_train_poll")
+def model_train_poll():
+    """Return pending progress events since last call."""
+    with _mtrain_lock:
+        events = list(_mtrain_progress)
+        _mtrain_progress.clear()
+    return jsonify({"events": events})
+
+
+@app.route("/api/model_result")
+def model_result():
+    """Quick summary of last trained model for the model block."""
+    # Keys that hold sklearn objects or heavy arrays — never JSON-serialize these
+    _SKIP_KEYS = {"scaler", "model_obj", "sklearn_model"}
+
+    node_id = request.args.get("node_id", "")
+    result = _MODEL_STORE.get(node_id) or _mtrain_result
+    if not result:
+        return jsonify({"error": "No hay modelo entrenado aún"}), 404
+
+    # Filter: drop private arrays (start with _) and known sklearn objects
+    def _is_safe(k, v):
+        if k.startswith("_") or k in _SKIP_KEYS:
+            return False
+        try:
+            json.dumps(v)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    safe = {k: v for k, v in result.items() if _is_safe(k, v)}
+
+    # Normalise field names: CV uses "method"/"feat_names"/"X_te"/"y_te"/"y_te_pred"
+    # Train-direct uses "model_type"/"features"/"_Xte"/"_yte"/"_yte_pred"
+    # Expose both so downstream blocks work regardless of origin.
+    if "model_type" not in safe and "method" in safe:
+        safe["model_type"] = safe["method"]
+    if "features" not in safe and "feat_names" in safe:
+        safe["features"] = safe["feat_names"]
+    if "target_col" not in safe:
+        safe["target_col"] = result.get("target_col") or _TAB.get("target_col", "")
+    if "n_train" not in safe:
+        safe["n_train"] = result.get("n_train")
+    if "n_test" not in safe:
+        safe["n_test"] = result.get("n_test")
+
+    # Move sklearn objects from _MODEL_STORE into _NODE_MODELS for save_tab_model
+    for sk_key in _SKIP_KEYS:
+        obj = result.get(sk_key)
+        if obj is not None and node_id:
+            _NODE_MODELS[node_id] = obj
+            break
+
+    return jsonify(safe)
+
+
+# ── /api/model_evaluate ───────────────────────────────────────────────────────
+
+@app.route("/api/model_evaluate", methods=["POST"])
+def model_evaluate():
+    """Full evaluation of the model stored for a given node_id.
+    For regression: metrics, coef chart, predicted vs actual, residuals,
+    Q-Q plot, VIF, Durbin-Watson, Breusch-Pagan.
+    """
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+
+    result = _MODEL_STORE.get(node_id)
+    if not result:
+        # Try last trained
+        result = _mtrain_result
+    if not result:
+        return jsonify({"error": "No hay modelo entrenado. Entrena primero desde el bloque Modelo."}), 404
+
+    problem_type = result.get("problem_type", "regression")
+
+    # Normalise keys: CV uses X_te/y_te/y_te_pred/feat_names, train-direct uses _Xte/_yte/_yte_pred/features
+    _Xte       = result.get("_Xte")       or result.get("X_te")
+    _yte       = result.get("_yte")       or result.get("y_te")
+    _yte_pred  = result.get("_yte_pred")  or result.get("y_te_pred")
+    _feat_names = result.get("features")  or result.get("feat_names", [])
+
+    if problem_type == "regression":
+        if _Xte is None or _yte is None or _yte_pred is None:
+            return jsonify({"error": "No hay datos de test disponibles. Reentrena el modelo."}), 400
+        Xte      = np.array(_Xte)
+        yte      = np.array(_yte)
+        yte_pred = np.array(_yte_pred)
+        residuals = yte - yte_pred
+        feat_names = _feat_names
+
+        # ── Plots ──────────────────────────────────────────────────────────
+        _tm        = result.get("test_metrics") or {}
+        pred_img   = _pred_vs_actual_b64(yte, yte_pred, _tm.get("R2") or _tm.get("r2", 0))
+        resid_img  = _residuals_plot_b64(yte_pred, residuals)
+        qq_img     = _qq_plot_b64(residuals)
+        coef_img   = result.get("coef_img")
+
+        # ── Statistical tests ──────────────────────────────────────────────
+        dw = _durbin_watson(residuals)
+        if dw < 1.5:
+            dw_interp = "⚠️ Posible autocorrelación positiva"
+        elif dw > 2.5:
+            dw_interp = "⚠️ Posible autocorrelación negativa"
+        else:
+            dw_interp = "✅ Sin autocorrelación aparente"
+
+        bp = _breusch_pagan_numpy(residuals, yte_pred)
+        n  = len(residuals)
+        # Rough threshold: BP > chi2(1, 0.05) ≈ 3.84
+        bp_interp = "⚠️ Posible heterocedasticidad" if bp > 3.84 else "✅ Homocedasticidad razonable"
+
+        # ── VIF (only if enough features and rows) ─────────────────────────
+        vif_data = []
+        if Xte.shape[1] >= 2 and Xte.shape[0] > Xte.shape[1] + 2:
+            try:
+                vif_data = _vif_numpy(Xte, feat_names)
+            except Exception:
+                vif_data = []
+
+        _model_type = result.get("model_type") or result.get("method", "—")
+        # CV summary — include if model was trained via grid search
+        _cv_summary = None
+        if result.get("from_cv") or result.get("cv_img"):
+            _cv_best = result.get("best") or {"param_val": result.get("alpha"), "score_mean": "—"}
+            _cv_pv_display = result.get("best_pv_display")
+            # Reconstruct display string if missing (old .pkl)
+            if not _cv_pv_display:
+                _pv = _cv_best.get("param_val") if isinstance(_cv_best, dict) else None
+                if _pv is None:
+                    _pv = result.get("alpha")
+                if _pv is not None:
+                    try:
+                        _pv = float(_pv)
+                        if _pv == int(_pv) and _pv >= 1:
+                            _cv_pv_display = str(int(_pv))
+                        elif _pv < 0.01:
+                            _cv_pv_display = f"{_pv:.2e}"
+                        else:
+                            _cv_pv_display = str(round(_pv, 4))
+                    except (TypeError, ValueError):
+                        _cv_pv_display = str(_pv)
+            _cv_summary = {
+                "cv_img":         result.get("cv_img"),
+                "best":           _cv_best,
+                "best_pv_display":_cv_pv_display,
+                "param_label":    result.get("param_label") or "λ",
+                "metric_label":   result.get("metric_label") or "RMSE",
+                "k_folds":        result.get("k_folds") or "—",
+                "method":         _model_type,
+                "problem_type":   result.get("problem_type", "regression"),
+            }
+        # Cache plots in _MODEL_STORE BEFORE returning so export_eval_zip finds them
+        _MODEL_STORE.setdefault(node_id, {}).update({
+            "pred_img": pred_img, "resid_img": resid_img,
+            "qq_img": qq_img, "coef_img": coef_img,
+        })
+        cached = [k for k in ("pred_img","resid_img","qq_img","coef_img") if _MODEL_STORE[node_id].get(k)]
+        print(f"[model_evaluate] plots cacheados en _MODEL_STORE[{node_id!r}]: {cached}")
+        return jsonify({
+            "problem_type":  "regression",
+            "model_type":    _model_type,
+            "normalize":     result.get("normalize"),
+            "n_train":       result.get("n_train"),
+            "n_test":        result.get("n_test"),
+            "target_col":    result.get("target_col") or _TAB.get("target_col", ""),
+            "features":      feat_names,
+            "coefficients":  result.get("coefficients"),
+            "intercept":     result.get("intercept"),
+            "train_metrics": result.get("train_metrics"),
+            "test_metrics":  result.get("test_metrics"),
+            # plots
+            "pred_img":  pred_img,
+            "resid_img": resid_img,
+            "qq_img":    qq_img,
+            "coef_img":  coef_img,
+            # tests
+            "durbin_watson": dw,
+            "dw_interp": dw_interp,
+            "breusch_pagan": bp,
+            "bp_interp": bp_interp,
+            "vif": vif_data,
+            "cv_summary": _cv_summary,
+        })
+
+    # ── CLASIFICACIÓN ────────────────────────────────────────────────────────
+    if problem_type == "classification":
+        from sklearn.metrics import (accuracy_score, f1_score, precision_score,
+                                     recall_score, confusion_matrix, ConfusionMatrixDisplay)
+        if _yte is None or _yte_pred is None:
+            return jsonify({"error": "No hay datos de test disponibles. Reentrena el modelo."}), 400
+        yte      = np.array(_yte)
+        yte_pred = np.array(_yte_pred)
+        classes  = result.get("classes", [])
+        avg = "binary" if len(classes) == 2 else "macro"
+
+        cm = confusion_matrix(yte, yte_pred, labels=list(range(len(classes)))).tolist()
+
+        fig, ax = plt.subplots(figsize=(max(4, len(classes)*1.2), max(3.5, len(classes)*1.0)))
+        fig.patch.set_facecolor(BG)
+        ax.set_facecolor(BG)
+        cm_arr = np.array(cm)
+        ax.imshow(cm_arr, cmap="Greens")
+        ax.set_xticks(range(len(classes))); ax.set_xticklabels(["Pred: "+c for c in classes], color=SEC, fontsize=9)
+        ax.set_yticks(range(len(classes))); ax.set_yticklabels(["Real: "+c for c in classes], color=SEC, fontsize=9)
+        for i in range(len(classes)):
+            for j in range(len(classes)):
+                ax.text(j, i, str(cm_arr[i,j]), ha="center", va="center",
+                        color=INK if cm_arr[i,j] < cm_arr.max()*0.6 else "white", fontsize=11, fontweight="bold")
+        ax.set_title("Matriz de confusión (test)", color=INK, fontsize=12, fontweight="bold")
+        plt.tight_layout()
+        cm_img = fig_b64(fig)
+
+        _model_type = result.get("model_type") or result.get("method", "—")
+        _cv_summary_cls = None
+        if result.get("from_cv") or result.get("cv_img"):
+            _cv_best_cls = result.get("best") or {"param_val": result.get("alpha"), "score_mean": "—"}
+            _cv_pv_display_cls = result.get("best_pv_display")
+            if not _cv_pv_display_cls:
+                _pv_cls = _cv_best_cls.get("param_val") if isinstance(_cv_best_cls, dict) else None
+                if _pv_cls is None:
+                    _pv_cls = result.get("alpha")
+                if _pv_cls is not None:
+                    try:
+                        _pv_cls = float(_pv_cls)
+                        if _pv_cls == int(_pv_cls) and _pv_cls >= 1:
+                            _cv_pv_display_cls = str(int(_pv_cls))
+                        elif _pv_cls < 0.01:
+                            _cv_pv_display_cls = f"{_pv_cls:.2e}"
+                        else:
+                            _cv_pv_display_cls = str(round(_pv_cls, 4))
+                    except (TypeError, ValueError):
+                        _cv_pv_display_cls = str(_pv_cls)
+            _cv_summary_cls = {
+                "cv_img":         result.get("cv_img"),
+                "best":           _cv_best_cls,
+                "best_pv_display":_cv_pv_display_cls,
+                "param_label":    result.get("param_label") or "C",
+                "metric_label":   result.get("metric_label") or "F1",
+                "k_folds":        result.get("k_folds") or "—",
+                "method":         _model_type,
+                "problem_type":   "classification",
+            }
+        # Cache plots in _MODEL_STORE BEFORE returning so export_eval_zip finds them
+        _MODEL_STORE.setdefault(node_id, {}).update({
+            "cm_img":   cm_img,
+            "coef_img": result.get("coef_img"),
+        })
+        cached_cls = [k for k in ("cm_img","coef_img") if _MODEL_STORE[node_id].get(k)]
+        print(f"[model_evaluate] plots cacheados en _MODEL_STORE[{node_id!r}]: {cached_cls}")
+        return jsonify({
+            "problem_type":    "classification",
+            "model_type":      _model_type,
+            "normalize":       result.get("normalize"),
+            "n_train":         result.get("n_train"),
+            "n_test":          result.get("n_test"),
+            "target_col":      result.get("target_col") or _TAB.get("target_col", ""),
+            "features":        _feat_names,
+            "classes":         classes,
+            "coefficients":    result.get("coefficients"),
+            "train_metrics":   result.get("train_metrics"),
+            "test_metrics":    result.get("test_metrics"),
+            "confusion_matrix": cm,
+            "cm_img":          cm_img,
+            "coef_img":        result.get("coef_img"),
+            "cv_summary":      _cv_summary_cls,
+        })
+
+    return jsonify({"error": f"Tipo de problema '{problem_type}' no reconocido"}), 400
