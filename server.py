@@ -2,6 +2,72 @@
 # ── MODEL STORE: trained model objects keyed by node_id ──────────────────────
 _MODEL_STORE: dict = {}    # { node_id: result_dict }
 _NODE_MODELS: dict = {}   # { node_id: sklearn model object }
+
+# ── UI language (set by /api/set_lang) ───────────────────────────────────────
+_UI_LANG: str = "es"   # default Spanish
+
+_PLOT_LABELS = {
+    "es": {
+        "pred_actual":   "Predicho vs Real",
+        "predicted":     "Predicho",
+        "actual":        "Real",
+        "residuals":     "Residuos",
+        "fitted":        "Ajustados",
+        "residuals_vs":  "Residuos vs Ajustados",
+        "qq_title":      "Q-Q de residuos (normalidad)",
+        "qq_x":          "Cuantiles teóricos",
+        "qq_y":          "Cuantiles muestrales",
+        "coef_title":    "Coeficientes",
+        "variable":      "Variable",
+        "coefficient":   "Coeficiente",
+        "cm_title":      "Matriz de confusión",
+        "pred_lbl":      "Predicho",
+        "actual_lbl":    "Real",
+        "roc_title":     "Curva ROC",
+        "fpr":           "Tasa de falsos positivos",
+        "tpr":           "Tasa de verdaderos positivos",
+        "chance":        "Azar",
+        "boundary_title":"Frontera de decisión",
+        "cv_title":      "Validación Cruzada",
+        "cv_score":      "Puntuación CV",
+        "missing_title": "Valores ausentes (%)",
+        "frequency":     "Frecuencia",
+        "count":         "Recuento",
+        "value":         "Valor",
+    },
+    "en": {
+        "pred_actual":   "Predicted vs Actual",
+        "predicted":     "Predicted",
+        "actual":        "Actual",
+        "residuals":     "Residuals",
+        "fitted":        "Fitted",
+        "residuals_vs":  "Residuals vs Fitted",
+        "qq_title":      "Q-Q of residuals (normality)",
+        "qq_x":          "Theoretical quantiles",
+        "qq_y":          "Sample quantiles",
+        "coef_title":    "Coefficients",
+        "variable":      "Variable",
+        "coefficient":   "Coefficient",
+        "cm_title":      "Confusion matrix",
+        "pred_lbl":      "Predicted",
+        "actual_lbl":    "Actual",
+        "roc_title":     "ROC curve",
+        "fpr":           "False positive rate",
+        "tpr":           "True positive rate",
+        "chance":        "Random",
+        "boundary_title":"Decision boundary",
+        "cv_title":      "Cross-Validation",
+        "cv_score":      "CV score",
+        "missing_title": "Missing values (%)",
+        "frequency":     "Frequency",
+        "count":         "Count",
+        "value":         "Value",
+    }
+}
+
+def PL():
+    """Return the current plot-label dict for the active UI language."""
+    return _PLOT_LABELS.get(_UI_LANG, _PLOT_LABELS["es"])
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, send_file
 import re, io, base64, csv, json, time, threading, zipfile, os, pickle, tempfile, shutil
 from collections import Counter
@@ -22,8 +88,9 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold, cross_val_score
 from sklearn.metrics import (accuracy_score, confusion_matrix, classification_report,
                               f1_score, precision_score, recall_score,
-                              mean_squared_error, mean_absolute_error, r2_score)
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+                              mean_squared_error, mean_absolute_error, r2_score,
+                              roc_curve, auc)
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, label_binarize
 from sklearn.decomposition import LatentDirichletAllocation, NMF, TruncatedSVD
 import joblib
 
@@ -45,6 +112,15 @@ except Exception:
 
 PORT = 5053
 app  = Flask(__name__, static_folder="static")
+
+@app.route("/api/set_lang", methods=["POST"])
+def set_lang():
+    global _UI_LANG
+    body = request.get_json(force=True, silent=True) or {}
+    new_lang = body.get("lang", "es")
+    if new_lang in _PLOT_LABELS:
+        _UI_LANG = new_lang
+    return jsonify({"lang": _UI_LANG})
 
 # ── Global state ─────────────────────────────────────────────────────────────
 S = dict(
@@ -1623,7 +1699,7 @@ def model_cv():
             scores = [float((-s)**0.5) for s in raw]
         else:
             scores = [float(s) for s in raw]
-        return round(float(np.mean(scores)), 4), round(float(np.std(scores)), 4)
+        return round(float(np.mean(scores)), 6), round(float(np.std(scores)), 6)
 
     # ── Grid search: param_vals × normalizations ──────────────────────────
     # results_by_norm: { norm: [ {param_val, score_mean, score_std}, ... ] }
@@ -1763,10 +1839,22 @@ def model_cv():
                        label=f"Mejor: {norm_labels[best_norm]}, {cfg['label']}={round(best_pv,4)} → {metric_label}={best_score}")
 
         ax.set_xlabel((cfg["label"] or "Parámetro") + (" (log)" if use_log else ""), color=SEC, fontsize=11)
-        ax.set_ylabel(metric_label + " (CV)", color=SEC, fontsize=11)
+        ax.set_ylabel(f"{metric_label} ({PL()['cv_score']})", color=SEC, fontsize=11)
         ax.set_title(f"{method.upper()} — Grid Search {k_folds}-fold · {metric_label}", color=INK, fontsize=12, fontweight="bold")
         ax.legend(facecolor=BG, labelcolor=INK, fontsize=9, loc="best")
         ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
+        # Limit X ticks to at most 8, evenly spaced from the actual param values
+        all_xs = sorted(set(float(p) for p in pvals if p is not None))
+        if len(all_xs) > 8:
+            step = max(1, len(all_xs) // 8)
+            tick_xs = all_xs[::step]
+        else:
+            tick_xs = all_xs
+        ax.set_xticks(tick_xs)
+        ax.set_xticklabels(
+            [str(int(v)) if v == int(v) else (f"{v:.2e}" if v < 0.01 else str(round(v, 4))) for v in tick_xs],
+            color=SEC, fontsize=9
+        )
         plt.tight_layout(pad=1.4)
     else:
         # OLS: bar chart comparing normalizations
@@ -1778,8 +1866,8 @@ def model_cv():
         bar_colors  = [MINT if n == best_norm else PALETTE[0] for n in norm_sweep]
         ax.bar(bar_names, bar_scores, color=bar_colors, alpha=0.85, edgecolor="none",
                yerr=bar_stds, capsize=5, error_kw={"ecolor": SEC, "linewidth":1.2})
-        ax.set_ylabel(metric_label + " (CV)", color=SEC, fontsize=11)
-        ax.set_title(f"OLS — Comparación de normalizaciones ({k_folds}-fold)", color=INK, fontsize=12, fontweight="bold")
+        ax.set_ylabel(f"{metric_label} ({PL()['cv_score']})", color=SEC, fontsize=11)
+        ax.set_title(f"OLS — {'Comparación de normalizaciones' if _UI_LANG=='es' else 'Normalization comparison'} ({k_folds}-fold)", color=INK, fontsize=12, fontweight="bold")
         ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
         plt.tight_layout(pad=1.4)
 
@@ -2009,9 +2097,9 @@ def tab_classify():
         im = ax.imshow(cm, cmap="Blues", aspect="auto")
         ax.set_xticks(range(len(classes))); ax.set_xticklabels(classes, rotation=30, ha="right", color=INK)
         ax.set_yticks(range(len(classes))); ax.set_yticklabels(classes, color=INK)
-        ax.set_xlabel("Predicho", color=SEC, fontsize=11)
-        ax.set_ylabel("Real", color=SEC, fontsize=11)
-        ax.set_title("Matriz de confusión — " + (results[0]["model"] if results else ""), color=INK, fontsize=12, fontweight="bold")
+        ax.set_xlabel(PL()["pred_lbl"], color=SEC, fontsize=11)
+        ax.set_ylabel(PL()["actual_lbl"], color=SEC, fontsize=11)
+        ax.set_title(PL()["cm_title"] + " — " + (results[0]["model"] if results else ""), color=INK, fontsize=12, fontweight="bold")
         for i in range(len(classes)):
             for j in range(len(classes)):
                 ax.text(j, i, str(cm[i, j]), ha="center", va="center",
@@ -2299,13 +2387,16 @@ def plot_distribution():
         ax.hist(nums, bins=n_bins, color=PALETTE[0], edgecolor="white",
                 linewidth=0.5, alpha=0.88)
         mean_v = float(np.mean(nums)); med_v = float(np.median(nums))
+        _mean_lbl = "Media" if _UI_LANG == "es" else "Mean"
+        _med_lbl  = "Mediana" if _UI_LANG == "es" else "Median"
+        _dist_lbl = "Distribución de" if _UI_LANG == "es" else "Distribution of"
         ax.axvline(mean_v, color=PALETTE[1], linewidth=1.8, linestyle="--",
-                   label=f"Media {mean_v:.2f}", alpha=0.9)
+                   label=f"{_mean_lbl} {mean_v:.2f}", alpha=0.9)
         ax.axvline(med_v, color=PALETTE[2], linewidth=1.8, linestyle=":",
-                   label=f"Mediana {med_v:.2f}", alpha=0.9)
+                   label=f"{_med_lbl} {med_v:.2f}", alpha=0.9)
         ax.set_xlabel(col, color=SEC, fontsize=11)
-        ax.set_ylabel("Frecuencia", color=SEC, fontsize=11)
-        ax.set_title(f"Distribución de {col}", color=INK, fontsize=13, fontweight="bold")
+        ax.set_ylabel(PL()["frequency"], color=SEC, fontsize=11)
+        ax.set_title(f"{_dist_lbl} {col}", color=INK, fontsize=13, fontweight="bold")
         ax.yaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
         ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=10,
                   framealpha=0.85, edgecolor=BORDER)
@@ -2322,8 +2413,9 @@ def plot_distribution():
                        color=list(reversed(colors)), edgecolor="none", height=0.65)
         ax.set_yticks(list(y_pos))
         ax.set_yticklabels(list(reversed(list(labels_b))), color=INK, fontsize=10)
-        ax.set_xlabel("Frecuencia", color=SEC, fontsize=11)
-        ax.set_title(f"Distribución de {col}", color=INK, fontsize=13, fontweight="bold")
+        ax.set_xlabel(PL()["frequency"], color=SEC, fontsize=11)
+        _dist_lbl2 = "Distribución de" if _UI_LANG == "es" else "Distribution of"
+        ax.set_title(f"{_dist_lbl2} {col}", color=INK, fontsize=13, fontweight="bold")
         ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
         for b in bars:
             w = b.get_width()
@@ -2470,8 +2562,9 @@ def plot_missing():
     bars = ax.barh(range(n), pcts, color=colors, edgecolor="none", height=0.6)
     ax.set_yticks(range(n))
     ax.set_yticklabels(names, color=INK, fontsize=10)
-    ax.set_xlabel("% de valores ausentes", color=SEC, fontsize=11)
-    ax.set_title("Valores ausentes por columna", color=INK, fontsize=12, fontweight="bold")
+    ax.set_xlabel(PL()["missing_title"], color=SEC, fontsize=11)
+    _miss_title = "Valores ausentes por columna" if _UI_LANG == "es" else "Missing values per column"
+    ax.set_title(_miss_title, color=INK, fontsize=12, fontweight="bold")
     ax.xaxis.grid(True, color=BORDER, linewidth=0.5, zorder=0)
     ax.set_xlim(0, 100)   # siempre sobre 100%
     for b, p in zip(bars, pcts):
@@ -3930,7 +4023,12 @@ def save_tab_model():
         "metric_label":    result.get("metric_label"),
         "k_folds":         result.get("k_folds"),
         "best":            result.get("best"),
-        "best_pv_display": result.get("best_pv_display"),
+        "best_pv_display": result.get("best_pv_display") or (
+            # Fallback: model trained without CV — build display from alpha
+            (lambda a: (f"{a:.2e}" if a < 0.01 else str(round(a, 4))) if a is not None else None)(
+                result.get("alpha")
+            )
+        ),
     }
 
     # Attach the live sklearn model object — try str and int keys
@@ -4004,7 +4102,11 @@ def load_tab_model():
         "metric_label":     payload.get("metric_label"),
         "k_folds":          payload.get("k_folds"),
         "best":             payload.get("best"),
-        "best_pv_display":  payload.get("best_pv_display"),
+        "best_pv_display":  payload.get("best_pv_display") or (
+            (lambda a: (f"{a:.2e}" if a < 0.01 else str(round(a, 4))) if a is not None else None)(
+                payload.get("alpha")
+            )
+        ),
         # test arrays for plots/tests (use both key schemas for compatibility)
         "_Xte":      payload.get("X_test"),
         "_yte":      payload.get("y_test"),
@@ -4367,13 +4469,44 @@ def eval_tab_model():
         ax.imshow(cm, cmap="Blues", aspect="auto")
         ax.set_xticks(range(len(classes))); ax.set_xticklabels(classes, rotation=30, ha="right", color=INK)
         ax.set_yticks(range(len(classes))); ax.set_yticklabels(classes, color=INK)
-        ax.set_xlabel("Predicho", color=SEC, fontsize=11)
-        ax.set_ylabel("Real", color=SEC, fontsize=11)
-        ax.set_title("Matriz de confusión", color=INK, fontsize=12, fontweight="bold")
+        ax.set_xlabel(PL()["pred_lbl"], color=SEC, fontsize=11)
+        ax.set_ylabel(PL()["actual_lbl"], color=SEC, fontsize=11)
+        ax.set_title(PL()["cm_title"], color=INK, fontsize=12, fontweight="bold")
         for i in range(len(classes)):
             for j in range(len(classes)):
                 ax.text(j, i, str(cm[i, j]), ha="center", va="center",
                         color="white" if cm[i, j] > cm.max() / 2 else INK, fontsize=13, fontweight="bold")
+        plt.tight_layout(pad=1.4)
+        return fig_b64(fig)
+
+    def _roc_img(y_true, y_score, classes):
+        """Generate ROC curve. y_score: (n, n_classes) proba or (n,) for binary."""
+        import numpy as np, matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(6, 5))
+        fig.patch.set_facecolor(LIGHT); style_ax(ax)
+        n_cls = len(classes)
+        if n_cls == 2:
+            # Binary: use proba of positive class
+            score = y_score[:, 1] if y_score.ndim == 2 else y_score
+            fpr, tpr, _ = roc_curve(y_true, score)
+            roc_auc = auc(fpr, tpr)
+            ax.plot(fpr, tpr, color=PALETTE[0], linewidth=2,
+                    label=f"AUC = {roc_auc:.3f}")
+        else:
+            # Multiclass: one-vs-rest
+            y_bin = label_binarize(y_true, classes=list(range(n_cls)))
+            for i, cls_name in enumerate(classes):
+                fpr, tpr, _ = roc_curve(y_bin[:, i], y_score[:, i])
+                roc_auc = auc(fpr, tpr)
+                ax.plot(fpr, tpr, color=PALETTE[i % len(PALETTE)], linewidth=1.8,
+                        label=f"{cls_name} (AUC={roc_auc:.3f})")
+        ax.plot([0, 1], [0, 1], color=SEC, linewidth=1, linestyle="--", label=PL()["chance"])
+        ax.set_xlabel(PL()["fpr"], color=SEC, fontsize=11)
+        ax.set_ylabel(PL()["tpr"], color=SEC, fontsize=11)
+        ax.set_title(PL()["roc_title"], color=INK, fontsize=12, fontweight="bold")
+        ax.legend(facecolor=BG, labelcolor=INK, fontsize=9, loc="lower right")
+        ax.set_xlim([0, 1]); ax.set_ylim([0, 1.02])
+        ax.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5)
         plt.tight_layout(pad=1.4)
         return fig_b64(fig)
 
@@ -4401,16 +4534,26 @@ def eval_tab_model():
 
         metrics = _compute_metrics(y_test, y_pred, problem_type, classes)
         cm_img  = None
+        roc_img = None
         report  = None
         if problem_type != "regression" and classes:
             cm_img = _cm_img(y_test, y_pred, classes)
             report = skm.classification_report(y_test, y_pred,
                          target_names=classes, zero_division=0)
+            # ROC: need predict_proba
+            mdl2 = payload.get("sklearn_model")
+            if mdl2 is not None and hasattr(mdl2, "predict_proba"):
+                try:
+                    y_score = mdl2.predict_proba(np.array(payload.get("X_test", [])))
+                    roc_img = _roc_img(y_test, y_score, classes)
+                except Exception as e:
+                    print(f"[eval_tab_model] ROC error: {e}")
         return jsonify({
             "source":       "saved",
             "problem_type": problem_type,
             "metrics":      metrics,
             "cm_img":       cm_img,
+            "roc_img":      roc_img,
             "report_txt":   report,
         })
 
@@ -4545,6 +4688,7 @@ def eval_tab_model():
             print(f"[eval_tab_model/new] predict ERROR: {e}")
             print(traceback.format_exc())
             return jsonify({"error": f"Error al predecir: {e}"}), 400
+        roc_img = None
         if has_target and problem_type != "regression":
             def _tstr(v):
                 try: f = float(v); return str(int(f)) if f == int(f) else str(f)
@@ -4556,13 +4700,18 @@ def eval_tab_model():
             cm_img  = _cm_img(y_true_enc, y_pred_new, classes) if classes else None
             report  = skm.classification_report(y_true_enc, y_pred_new,
                           target_names=classes, zero_division=0) if classes else None
+            if classes and hasattr(mdl, "predict_proba"):
+                try:
+                    y_score = mdl.predict_proba(X_new)
+                    roc_img = _roc_img(y_true_enc, y_score, classes)
+                except Exception as e:
+                    print(f"[eval_tab_model/new] ROC error: {e}")
         elif has_target and problem_type == "regression":
             y_true_f = np.array([float(r.get(target_col, 0)) for r in rows])
             metrics  = _compute_metrics(y_true_f, y_pred_new.astype(float), problem_type, classes)
             cm_img   = None
             report   = None
         else:
-            # No target in CSV — just return predictions
             metrics = {}
             cm_img  = None
             report  = "Sin columna objetivo en el CSV — no se pueden calcular métricas."
@@ -4573,12 +4722,108 @@ def eval_tab_model():
             "target_col":   target_col,
             "metrics":      metrics,
             "cm_img":       cm_img,
+            "roc_img":      roc_img,
             "report_txt":   report,
             "n_rows":       len(rows),
             "skipped_rows": skipped,
         })
 
     return jsonify({"error": "Modo desconocido."}), 400
+
+
+@app.route("/api/decision_boundary", methods=["POST"])
+def decision_boundary():
+    """
+    Generate a 2D decision boundary plot for a classification model.
+    Body: { node_id, feat_x, feat_y }
+    feat_x / feat_y: feature names to use as axes.
+    """
+    import numpy as np, matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+    feat_x  = body.get("feat_x", "")
+    feat_y  = body.get("feat_y", "")
+
+    # Resolve payload
+    payload = _LOADED_TAB_MODELS.get(node_id)
+    if not payload:
+        ms  = _MODEL_STORE.get(node_id) or _MODEL_STORE.get(int(node_id) if node_id.isdigit() else None)
+        mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+        if ms:
+            payload = dict(ms)
+            if mdl: payload["sklearn_model"] = mdl
+    if not payload:
+        return jsonify({"error": "No hay modelo cargado."}), 400
+
+    problem_type = payload.get("problem_type", "regression")
+    if problem_type == "regression":
+        return jsonify({"error": "La frontera de decisión solo está disponible para clasificación."}), 400
+
+    mdl      = payload.get("sklearn_model")
+    if mdl is None:
+        mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+    if mdl is None or not hasattr(mdl, "predict"):
+        return jsonify({"error": "Modelo no disponible. Reentrena el modelo."}), 400
+
+    features = payload.get("features", [])
+    classes  = payload.get("classes", [])
+    X_test   = np.array(payload.get("X_test", []))
+    y_test   = np.array(payload.get("y_test", []))
+
+    if feat_x not in features or feat_y not in features:
+        return jsonify({"error": f"Features '{feat_x}' o '{feat_y}' no encontradas en el modelo."}), 400
+    if len(X_test) == 0:
+        return jsonify({"error": "No hay datos de test guardados en el modelo."}), 400
+
+    ix = features.index(feat_x)
+    iy = features.index(feat_y)
+
+    # Build 2D grid over the range of the two selected features
+    x_min, x_max = X_test[:, ix].min() - 0.5, X_test[:, ix].max() + 0.5
+    y_min, y_max = X_test[:, iy].min() - 0.5, X_test[:, iy].max() + 0.5
+    h = (x_max - x_min) / 120.0
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
+
+    # Fill all other features with their mean from X_test
+    n_feat = len(features)
+    means  = X_test.mean(axis=0)
+    grid_full = np.tile(means, (xx.ravel().shape[0], 1))
+    grid_full[:, ix] = xx.ravel()
+    grid_full[:, iy] = yy.ravel()
+
+    try:
+        Z = mdl.predict(grid_full)
+    except Exception as e:
+        return jsonify({"error": f"Error al predecir la malla: {e}"}), 400
+
+    Z = Z.reshape(xx.shape)
+
+    # Plot
+    n_cls   = len(classes) if classes else int(Z.max()) + 1
+    cmap_bg = ListedColormap([f"#{c}" for c in ["b3d4f5","f5b3b3","b3f5c8","f5e6b3","d4b3f5"][:n_cls]])
+    cmap_pt = ListedColormap([PALETTE[i % len(PALETTE)] for i in range(n_cls)])
+
+    fig, ax = plt.subplots(figsize=(7, 5.5))
+    fig.patch.set_facecolor(LIGHT); style_ax(ax)
+
+    ax.contourf(xx, yy, Z, alpha=0.35, cmap=cmap_bg)
+    ax.contour(xx, yy, Z, colors=[SEC], linewidths=0.8, linestyles="--", alpha=0.6)
+
+    for i, cls_name in enumerate(classes or [str(c) for c in range(n_cls)]):
+        mask = y_test == i
+        ax.scatter(X_test[mask, ix], X_test[mask, iy],
+                   color=PALETTE[i % len(PALETTE)], label=cls_name,
+                   s=30, edgecolors="white", linewidth=0.4, alpha=0.85, zorder=3)
+
+    ax.set_xlabel(feat_x, color=SEC, fontsize=11)
+    ax.set_ylabel(feat_y, color=SEC, fontsize=11)
+    ax.set_title(f"{PL()['boundary_title']} — {feat_x} vs {feat_y}", color=INK, fontsize=12, fontweight="bold")
+    ax.legend(facecolor=BG, labelcolor=INK, fontsize=9, loc="best")
+    plt.tight_layout(pad=1.4)
+
+    return jsonify({"img": fig_b64(fig), "feat_x": feat_x, "feat_y": feat_y})
 
 
 @app.route("/api/session_status")
@@ -5834,10 +6079,10 @@ def _qq_plot_b64(residuals):
     std_r = float(np.std(sorted_r)) if np.std(sorted_r) > 1e-12 else 1.0
     mean_r = float(np.mean(sorted_r))
     ax.plot([mn, mx], [mean_r + mn * std_r, mean_r + mx * std_r],
-            color=MINT, linewidth=1.8, linestyle="--", label="Línea normal")
-    ax.set_xlabel("Cuantiles teóricos (normal)", color=SEC, fontsize=10)
-    ax.set_ylabel("Cuantiles de residuos", color=SEC, fontsize=10)
-    ax.set_title("Q-Q Plot de residuos", color=INK, fontsize=12, fontweight="bold")
+            color=MINT, linewidth=1.8, linestyle="--", label=PL()["qq_x"])
+    ax.set_xlabel(PL()["qq_x"], color=SEC, fontsize=10)
+    ax.set_ylabel(PL()["qq_y"], color=SEC, fontsize=10)
+    ax.set_title(PL()["qq_title"], color=INK, fontsize=12, fontweight="bold")
     ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
     ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
     plt.tight_layout(pad=1.4)
@@ -5850,9 +6095,9 @@ def _residuals_plot_b64(y_pred, residuals):
     fig.patch.set_facecolor(LIGHT); style_ax(ax)
     ax.axhline(0, color=MINT, linewidth=1.6, linestyle="--")
     ax.scatter(y_pred, residuals, color=PALETTE[1], alpha=0.65, s=26, edgecolors="none", zorder=3)
-    ax.set_xlabel("Valores ajustados", color=SEC, fontsize=10)
-    ax.set_ylabel("Residuos", color=SEC, fontsize=10)
-    ax.set_title("Residuos vs valores ajustados", color=INK, fontsize=12, fontweight="bold")
+    ax.set_xlabel(PL()["fitted"], color=SEC, fontsize=10)
+    ax.set_ylabel(PL()["residuals"], color=SEC, fontsize=10)
+    ax.set_title(PL()["residuals_vs"], color=INK, fontsize=12, fontweight="bold")
     ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
     plt.tight_layout(pad=1.4)
     return fig_b64(fig)
@@ -5866,9 +6111,9 @@ def _pred_vs_actual_b64(y_true, y_pred, r2):
     mx_v = max(float(y_true.max()), float(y_pred.max()))
     ax.scatter(y_true, y_pred, color=PALETTE[0], alpha=0.65, s=26, edgecolors="none", zorder=3)
     ax.plot([mn_v, mx_v], [mn_v, mx_v], color=MINT, linewidth=1.8, linestyle="--", label="Ideal")
-    ax.set_xlabel("Real", color=SEC, fontsize=10)
-    ax.set_ylabel("Predicho", color=SEC, fontsize=10)
-    ax.set_title(f"Predicho vs Real  (R²={round(r2,4)})", color=INK, fontsize=12, fontweight="bold")
+    ax.set_xlabel(PL()["actual"], color=SEC, fontsize=10)
+    ax.set_ylabel(PL()["predicted"], color=SEC, fontsize=10)
+    ax.set_title(f"{PL()['pred_actual']}  (R²={round(r2,4)})", color=INK, fontsize=12, fontweight="bold")
     ax.legend(facecolor=LIGHT, labelcolor=INK, fontsize=9)
     ax.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
     plt.tight_layout(pad=1.4)
@@ -5884,7 +6129,7 @@ def _coef_bar_b64(coefs_sorted, title="Coeficientes"):
     fig2.patch.set_facecolor(LIGHT); style_ax(ax3)
     ax3.barh(names_c, vals_c, color=colors_c, edgecolor="none", alpha=0.85)
     ax3.axvline(0, color=SEC, linewidth=0.8)
-    ax3.set_xlabel("Coeficiente", color=SEC, fontsize=10)
+    ax3.set_xlabel(PL()["coefficient"], color=SEC, fontsize=10)
     ax3.set_title(title, color=INK, fontsize=12, fontweight="bold")
     ax3.xaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5, zorder=0)
     plt.tight_layout(pad=1.4)
@@ -6343,13 +6588,13 @@ def model_evaluate():
         ax.set_facecolor(BG)
         cm_arr = np.array(cm)
         ax.imshow(cm_arr, cmap="Greens")
-        ax.set_xticks(range(len(classes))); ax.set_xticklabels(["Pred: "+c for c in classes], color=SEC, fontsize=9)
-        ax.set_yticks(range(len(classes))); ax.set_yticklabels(["Real: "+c for c in classes], color=SEC, fontsize=9)
+        ax.set_xticks(range(len(classes))); ax.set_xticklabels([PL()["pred_lbl"]+": "+c for c in classes], color=SEC, fontsize=9)
+        ax.set_yticks(range(len(classes))); ax.set_yticklabels([PL()["actual_lbl"]+": "+c for c in classes], color=SEC, fontsize=9)
         for i in range(len(classes)):
             for j in range(len(classes)):
                 ax.text(j, i, str(cm_arr[i,j]), ha="center", va="center",
                         color=INK if cm_arr[i,j] < cm_arr.max()*0.6 else "white", fontsize=11, fontweight="bold")
-        ax.set_title("Matriz de confusión (test)", color=INK, fontsize=12, fontweight="bold")
+        ax.set_title(PL()["cm_title"] + " (test)", color=INK, fontsize=12, fontweight="bold")
         plt.tight_layout()
         cm_img = fig_b64(fig)
 
@@ -6383,12 +6628,45 @@ def model_evaluate():
                 "method":         _model_type,
                 "problem_type":   "classification",
             }
+        # ROC curve
+        roc_img_cls = None
+        live_mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+        if live_mdl is not None and hasattr(live_mdl, "predict_proba") and _Xte is not None:
+            try:
+                y_score_cls = live_mdl.predict_proba(np.array(_Xte))
+                n_cls = len(classes)
+                fig_roc, ax_roc = plt.subplots(figsize=(6, 5))
+                fig_roc.patch.set_facecolor(LIGHT); style_ax(ax_roc)
+                if n_cls == 2:
+                    fpr, tpr, _ = roc_curve(yte, y_score_cls[:, 1])
+                    roc_auc = auc(fpr, tpr)
+                    ax_roc.plot(fpr, tpr, color=PALETTE[0], linewidth=2, label=f"AUC = {roc_auc:.3f}")
+                else:
+                    y_bin = label_binarize(yte, classes=list(range(n_cls)))
+                    for i, cls_name in enumerate(classes):
+                        fpr, tpr, _ = roc_curve(y_bin[:, i], y_score_cls[:, i])
+                        roc_auc = auc(fpr, tpr)
+                        ax_roc.plot(fpr, tpr, color=PALETTE[i % len(PALETTE)], linewidth=1.8,
+                                    label=f"{cls_name} (AUC={roc_auc:.3f})")
+                ax_roc.plot([0,1],[0,1], color=SEC, linewidth=1, linestyle="--", label=PL()["chance"])
+                ax_roc.set_xlabel(PL()["fpr"], color=SEC, fontsize=11)
+                ax_roc.set_ylabel(PL()["tpr"], color=SEC, fontsize=11)
+                ax_roc.set_title(PL()["roc_title"], color=INK, fontsize=12, fontweight="bold")
+                ax_roc.legend(facecolor=BG, labelcolor=INK, fontsize=9, loc="lower right")
+                ax_roc.set_xlim([0,1]); ax_roc.set_ylim([0,1.02])
+                ax_roc.yaxis.grid(True, color=BORDER, linestyle="--", linewidth=0.5)
+                plt.tight_layout(pad=1.4)
+                roc_img_cls = fig_b64(fig_roc)
+            except Exception as e:
+                print(f"[model_evaluate] ROC error: {e}")
+
         # Cache plots in _MODEL_STORE BEFORE returning so export_eval_zip finds them
         _MODEL_STORE.setdefault(node_id, {}).update({
             "cm_img":   cm_img,
+            "roc_img":  roc_img_cls,
             "coef_img": result.get("coef_img"),
         })
-        cached_cls = [k for k in ("cm_img","coef_img") if _MODEL_STORE[node_id].get(k)]
+        cached_cls = [k for k in ("cm_img","roc_img","coef_img") if _MODEL_STORE[node_id].get(k)]
         print(f"[model_evaluate] plots cacheados en _MODEL_STORE[{node_id!r}]: {cached_cls}")
         return jsonify({
             "problem_type":    "classification",
@@ -6404,6 +6682,7 @@ def model_evaluate():
             "test_metrics":    result.get("test_metrics"),
             "confusion_matrix": cm,
             "cm_img":          cm_img,
+            "roc_img":         roc_img_cls,
             "coef_img":        result.get("coef_img"),
             "cv_summary":      _cv_summary_cls,
         })

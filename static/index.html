@@ -22,21 +22,21 @@
     <button class="btn btn-ghost btn-sm" id="btn-clear">🗑 Limpiar</button>
     <!-- Save / Load menu -->
     <div class="tb-menu-wrap" id="save-menu-wrap">
-      <button class="btn btn-ghost btn-sm" id="btn-save-menu">💾 Guardar ▾</button>
+      <button class="btn btn-ghost btn-sm" id="btn-save-menu" data-i18n-suffix=" ▾" data-i18n="menu-save">💾 Guardar ▾</button>
       <div class="tb-dropdown" id="save-dropdown">
-        <div class="tb-dd-section">Proyecto completo</div>
-        <button class="tb-dd-item" id="dd-save-session">📦 Guardar sesión (.zip)</button>
-        <button class="tb-dd-item" id="dd-load-session">📂 Cargar sesión (.zip)</button>
+        <div class="tb-dd-section" data-i18n="menu-project">Proyecto completo</div>
+        <button class="tb-dd-item" id="dd-save-session" data-i18n="menu-save-session">📦 Guardar sesión (.zip)</button>
+        <button class="tb-dd-item" id="dd-load-session" data-i18n="menu-load-session">📂 Cargar sesión (.zip)</button>
         <input type="file" accept=".zip" id="fi-load-zip" style="display:none">
         <div class="tb-dd-sep"></div>
-        <div class="tb-dd-section">Exportar individual</div>
-        <button class="tb-dd-item" id="dd-exp-csv">📄 CSV preprocesado</button>
-        <button class="tb-dd-item" id="dd-exp-model">🤖 Modelo (.pkl)</button>
-        <button class="tb-dd-item" id="dd-exp-report">📋 Reporte (.txt)</button>
+        <div class="tb-dd-section" data-i18n="menu-export">Exportar individual</div>
+        <button class="tb-dd-item" id="dd-exp-csv" data-i18n="menu-exp-csv">📄 CSV preprocesado</button>
+        <button class="tb-dd-item" id="dd-exp-model" data-i18n="menu-exp-model">🤖 Modelo (.pkl)</button>
+        <button class="tb-dd-item" id="dd-exp-report" data-i18n="menu-exp-report">📋 Reporte (.txt)</button>
         <div class="tb-dd-sep"></div>
-        <div class="tb-dd-section">Canvas</div>
-        <button class="tb-dd-item" id="dd-exp-canvas">🗺 Exportar canvas (.json)</button>
-        <button class="tb-dd-item" id="dd-imp-canvas">📥 Importar canvas (.json)</button>
+        <div class="tb-dd-section" data-i18n="canvas">Canvas</div>
+        <button class="tb-dd-item" id="dd-exp-canvas" data-i18n="menu-exp-canvas">🗺 Exportar canvas (.json)</button>
+        <button class="tb-dd-item" id="dd-imp-canvas" data-i18n="menu-imp-canvas">📥 Importar canvas (.json)</button>
         <input type="file" accept=".json" id="fi-load-canvas" style="display:none">
       </div>
     </div>
@@ -48,18 +48,18 @@
     <div class="sb-section">
       <div class="sb-label" data-i18n="blocks">Bloques</div>
       <p class="sb-hint" data-i18n="blocks-hint">Clic o arrastra al canvas</p>
-      <div class="sb-group-label">📋 Datos</div>
+      <div class="sb-group-label" data-i18n="group-data">📋 Datos</div>
       <div class="palette-item" data-type="data" draggable="true">📂 Datos</div>
       <div class="palette-item" data-type="inspect" draggable="true">🔬 Análisis</div>
       <div class="palette-item" data-type="plots" draggable="true">📊 Plots</div>
       <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
-      <div class="sb-group-label">🤖 Modelos</div>
+      <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
       <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
       <div class="palette-item" data-type="model_eval" draggable="true">📋 Evaluación</div>
-      <div class="sb-group-label">💾 Sesión</div>
+      <div class="sb-group-label" data-i18n="group-session">💾 Sesión</div>
       <div class="palette-item" data-type="save_model" draggable="true">💾 Guardar</div>
       <div class="palette-item" data-type="load_model" draggable="true">📂 Cargar Modelo</div>
-      <div class="sb-group-label">🗂️ NLP</div>
+      <div class="sb-group-label" data-i18n="group-nlp">🗂️ NLP</div>
       <div class="palette-item" data-type="training" draggable="true">🧠 Entrenamiento NLP</div>
       <div class="palette-item" data-type="topicmodel" draggable="true">🗂️ Topic Model</div>
       <div class="palette-item" data-type="classify" draggable="true">🎯 Clasificar NLP</div>
@@ -226,6 +226,7 @@ var lang = "es";
 
 var I18N = {
   es: {
+    // Canvas / shell
     "blocks":"Bloques","blocks-hint":"Clic o arrastra al canvas",
     "canvas":"Canvas","canvas-hint":"Rueda = zoom\nArrastra fondo = mover\nArrastra cabecera = mover bloque\nArrastra borde = conectar\nDoble clic = abrir",
     "status":"Estado","ready":"Listo","clear-confirm":"¿Limpiar todo el canvas?",
@@ -235,9 +236,182 @@ var I18N = {
     "delete-confirm":"¿Eliminar bloque seleccionado?",
     "incompatible":"No se puede conectar",
     "select-first":"Selecciona primero un bloque en el canvas",
-    "node-deleted":"Bloque eliminado"
+    "node-deleted":"Bloque eliminado",
+    // Generic UI
+    "loading":"Cargando…","generating":"Generando…","calculating":"Calculando…",
+    "refresh":"↻ Actualizar","draw":"📈 Dibujar","run":"▶ Ejecutar","train":"▶ Entrenar modelo",
+    "apply":"✓ Aplicar","cancel":"Cancelar","save":"💾 Guardar","load":"📂 Cargar",
+    "calculating-stats":"Calculando estadísticas…","loading-info":"Cargando información…",
+    "select-variable":"Selecciona una variable y pulsa Dibujar.",
+    // Data block
+    "rows":"Filas","cols":"Columnas","numeric":"Numéricas","categorical":"Categóricas",
+    "missing":"Valores ausentes","column":"Columna","type":"Tipo","unique":"Únicos",
+    "info":"Info","mean":"Media","std":"Std","min":"Mín","max":"Máx",
+    "dataset-summary":"📋 Resumen del dataset","what-to-look":"⚠ Qué buscar",
+    "how-to-read":"📝 Cómo leer la gráfica",
+    "missing-per-col":"Valores ausentes por columna",
+    "no-missing":"Ninguno detectado",
+    "type-int":"entero","type-float":"decimal","type-numeric":"numérico",
+    "type-categorical":"categórico","type-list":"lista","type-text":"texto libre",
+    "numeric-hint":"Numérica: histograma de frecuencia. Las líneas muestran la media (naranja) y la mediana (verde). Si están muy separadas, hay valores extremos (outliers).",
+    "categorical-hint":"Categórica: barras horizontales ordenadas por frecuencia. Ideal para ver cuántas veces aparece cada categoría.",
+    "outlier-hint":"Cola larga a la derecha = outliers altos.",
+    "multimodal-hint":"Picos múltiples = posibles subgrupos en tus datos.",
+    "imbalance-hint":"Una categoría muy dominante = desbalanceo de clases.",
+    "variable-to-viz":"Variable a visualizar",
+    "draw-dist":"📈 Dibujar distribución",
+    "feature-x":"Eje X","feature-y":"Eje Y",
+    // Preprocessing
+    "preprocessing":"Preprocesado","split":"Partición","split-ratio":"Ratio de partición",
+    "imputation":"Imputación","normalization":"Normalización",
+    "apply-preprocess":"🧹 Aplicar preprocesado",
+    "train-pct":"% entrenamiento","test-pct":"% test",
+    "split-random":"aleatorio","split-stratified":"estratificado",
+    // Model / Linreg
+    "algorithm":"⚙️ Algoritmo","hyperparams":"🎛️ Hiperparámetros",
+    "norm-features":"📐 Normalización de features",
+    "target-col":"Variable objetivo","partition":"Partición",
+    "intercept":"Intercepto (β₀)","intercept-auto":"Auto (OLS)","intercept-zero":"Sin intercepto","intercept-fixed":"Fijar valor",
+    "intercept-auto-desc":"El modelo estima el mejor intercepto automáticamente.",
+    "intercept-zero-desc":"Sin término independiente. Útil si sabes que pasa por el origen.",
+    "intercept-fixed-desc":"Fija el intercepto al valor que especifiques.",
+    "lambda-reg":"λ — Regularización","lambda-hint":"Valores altos = más regularización. λ bajo ≈ OLS.",
+    "no-norm":"Sin normalización","no-norm-hint":"Coeficientes en unidades originales. Usa si ya normalizaste en Preprocesado.",
+    "zscore-hint":"Permite comparar la magnitud de coeficientes entre variables.",
+    "minmax-hint":"Escala al rango 0–1. Sensible a outliers.",
+    "train-panel":"🏋️ Entrenar","cv-panel":"🔍 CV Hiperparámetro",
+    "training-progress":"Entrenamiento","starting":"Iniciando…",
+    "coefs-by-magnitude":"Coeficientes — ordenados por magnitud absoluta",
+    "eval-hint":"💡 Conecta el bloque <b>Evaluación</b> para ver: residuos, Q-Q plot, VIF, Durbin-Watson y Breusch-Pagan.",
+    "select-algo-hint":"Selecciona el algoritmo y normalización, y pulsa <b>Entrenar modelo</b>.",
+    "define-target-hint":"⚠️ Define la variable objetivo en el bloque <b>Datos</b> primero.",
+    "target-obj":"🎯 Variable objetivo: ",
+    "cv-title":"Grid Search + Validación Cruzada",
+    "cv-desc":"Prueba todas las combinaciones de <b>hiperparámetro × normalización</b> usando K-fold CV. El mejor modelo se entrena automáticamente y queda listo para Evaluación.",
+    "cv-config":"⚙️ Configuración del barrido","cv-log-scale":"Escala logarítmica · valores = 10^exp",
+    "cv-min-exp":"Mín exp","cv-max-exp":"Máx exp","cv-steps":"Pasos","cv-folds":"Folds (K)",
+    "cv-ols-note":"OLS no tiene hiperparámetro — se comparan las normalizaciones.",
+    "cv-no-leakage":"🔒 <b>Sin data leakage:</b> la normalización se aplica dentro de cada fold mediante un Pipeline sklearn.",
+    "run-gridsearch":"▶ Ejecutar Grid Search",
+    // Evaluation tabs
+    "tab-metrics":"📊 Métricas","tab-plots":"📈 Gráficas","tab-coef":"🔢 Coeficientes",
+    "tab-roc":"📉 ROC","tab-boundary":"🗺️ Frontera","tab-assump":"🔬 Supuestos","tab-cv":"🔍 CV",
+    "eval-btn":"▶ Evaluar",
+    "metrics-test":"Métricas en test","metrics-train":"Métricas en train",
+    "stat-tests":"Tests estadísticos",
+    "confusion-matrix":"Matriz de confusión","confusion-matrix-test":"Matriz de confusión (test)",
+    "pred-vs-actual":"Predicho vs Real","residuals-vs-fitted":"Residuos vs Ajustados",
+    "qq-plot":"Q-Q Plot de residuos (normalidad)",
+    "coef-weight":"Peso / Importancia","coef-label":"Coeficiente","variable":"Variable",
+    "coef-unavailable":"Coeficientes no disponibles para este modelo.",
+    "coef-not-avail-pkl":"no disponible para modelo cargado desde .pkl.",
+    "roc-desc":"La curva ROC mide la capacidad discriminativa del modelo. AUC = 1 es perfecto; AUC = 0.5 equivale a azar.",
+    "roc-cls-only":"La curva ROC solo está disponible para clasificación.",
+    "roc-unavailable":"La curva ROC no está disponible.<br>Requiere que el modelo soporte <code>predict_proba</code> (Logistic Regression, k-NN, Random Forest). SVM con LinearSVC no la soporta.",
+    "boundary-cls-only":"La frontera de decisión solo está disponible para clasificación.",
+    "boundary-min-features":"Se necesitan al menos 2 features para visualizar la frontera de decisión.",
+    "boundary-desc":"Selecciona dos variables para ver cómo el modelo separa las clases en ese espacio 2D. Las demás variables se fijan a su media.",
+    "boundary-generate":"🗺️ Generar","boundary-two-diff":"Selecciona dos variables distintas.",
+    "boundary-generating":"Generando frontera…",
+    "assump-cls-title":"Supuestos de clasificación",
+    "assump-cls-detected":"Clases detectadas: ","assump-lr-title":"La Regresión Logística asume:",
+    "assump-lr-1":"Independencia entre observaciones",
+    "assump-lr-2":"Ausencia de multicolinealidad extrema entre features",
+    "assump-lr-3":"Tamaño de muestra suficiente por clase",
+    "assump-tests":"Tests de supuestos del modelo",
+    "dw-hint":"<b>Durbin-Watson:</b> rango [0,4]. Cerca de 2 = sin autocorrelación en residuos.",
+    "bp-hint":"<b>Breusch-Pagan:</b> LM > 3.84 (χ²₁ al 5%) sugiere heterocedasticidad.",
+    "vif-title":"VIF — Detección de multicolinealidad","vif-state":"Estado",
+    "vif-no-data":"No hay suficientes datos para calcular VIF.",
+    "vif-hint":"VIF < 5 → sin problema · VIF 5–10 → multicolinealidad moderada · VIF > 10 → coeficientes inestables.",
+    "cv-best-param":"Mejor ","cv-optimal":"óptimo","cv-no-img":"⚠️ La imagen del CV no está disponible en el .pkl guardado.",
+    "cv-no-run":"No se ha ejecutado CV para este modelo.<br>Ve al bloque Modelo → pestaña <b>🔍 CV Hiperparámetro</b>, ejecuta el barrido, y pulsa <b>Evaluar</b> de nuevo.",
+    "cv-method":"Método","cv-problem":"Problema","cv-no-leak":"Sin data leakage","cv-pipeline":"normalización dentro de cada fold (Pipeline sklearn).",
+    // Classification (Classify block)
+    "cls-type":"🔵 Clasificación","reg-type":"🟠 Regresión",
+    "classify-algo":"⚙️ Algoritmo",
+    // Imbalance
+    "imbalance-block":"⚖️ Desbalanceo","class-distribution":"Distribución de clases",
+    "strategy":"Estrategia","oversample":"Oversample","undersample":"Undersample",
+    // Save / Load
+    "save-model":"💾 Guardar modelo","load-model":"📂 Cargar modelo",
+    "pkl-saved":"Modelo guardado","pkl-loaded":"Modelo cargado",
+    // Toolbar menu
+    "menu-save":"💾 Guardar",
+    "menu-project":"Proyecto completo","menu-save-session":"📦 Guardar sesión (.zip)",
+    "menu-load-session":"📂 Cargar sesión (.zip)","menu-export":"Exportar individual",
+    "menu-exp-csv":"📄 CSV preprocesado","menu-exp-model":"🤖 Modelo (.pkl)",
+    "menu-exp-report":"📋 Reporte (.txt)","menu-exp-canvas":"🗺 Exportar canvas (.json)",
+    "menu-imp-canvas":"📥 Importar canvas (.json)",
+    // Sidebar groups
+    "group-data":"📋 Datos","group-models":"🤖 Modelos",
+    "group-session":"💾 Sesión","group-nlp":"🗂️ NLP",
+    // Save block
+    "save-what":"Selecciona qué quieres exportar del bloque conectado.",
+    "save-download":"💾 Guardar seleccionados…",
+    "save-connect":"🫙 Conecta este bloque a un bloque de Preprocesado, Modelo, Evaluación o Plots.",
+    "save-saving":"Guardando…",
+    "save-nothing":"⚠️ Selecciona al menos un elemento.",
+    "save-plots-empty":"🫙 El bloque Plots no tiene gráficas generadas todavía.",
+    "save-plots-empty-sub":"Genera al menos una gráfica y vuelve aquí.",
+    "save-eval-run-first":"⚠️ Pulsa <b>Evaluar</b> en el bloque Evaluación antes de guardar.",
+    "save-preproc-full":"Dataset completo preprocesado (.csv)",
+    "save-preproc-full-sub":"Todas las filas y columnas transformadas",
+    "save-preproc-split":"Partición train + test (.zip con dos .csv)",
+    "save-nlp-raw":"Corpus original (.csv)","save-nlp-proc":"Corpus preprocesado (.csv)",
+    "save-eval-zip":"Todo en un .zip (métricas + plots)","save-eval-zip-sub":"JSON · CSV · PNGs disponibles",
+    "save-eval-json":"Solo métricas (.json)","save-eval-csv":"Solo métricas (.csv)",
+    "save-plots-zip":"Todos los plots en un .zip",
+    "save-section-dataset":"📊 Dataset preprocesado","save-section-model":"🤖 Modelo entrenado",
+    "save-section-eval":"📊 Resultados de Evaluación","save-section-plots":"📦 Exportar plots",
+    "save-section-nlp":"📝 Corpus NLP",
+    "save-building-zip":"Construyendo ZIP… (puede tardar unos segundos)",
+    "save-building-split":"Construyendo ZIP train/test…",
+    "save-building-plots":"Construyendo ZIP de plots…",
+    // Load block
+    "load-what":"¿Qué quieres cargar?","load-pkl":"🤖 Modelo (.pkl)","load-csv-soon":"📄 CSV (próx.)",
+    "load-pkl-file":"Fichero .pkl","load-drop-pkl":"📂 Suelta el .pkl o haz clic para buscar",
+    "load-eval-mode":"Modo de evaluación",
+    "load-saved":"🗂️ Usar test set","load-saved-sub":"del entrenamiento original",
+    "load-new":"📤 Datos nuevos","load-new-sub":"sube un CSV distinto",
+    "load-csv-file":"CSV con datos nuevos","load-drop-csv":"📄 Suelta el CSV o haz clic",
+    "load-csv-hint":"Debe tener las mismas columnas que el dataset de entrenamiento.",
+    "load-eval-btn":"▶ Evaluar","load-evaluating":"Evaluando…",
+    "load-model-title":"Modelo cargado","load-type":"🧮 Tipo: ","load-target":"🎯 Variable objetivo: ",
+    "load-problem":"📊 Problema: ","load-features":"📐 Features: ",
+    "load-result":"Resultado evaluación","load-result-new":"datos nuevos","load-result-original":"test set original",
+    "load-skipped-row":"fila eliminada por valores no numéricos o vacíos.",
+    "load-skipped-rows":"filas eliminadas por valores no numéricos o vacíos.",
+    "load-cm":"Matriz de confusión","load-cls-report":"Classification report",
+    "load-loading":"⏳ Cargando ",
+    // Inspect / Análisis block
+    "inspect-loading":"Cargando información del dataset…",
+    "inspect-stats":"Calculando estadísticas…",
+    "inspect-tab-info":"📋 Info","inspect-tab-stats":"📊 Stats","inspect-tab-missing":"⚠️ Ausentes",
+    "inspect-tab-scatter":"🔵 Dispersión","inspect-tab-correlation":"🔗 Correlación",
+    "inspect-tab-boxplot":"📦 Boxplot",
+    "inspect-scatter-min":"Se necesitan al menos 2 variables numéricas para el Scatter Plot.",
+    "inspect-scatter-btn":"🔵 Dibujar",
+    "inspect-correlation-btn":"🔗 Calcular correlación",
+    "inspect-boxplot-btn":"📦 Generar Box Plots",
+    "inspect-dist-btn":"Ver distribución",
+    // Canvas node section names
+    "section-data":"📂 Datos","section-preprocess":"🔧 Preprocesado",
+    "section-model":"🧠 Modelo","section-eval":"📊 Evaluación",
+    "section-plots":"📈 Plots","section-save":"💾 Guardar","section-load":"📂 Cargar",
+    "section-imbalance":"⚖️ Desbalanceo","section-classify":"🎯 Clasificar",
+    // Server-side plot labels (used by applyLang to set cookie for server)
+    "plot-pred-actual":"Predicho vs Real","plot-residuals":"Residuos vs Ajustados",
+    "plot-qq":"Q-Q de residuos","plot-coef":"Coeficientes","plot-cm":"Matriz de confusión",
+    "plot-roc":"Curva ROC","plot-boundary":"Frontera de decisión",
+    "plot-fpr":"Tasa de falsos positivos","plot-tpr":"Tasa de verdaderos positivos",
+    "plot-chance":"Azar","plot-predicted":"Predicho","plot-actual":"Real",
+    "plot-residuals-label":"Residuos","plot-fitted":"Ajustados",
+    "plot-missing":"Valores ausentes",
+    "plot-frequency":"Frecuencia"
   },
   en: {
+    // Canvas / shell
     "blocks":"Blocks","blocks-hint":"Click or drag to canvas",
     "canvas":"Canvas","canvas-hint":"Scroll = zoom\nDrag bg = pan\nDrag header = move\nDrag edge = connect\nDbl-click = open",
     "status":"Status","ready":"Ready","clear-confirm":"Clear all nodes?",
@@ -247,7 +421,179 @@ var I18N = {
     "delete-confirm":"Delete selected node?",
     "incompatible":"Can't connect",
     "select-first":"Select a node on canvas first",
-    "node-deleted":"Node deleted"
+    "node-deleted":"Node deleted",
+    // Generic UI
+    "loading":"Loading…","generating":"Generating…","calculating":"Calculating…",
+    "refresh":"↻ Refresh","draw":"📈 Draw","run":"▶ Run","train":"▶ Train model",
+    "apply":"✓ Apply","cancel":"Cancel","save":"💾 Save","load":"📂 Load",
+    "calculating-stats":"Calculating statistics…","loading-info":"Loading information…",
+    "select-variable":"Select a variable and click Draw.",
+    // Data block
+    "rows":"Rows","cols":"Columns","numeric":"Numeric","categorical":"Categorical",
+    "missing":"Missing values","column":"Column","type":"Type","unique":"Unique",
+    "info":"Info","mean":"Mean","std":"Std","min":"Min","max":"Max",
+    "dataset-summary":"📋 Dataset summary","what-to-look":"⚠ What to look for",
+    "how-to-read":"📝 How to read the chart",
+    "missing-per-col":"Missing values per column",
+    "no-missing":"None detected",
+    "type-int":"integer","type-float":"decimal","type-numeric":"numeric",
+    "type-categorical":"categorical","type-list":"list","type-text":"free text",
+    "numeric-hint":"Numeric: frequency histogram. Lines show mean (orange) and median (green). If they are far apart, there are extreme values (outliers).",
+    "categorical-hint":"Categorical: horizontal bars sorted by frequency. Useful to see how often each category appears.",
+    "outlier-hint":"Long right tail = high outliers.",
+    "multimodal-hint":"Multiple peaks = possible subgroups in your data.",
+    "imbalance-hint":"One dominant category = class imbalance.",
+    "variable-to-viz":"Variable to visualize",
+    "draw-dist":"📈 Draw distribution",
+    "feature-x":"X axis","feature-y":"Y axis",
+    // Preprocessing
+    "preprocessing":"Preprocessing","split":"Split","split-ratio":"Split ratio",
+    "imputation":"Imputation","normalization":"Normalization",
+    "apply-preprocess":"🧹 Apply preprocessing",
+    "train-pct":"% training","test-pct":"% test",
+    "split-random":"random","split-stratified":"stratified",
+    // Model / Linreg
+    "algorithm":"⚙️ Algorithm","hyperparams":"🎛️ Hyperparameters",
+    "norm-features":"📐 Feature normalization",
+    "target-col":"Target variable","partition":"Split",
+    "intercept":"Intercept (β₀)","intercept-auto":"Auto (OLS)","intercept-zero":"No intercept","intercept-fixed":"Fixed value",
+    "intercept-auto-desc":"The model estimates the best intercept automatically.",
+    "intercept-zero-desc":"No bias term. Useful if the model must pass through the origin.",
+    "intercept-fixed-desc":"Fix the intercept to the value you specify.",
+    "lambda-reg":"λ — Regularization","lambda-hint":"Higher values = more regularization. Low λ ≈ OLS.",
+    "no-norm":"No normalization","no-norm-hint":"Coefficients in original units. Use if you already normalized in Preprocessing.",
+    "zscore-hint":"Allows comparing coefficient magnitudes across variables.",
+    "minmax-hint":"Scales to [0, 1]. Sensitive to outliers.",
+    "train-panel":"🏋️ Train","cv-panel":"🔍 CV Hyperparameter",
+    "training-progress":"Training","starting":"Starting…",
+    "coefs-by-magnitude":"Coefficients — sorted by absolute magnitude",
+    "eval-hint":"💡 Connect the <b>Evaluation</b> block to see: residuals, Q-Q plot, VIF, Durbin-Watson and Breusch-Pagan.",
+    "select-algo-hint":"Select the algorithm and normalization, then click <b>Train model</b>.",
+    "define-target-hint":"⚠️ Define the target variable in the <b>Data</b> block first.",
+    "target-obj":"🎯 Target variable: ",
+    "cv-title":"Grid Search + Cross-Validation",
+    "cv-desc":"Tests all combinations of <b>hyperparameter × normalization</b> using K-fold CV. The best model is trained automatically and ready for Evaluation.",
+    "cv-config":"⚙️ Sweep configuration","cv-log-scale":"Log scale · values = 10^exp",
+    "cv-min-exp":"Min exp","cv-max-exp":"Max exp","cv-steps":"Steps","cv-folds":"Folds (K)",
+    "cv-ols-note":"OLS has no hyperparameter — normalizations are compared.",
+    "cv-no-leakage":"🔒 <b>No data leakage:</b> normalization is applied inside each fold via an sklearn Pipeline.",
+    "run-gridsearch":"▶ Run Grid Search",
+    // Evaluation tabs
+    "tab-metrics":"📊 Metrics","tab-plots":"📈 Plots","tab-coef":"🔢 Coefficients",
+    "tab-roc":"📉 ROC","tab-boundary":"🗺️ Boundary","tab-assump":"🔬 Assumptions","tab-cv":"🔍 CV",
+    "eval-btn":"▶ Evaluate",
+    "metrics-test":"Test metrics","metrics-train":"Train metrics",
+    "stat-tests":"Statistical tests",
+    "confusion-matrix":"Confusion matrix","confusion-matrix-test":"Confusion matrix (test)",
+    "pred-vs-actual":"Predicted vs Actual","residuals-vs-fitted":"Residuals vs Fitted",
+    "qq-plot":"Q-Q Plot of residuals (normality)",
+    "coef-weight":"Weight / Importance","coef-label":"Coefficient","variable":"Variable",
+    "coef-unavailable":"Coefficients not available for this model.",
+    "coef-not-avail-pkl":"not available for model loaded from .pkl.",
+    "roc-desc":"The ROC curve measures the model's discriminative ability. AUC = 1 is perfect; AUC = 0.5 is random.",
+    "roc-cls-only":"The ROC curve is only available for classification.",
+    "roc-unavailable":"ROC curve not available.<br>Requires the model to support <code>predict_proba</code> (Logistic Regression, k-NN, Random Forest). SVM with LinearSVC does not support it.",
+    "boundary-cls-only":"Decision boundary is only available for classification.",
+    "boundary-min-features":"At least 2 features are needed to visualize the decision boundary.",
+    "boundary-desc":"Select two variables to see how the model separates classes in that 2D space. All other variables are fixed to their mean.",
+    "boundary-generate":"🗺️ Generate","boundary-two-diff":"Select two different variables.",
+    "boundary-generating":"Generating boundary…",
+    "assump-cls-title":"Classification assumptions",
+    "assump-cls-detected":"Detected classes: ","assump-lr-title":"Logistic Regression assumes:",
+    "assump-lr-1":"Independence between observations",
+    "assump-lr-2":"No extreme multicollinearity between features",
+    "assump-lr-3":"Sufficient sample size per class",
+    "assump-tests":"Model assumption tests",
+    "dw-hint":"<b>Durbin-Watson:</b> range [0,4]. Near 2 = no autocorrelation in residuals.",
+    "bp-hint":"<b>Breusch-Pagan:</b> LM > 3.84 (χ²₁ at 5%) suggests heteroscedasticity.",
+    "vif-title":"VIF — Multicollinearity detection","vif-state":"Status",
+    "vif-no-data":"Not enough data to compute VIF.",
+    "vif-hint":"VIF < 5 → no problem · VIF 5–10 → moderate multicollinearity · VIF > 10 → unstable coefficients.",
+    "cv-best-param":"Best ","cv-optimal":"optimal","cv-no-img":"⚠️ CV image not available in the saved .pkl.",
+    "cv-no-run":"No CV has been run for this model.<br>Go to the Model block → <b>🔍 CV Hyperparameter</b> tab, run the sweep, and click <b>Evaluate</b> again.",
+    "cv-method":"Method","cv-problem":"Problem","cv-no-leak":"No data leakage","cv-pipeline":"normalization inside each fold (sklearn Pipeline).",
+    // Classification (Classify block)
+    "cls-type":"🔵 Classification","reg-type":"🟠 Regression",
+    "classify-algo":"⚙️ Algorithm",
+    // Imbalance
+    "imbalance-block":"⚖️ Imbalance","class-distribution":"Class distribution",
+    "strategy":"Strategy","oversample":"Oversample","undersample":"Undersample",
+    // Save / Load
+    "save-model":"💾 Save model","load-model":"📂 Load model",
+    "pkl-saved":"Model saved","pkl-loaded":"Model loaded",
+    // Toolbar menu
+    "menu-save":"💾 Save",
+    "menu-project":"Full project","menu-save-session":"📦 Save session (.zip)",
+    "menu-load-session":"📂 Load session (.zip)","menu-export":"Export individual",
+    "menu-exp-csv":"📄 Preprocessed CSV","menu-exp-model":"🤖 Model (.pkl)",
+    "menu-exp-report":"📋 Report (.txt)","menu-exp-canvas":"🗺 Export canvas (.json)",
+    "menu-imp-canvas":"📥 Import canvas (.json)",
+    // Sidebar groups
+    "group-data":"📋 Data","group-models":"🤖 Models",
+    "group-session":"💾 Session","group-nlp":"🗂️ NLP",
+    // Save block
+    "save-what":"Select what you want to export from the connected block.",
+    "save-download":"💾 Save selected…",
+    "save-connect":"🫙 Connect this block to a Preprocessing, Model, Evaluation or Plots block.",
+    "save-saving":"Saving…",
+    "save-nothing":"⚠️ Select at least one item.",
+    "save-plots-empty":"🫙 The Plots block has no generated charts yet.",
+    "save-plots-empty-sub":"Generate at least one chart and come back.",
+    "save-eval-run-first":"⚠️ Click <b>Evaluate</b> in the Evaluation block before saving.",
+    "save-preproc-full":"Full preprocessed dataset (.csv)",
+    "save-preproc-full-sub":"All rows and columns transformed",
+    "save-preproc-split":"Train + test split (.zip with two .csv files)",
+    "save-nlp-raw":"Original corpus (.csv)","save-nlp-proc":"Preprocessed corpus (.csv)",
+    "save-eval-zip":"Everything in a .zip (metrics + plots)","save-eval-zip-sub":"JSON · CSV · PNGs available",
+    "save-eval-json":"Metrics only (.json)","save-eval-csv":"Metrics only (.csv)",
+    "save-plots-zip":"All plots in a .zip",
+    "save-section-dataset":"📊 Preprocessed dataset","save-section-model":"🤖 Trained model",
+    "save-section-eval":"📊 Evaluation results","save-section-plots":"📦 Export plots",
+    "save-section-nlp":"📝 NLP corpus",
+    "save-building-zip":"Building ZIP… (may take a few seconds)",
+    "save-building-split":"Building train/test ZIP…",
+    "save-building-plots":"Building plots ZIP…",
+    // Load block
+    "load-what":"What do you want to load?","load-pkl":"🤖 Model (.pkl)","load-csv-soon":"📄 CSV (soon)",
+    "load-pkl-file":".pkl file","load-drop-pkl":"📂 Drop the .pkl or click to browse",
+    "load-eval-mode":"Evaluation mode",
+    "load-saved":"🗂️ Use test set","load-saved-sub":"from the original training",
+    "load-new":"📤 New data","load-new-sub":"upload a different CSV",
+    "load-csv-file":"CSV with new data","load-drop-csv":"📄 Drop the CSV or click",
+    "load-csv-hint":"Must have the same columns as the training dataset.",
+    "load-eval-btn":"▶ Evaluate","load-evaluating":"Evaluating…",
+    "load-model-title":"Model loaded","load-type":"🧮 Type: ","load-target":"🎯 Target variable: ",
+    "load-problem":"📊 Problem: ","load-features":"📐 Features: ",
+    "load-result":"Evaluation result","load-result-new":"new data","load-result-original":"original test set",
+    "load-skipped-row":"row dropped (non-numeric or empty values).",
+    "load-skipped-rows":"rows dropped (non-numeric or empty values).",
+    "load-cm":"Confusion matrix","load-cls-report":"Classification report",
+    "load-loading":"⏳ Loading ",
+    // Inspect / Analysis block
+    "inspect-loading":"Loading dataset information…",
+    "inspect-stats":"Calculating statistics…",
+    "inspect-tab-info":"📋 Info","inspect-tab-stats":"📊 Stats","inspect-tab-missing":"⚠️ Missing",
+    "inspect-tab-scatter":"🔵 Scatter","inspect-tab-correlation":"🔗 Correlation",
+    "inspect-tab-boxplot":"📦 Boxplot",
+    "inspect-scatter-min":"At least 2 numeric variables are needed for the Scatter Plot.",
+    "inspect-scatter-btn":"🔵 Draw",
+    "inspect-correlation-btn":"🔗 Calculate correlation",
+    "inspect-boxplot-btn":"📦 Generate Box Plots",
+    "inspect-dist-btn":"View distribution",
+    // Canvas node section names
+    "section-data":"📂 Data","section-preprocess":"🔧 Preprocessing",
+    "section-model":"🧠 Model","section-eval":"📊 Evaluation",
+    "section-plots":"📈 Plots","section-save":"💾 Save","section-load":"📂 Load",
+    "section-imbalance":"⚖️ Imbalance","section-classify":"🎯 Classify",
+    // Server-side plot labels
+    "plot-pred-actual":"Predicted vs Actual","plot-residuals":"Residuals vs Fitted",
+    "plot-qq":"Q-Q residuals","plot-coef":"Coefficients","plot-cm":"Confusion matrix",
+    "plot-roc":"ROC curve","plot-boundary":"Decision boundary",
+    "plot-fpr":"False positive rate","plot-tpr":"True positive rate",
+    "plot-chance":"Random","plot-predicted":"Predicted","plot-actual":"Actual",
+    "plot-residuals-label":"Residuals","plot-fitted":"Fitted",
+    "plot-missing":"Missing values",
+    "plot-frequency":"Frequency"
   }
 };
 
@@ -258,24 +604,41 @@ function applyLang() {
   document.querySelectorAll("[data-i18n]").forEach(function(el) {
     var key = el.dataset.i18n;
     var txt = T(key);
+    var suffix = el.dataset.i18nSuffix || "";
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") el.placeholder = txt;
-    else el.innerHTML = txt.replace(/\n/g, "<br>");
-  });
-  // Update palette names to match language
-  var pNames = {
-    es: { data:"📂 Datos", preprocess:"🔧 Preprocesado", training:"🧠 Entrenamiento", topicmodel:"🗂️ Topic Model", classify:"🎯 Clasificar" },
-    en: { data:"📂 Data",  preprocess:"🔧 Preprocessing", training:"🧠 Training",      topicmodel:"🗂️ Topic Model", classify:"🎯 Classify" }
-  };
-  document.querySelectorAll(".palette-item[data-type]").forEach(function(el) {
-    el.textContent = (pNames[lang] || pNames["en"])[el.dataset.type] || el.textContent;
+    else el.innerHTML = (txt + suffix).replace(/\n/g, "<br>");
   });
   document.getElementById("btn-lang").textContent = lang === "es" ? "EN" : "ES";
   document.getElementById("btn-clear").textContent = lang === "es" ? "🗑 Limpiar" : "🗑 Clear";
-  // Update META node names for future nodes (existing nodes keep their name)
-  META.data.name       = lang === "es" ? "Datos"         : "Data";
-  META.preprocess.name = lang === "es" ? "Preprocesado"  : "Preprocessing";
-  META.training.name   = lang === "es" ? "Entrenamiento" : "Training";
-  META.classify.name   = lang === "es" ? "Clasificar"    : "Classify";
+  // Update META node names for future AND existing nodes
+  Object.keys(META).forEach(function(type) {
+    var m = META[type];
+    m.name = lang === "es" ? (m.name.indexOf("NLP")!==-1 ? m.name : (m.nameEs||m.name)) : (m.nameEn||m.name);
+  });
+  META.data.name        = lang === "es" ? "Datos"            : "Data";
+  META.inspect.name     = lang === "es" ? "Análisis"         : "Analysis";
+  META.preprocess.name  = lang === "es" ? "Preprocesado"     : "Preprocessing";
+  META.linreg.name      = lang === "es" ? "Regresión Lineal" : "Linear Regression";
+  META.model_eval.name  = lang === "es" ? "Evaluación"       : "Evaluation";
+  META.save_model.name  = lang === "es" ? "Guardar"          : "Save";
+  META.load_model.name  = lang === "es" ? "Cargar Modelo"    : "Load Model";
+  META.training.name    = lang === "es" ? "Entrenamiento NLP": "NLP Training";
+  META.classify.name    = lang === "es" ? "Clasificar NLP"   : "Classify NLP";
+  // Update headers of existing nodes on the canvas
+  nodes.forEach(function(n) {
+    var m = META[n.type];
+    if (!m) return;
+    var hEl = n.el && n.el.querySelector(".node-header span");
+    if (hEl) hEl.textContent = m.icon + " " + m.name;
+  });
+  // Update palette sidebar items
+  document.querySelectorAll(".palette-item[data-type]").forEach(function(el) {
+    var type = el.dataset.type;
+    var m = META[type];
+    if (m) el.textContent = m.icon + " " + m.name;
+  });
+  // Notify server of current language so plot labels render in the right language
+  fetch("/api/set_lang", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({lang: lang}) }).catch(function(){});
 }
 
 // DOM refs — assigned after DOMContentLoaded is not needed because
@@ -540,17 +903,17 @@ ec.addEventListener("mousemove", function(e) {
 // Node helpers
 // ═══════════════════════════════════════════
 var META = {
-  data:         { icon: "📂",  bg: "#f0fdf7", name: "Datos" },
-  inspect:      { icon: "🔬",  bg: "#f0f8ff", name: "Análisis" },
-  plots:        { icon: "📊",  bg: "#fdf5ff", name: "Plots" },
-  preprocess:   { icon: "🔧",  bg: "#f5f5f5", name: "Preprocesado" },
-  linreg:       { icon: "📉",  bg: "#fff0f5", name: "Regresión Lineal" },
-  model_eval:   { icon: "📋",  bg: "#f0faff", name: "Evaluación" },
-  save_model:   { icon: "💾",  bg: "#f0fff4", name: "Guardar" },
-  load_model:   { icon: "📂",  bg: "#f0faff", name: "Cargar Modelo" },
-  training:     { icon: "🧠",  bg: "#f5f0ff", name: "Entrenamiento NLP" },
-  topicmodel:   { icon: "🗂️", bg: "#f0f4ff", name: "Topic Model" },
-  classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP" }
+  data:         { icon: "📂",  bg: "#f0fdf7", name: "Datos",           nameEn: "Data" },
+  inspect:      { icon: "🔬",  bg: "#f0f8ff", name: "Análisis",        nameEn: "Analysis" },
+  plots:        { icon: "📊",  bg: "#fdf5ff", name: "Plots",           nameEn: "Plots" },
+  preprocess:   { icon: "🔧",  bg: "#f5f5f5", name: "Preprocesado",    nameEn: "Preprocessing" },
+  linreg:       { icon: "📉",  bg: "#fff0f5", name: "Regresión Lineal",nameEn: "Linear Regression" },
+  model_eval:   { icon: "📋",  bg: "#f0faff", name: "Evaluación",      nameEn: "Evaluation" },
+  save_model:   { icon: "💾",  bg: "#f0fff4", name: "Guardar",         nameEn: "Save" },
+  load_model:   { icon: "📂",  bg: "#f0faff", name: "Cargar Modelo",   nameEn: "Load Model" },
+  training:     { icon: "🧠",  bg: "#f5f0ff", name: "Entrenamiento NLP",nameEn: "NLP Training" },
+  topicmodel:   { icon: "🗂️", bg: "#f0f4ff", name: "Topic Model",     nameEn: "Topic Model" },
+  classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP",  nameEn: "Classify NLP" }
 };
 var ALLOWED = {
   // Exploración de datos — cualquier bloque de exploración puede recibir desde datos o desde preprocesado
@@ -1273,8 +1636,8 @@ function showModalLoading(msg) {
 // INSPECCIÓN — Data Info + Feature Stats unificados
 // ═══════════════════════════════════════════
 async function renderInspect(node) {
-  showModalLoading("Cargando información del dataset…");
-  mFoot.innerHTML = '<button class="btn btn-black" id="btn-inspect-refresh">↻ Actualizar</button>';
+  showModalLoading(T("inspect-loading"));
+  mFoot.innerHTML = '<button class="btn btn-black" id="btn-inspect-refresh">'+T("refresh")+'</button>';
 
   async function load() {
     var qi = nq(node, "/api/tabular_info");
@@ -1282,7 +1645,7 @@ async function renderInspect(node) {
     var qf = nq(node, "/api/feature_stats");
 
     var _resizeFn = prepareModalResize();
-    showModalLoading("Calculando estadísticas…");
+    showModalLoading(T("inspect-stats"));
 
     var [ri, rf] = await Promise.all([
       fetch(qi.url).then(function(r){ return r.json(); }),
@@ -1296,12 +1659,12 @@ async function renderInspect(node) {
 
     var typeIcon = function(t) {
       var map = {
-        "int":         ['badge-ok',   'int',   'entero'],
-        "float":       ['badge-ok',   'float', 'decimal'],
-        "numeric":     ['badge-ok',   'num',   'numérico'],   // legacy fallback
-        "categorical": ['badge-info', 'str',   'categórico'],
-        "list":        ['badge-warn', 'List',  'lista'],
-        "text":        ['badge',      'text',  'texto libre'],
+        "int":         ['badge-ok',   'int',   T("type-int")],
+        "float":       ['badge-ok',   'float', T("type-float")],
+        "numeric":     ['badge-ok',   'num',   T("type-numeric")],
+        "categorical": ['badge-info', 'str',   T("type-categorical")],
+        "list":        ['badge-warn', 'List',  T("type-list")],
+        "text":        ['badge',      'text',  T("type-text")],
       };
       var m = map[t] || ['badge', t, t];
       return '<span class="badge ' + m[0] + '" style="font-size:10px">' + m[1] + '</span>' +
@@ -1321,21 +1684,21 @@ async function renderInspect(node) {
       '<div style="padding:14px">' +
         // ── Summary cards ───────────────────────────────────────
         '<div class="mgrid" style="margin-bottom:14px">' +
-          '<div class="mcard mcard-hi"><div class="mval">' + d.rows + '</div><div class="mlbl">Filas</div></div>' +
-          '<div class="mcard mcard-hi"><div class="mval">' + d.cols + '</div><div class="mlbl">Columnas</div></div>' +
-          '<div class="mcard"><div class="mval">' + d.n_numeric + '</div><div class="mlbl">Numéricas</div></div>' +
-          '<div class="mcard"><div class="mval">' + d.n_categorical + '</div><div class="mlbl">Categóricas</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.rows + '</div><div class="mlbl">'+T("rows")+'</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.cols + '</div><div class="mlbl">'+T("cols")+'</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.n_numeric + '</div><div class="mlbl">'+T("numeric")+'</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.n_categorical + '</div><div class="mlbl">'+T("categorical")+'</div></div>' +
           (d.total_missing > 0
-            ? '<div class="mcard"><div class="mval" style="color:#ef4444">' + d.total_missing + '</div><div class="mlbl">Ausentes</div></div>'
-            : '<div class="mcard"><div class="mval" style="color:var(--accent)">✓ 0</div><div class="mlbl">Ausentes</div></div>') +
+            ? '<div class="mcard"><div class="mval" style="color:#ef4444">' + d.total_missing + '</div><div class="mlbl">'+T("missing")+'</div></div>'
+            : '<div class="mcard"><div class="mval" style="color:var(--accent)">✓ 0</div><div class="mlbl">'+T("missing")+'</div></div>') +
         '</div>' +
 
         // ── Unified column table: type + missing + stats + top values ───
-        '<div class="fl" style="margin-bottom:6px">Variables</div>' +
+        '<div class="fl" style="margin-bottom:6px">'+T("variable")+'</div>' +
         '<div class="crep">' +
           '<div class="crep-hdr" style="grid-template-columns:1.5fr 110px 70px 70px 70px 70px 70px 60px">' +
-            '<span>Columna</span><span>Tipo</span><span>Ausentes</span>' +
-            '<span>Media</span><span>Std</span><span>Min</span><span>Max</span><span>Únicos</span>' +
+            '<span>'+T("column")+'</span><span>'+T("type")+'</span><span>'+T("missing")+'</span>' +
+            '<span>'+T("mean")+'</span><span>'+T("std")+'</span><span>'+T("min")+'</span><span>'+T("max")+'</span><span>'+T("unique")+'</span>' +
           '</div>' +
           d.columns.map(function(c) {
             var st  = statMap[c.name] || c;
@@ -1361,8 +1724,8 @@ async function renderInspect(node) {
         // ── Missing values chart ─────────────────────────────────
         (d.total_missing > 0
           ? '<div style="margin-top:16px">' +
-              '<div class="fl" style="margin-bottom:6px">Valores ausentes por columna</div>' +
-              '<div id="insp-missing"><div class="loading" style="font-size:12px">Generando…</div></div>' +
+              '<div class="fl" style="margin-bottom:6px">'+T("missing-per-col")+'</div>' +
+              '<div id="insp-missing"><div class="loading" style="font-size:12px">'+T("generating")+'</div></div>' +
             '</div>'
           : '') +
       '</div>';
@@ -1392,8 +1755,8 @@ async function renderInspect(node) {
 
 // ── Legacy stubs kept so old canvas snapshots with these types don't crash ──
 async function renderDataInfo(node) {
-  mBody.innerHTML = '<div style="padding:16px;color:var(--sec);font-size:13px">Cargando información…</div>';
-  mFoot.innerHTML = '<button class="btn btn-black" id="btn-refresh-info">↻ Actualizar</button>';
+  mBody.innerHTML = '<div style="padding:16px;color:var(--sec);font-size:13px">'+T("loading-info")+'</div>';
+  mFoot.innerHTML = '<button class="btn btn-black" id="btn-refresh-info">'+T("refresh")+'</button>';
 
   async function load() {
     var q = nq(node, "/api/tabular_info");
@@ -1404,12 +1767,12 @@ async function renderDataInfo(node) {
 
     var typeIcon = function(t) {
       var map = {
-        "int":         ['badge-ok',   'int',   'entero'],
-        "float":       ['badge-ok',   'float', 'decimal'],
-        "numeric":     ['badge-ok',   'num',   'numérico'],
-        "categorical": ['badge-info', 'str',   'categórico'],
-        "list":        ['badge-warn', 'List',  'lista'],
-        "text":        ['badge',      'text',  'texto libre'],
+        "int":         ['badge-ok',   'int',   T("type-int")],
+        "float":       ['badge-ok',   'float', T("type-float")],
+        "numeric":     ['badge-ok',   'num',   T("type-numeric")],
+        "categorical": ['badge-info', 'str',   T("type-categorical")],
+        "list":        ['badge-warn', 'List',  T("type-list")],
+        "text":        ['badge',      'text',  T("type-text")],
       };
       var m = map[t] || ['badge', t, t];
       return '<span class="badge ' + m[0] + '" style="font-size:10px">' + m[1] + '</span>' +
@@ -1426,19 +1789,19 @@ async function renderDataInfo(node) {
       '<div style="padding:14px">' +
         // Summary cards
         '<div class="mgrid" style="margin-bottom:14px">' +
-          '<div class="mcard mcard-hi"><div class="mval">' + d.rows + '</div><div class="mlbl">Filas</div></div>' +
-          '<div class="mcard mcard-hi"><div class="mval">' + d.cols + '</div><div class="mlbl">Columnas</div></div>' +
-          '<div class="mcard"><div class="mval">' + d.n_numeric + '</div><div class="mlbl">Numéricas</div></div>' +
-          '<div class="mcard"><div class="mval">' + d.n_categorical + '</div><div class="mlbl">Categóricas</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.rows + '</div><div class="mlbl">'+T("rows")+'</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.cols + '</div><div class="mlbl">'+T("cols")+'</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.n_numeric + '</div><div class="mlbl">'+T("numeric")+'</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.n_categorical + '</div><div class="mlbl">'+T("categorical")+'</div></div>' +
           (d.total_missing > 0
-            ? '<div class="mcard"><div class="mval" style="color:#ef4444">' + d.total_missing + '</div><div class="mlbl">Valores ausentes</div></div>'
-            : '<div class="mcard"><div class="mval" style="color:var(--accent)">✓ 0</div><div class="mlbl">Valores ausentes</div></div>') +
+            ? '<div class="mcard"><div class="mval" style="color:#ef4444">' + d.total_missing + '</div><div class="mlbl">'+T("missing")+'</div></div>'
+            : '<div class="mcard"><div class="mval" style="color:var(--accent)">✓ 0</div><div class="mlbl">'+T("missing")+'</div></div>') +
         '</div>' +
         // Per-column table
-        '<div class="fl" style="margin-bottom:6px">Columnas</div>' +
+        '<div class="fl" style="margin-bottom:6px">'+T("cols")+'</div>' +
         '<div class="crep">' +
           '<div class="crep-hdr" style="grid-template-columns:1.5fr 80px 80px 1fr 80px">' +
-            '<span>Columna</span><span>Tipo</span><span>Ausentes</span><span>Info</span><span>Únicos</span>' +
+            '<span>'+T("column")+'</span><span>'+T("type")+'</span><span>'+T("missing")+'</span><span>'+T("info")+'</span><span>'+T("unique")+'</span>' +
           '</div>' +
           d.columns.map(function(c) {
             var info = "";
@@ -1458,15 +1821,15 @@ async function renderDataInfo(node) {
         '</div>' +
         // Missing chart — compact bars
         (d.total_missing > 0
-          ? '<div style="margin-top:14px"><div class="fl" style="margin-bottom:6px">Valores ausentes por columna</div>' +
+          ? '<div style="margin-top:14px"><div class="fl" style="margin-bottom:6px">'+T("missing-per-col")+'</div>' +
             '<div id="missing-heatmap"><div class="loading" style="font-size:12px">Generando…</div></div></div>'
           : '') +
         '<div class="psec" style="margin-top:14px">' +
-          '<div class="ptitle">📋 Resumen del dataset</div>' +
+          '<div class="ptitle">'+T("dataset-summary")+'</div>' +
           '<div style="font-size:12px;color:var(--ink);line-height:1.7">' +
-            '<b>Filas:</b> ' + d.rows + ' · <b>Columnas:</b> ' + d.cols + '<br>' +
-            '<b>Variables:</b> ' + d.n_numeric + ' numéricas, ' + d.n_categorical + ' categóricas' + (d.n_text > 0 ? ', ' + d.n_text + ' texto' : '') + '<br>' +
-            '<b>Valores ausentes:</b> ' + (d.total_missing > 0 ? d.total_missing + ' celdas con valores ausentes (ver heatmap)' : 'Ninguno detectado') +
+            '<b>'+T("rows")+':</b> ' + d.rows + ' · <b>'+T("cols")+':</b> ' + d.cols + '<br>' +
+            '<b>'+T("variable")+':</b> ' + d.n_numeric + ' '+T("numeric").toLowerCase()+', ' + d.n_categorical + ' '+T("categorical").toLowerCase() + (d.n_text > 0 ? ', ' + d.n_text + ' '+T("type-text") : '') + '<br>' +
+            '<b>'+T("missing")+':</b> ' + (d.total_missing > 0 ? d.total_missing + (lang==="es"?' celdas con valores ausentes (ver heatmap)':' cells with missing values (see heatmap)') : T("no-missing")) +
           '</div>' +
         '</div>' +
       '</div>';
@@ -1497,7 +1860,7 @@ async function renderDataInfo(node) {
 // ═══════════════════════════════════════════
 async function renderFeatureStats(node) {
   mBody.innerHTML = '<div style="padding:16px;color:var(--sec);font-size:13px">Calculando estadísticas…</div>';
-  mFoot.innerHTML = '<button class="btn btn-black" id="btn-fstats">↻ Calcular</button>';
+  mFoot.innerHTML = '<button class="btn btn-black" id="btn-fstats">'+T("refresh")+'</button>';
 
   async function load() {
     var q = nq(node, "/api/feature_stats");
@@ -1511,8 +1874,8 @@ async function renderFeatureStats(node) {
         '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">' + d.rows + ' filas · ' + d.cols + ' columnas</div>' +
         '<div class="crep">' +
           '<div class="crep-hdr" style="grid-template-columns:1.5fr 80px 70px 80px 80px 80px 80px 80px">' +
-            '<span>Variable</span><span>Tipo</span><span>Ausentes</span>' +
-            '<span>Media</span><span>Std</span><span>Min</span><span>Max</span><span>Únicos</span>' +
+            '<span>'+T("variable")+'</span><span>'+T("type")+'</span><span>'+T("missing")+'</span>' +
+            '<span>'+T("mean")+'</span><span>'+T("std")+'</span><span>'+T("min")+'</span><span>'+T("max")+'</span><span>'+T("unique")+'</span>' +
           '</div>' +
           d.stats.map(function(c) {
             var isNum = c.type === "numeric";
@@ -1558,7 +1921,7 @@ async function renderDistributions(node) {
   mBody.innerHTML =
     '<div class="col2">' +
       '<div class="col-left" style="padding:14px;gap:12px">' +
-        '<div class="fg"><div class="fl">Variable a visualizar</div>' +
+        '<div class="fg"><div class="fl">'+T("variable-to-viz")+'</div>' +
           '<select class="inp" id="dist-col">' +
             cols.map(function(c){
               var typeLabel = c.type === "numeric" ? "numérica" : c.type === "categorical" ? "categórica" : "texto";
@@ -1567,27 +1930,26 @@ async function renderDistributions(node) {
           '</select>' +
         '</div>' +
         '<div class="psec" style="margin-top:6px">' +
-          '<div class="ptitle">📝 Cómo leer la gráfica</div>' +
+          '<div class="ptitle">'+T("how-to-read")+'</div>' +
           '<div style="font-size:11px;color:var(--sec);line-height:1.7">' +
-            '<b>Numérica:</b> histograma de frecuencia. Las líneas muestran la media (naranja) y la mediana (verde). Si están muy separadas, hay valores extremos (outliers).<br><br>' +
-            '<b>Categórica:</b> barras horizontales ordenadas por frecuencia. Ideal para ver cuántas veces aparece cada categoría.' +
+            T("numeric-hint") + '<br><br>' + T("categorical-hint") +
           '</div>' +
         '</div>' +
         '<div class="psec" style="margin-top:6px">' +
-          '<div class="ptitle">⚠ Qué buscar</div>' +
+          '<div class="ptitle">'+T("what-to-look")+'</div>' +
           '<div style="font-size:11px;color:var(--sec);line-height:1.7">' +
-            'Cola larga a la derecha = outliers altos.<br>' +
-            'Picos múltiples = posibles subgrupos en tus datos.<br>' +
-            'Una categoría muy dominante = desbalanceo de clases.' +
+            T("outlier-hint") + '<br>' +
+            T("multimodal-hint") + '<br>' +
+            T("imbalance-hint") +
           '</div>' +
         '</div>' +
       '</div>' +
       '<div class="col-right" style="padding:14px">' +
-        '<div id="dist-chart" style="color:var(--sec);font-size:13px;padding:20px 0">Selecciona una variable y pulsa Dibujar.</div>' +
+        '<div id="dist-chart" style="color:var(--sec);font-size:13px;padding:20px 0">'+T("select-variable")+'</div>' +
       '</div>' +
     '</div>';
 
-  mFoot.innerHTML = '<button class="btn btn-black" id="btn-dist">📈 Dibujar distribución</button>';
+  mFoot.innerHTML = '<button class="btn btn-black" id="btn-dist">'+T("draw-dist")+'</button>';
 
   document.getElementById("btn-dist").onclick = async function() {
     var col = document.getElementById("dist-col").value;
@@ -2299,7 +2661,7 @@ async function renderLinreg(node) {
 
       // Algorithm selector — visual cards
       '<div>' +
-        '<div class="ptitle" style="margin-bottom:8px">⚙️ Algoritmo</div>' +
+        '<div class="ptitle" style="margin-bottom:8px">'+T("algorithm")+'</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px" id="lr-algo-group">' +
           _algoCard("linreg", "OLS — Regresión Lineal", "Sin regularización. Máxima interpretabilidad.", true) +
           _algoCard("ridge", "Ridge  (L2)", "Penaliza coeficientes grandes. Estabiliza multicolinealidad.", false) +
@@ -2309,7 +2671,7 @@ async function renderLinreg(node) {
 
       // Hyperparameters — fit_intercept always shown; alpha only for ridge/lasso
       '<div>' +
-        '<div class="ptitle" style="margin-bottom:8px">🎛️ Hiperparámetros</div>' +
+        '<div class="ptitle" style="margin-bottom:8px">'+T("hyperparams")+'</div>' +
         '<div style="display:flex;flex-direction:column;gap:8px">' +
 
           // fit_intercept — auto or fixed value
@@ -2341,7 +2703,7 @@ async function renderLinreg(node) {
 
       // Normalization — visual cards
       '<div>' +
-        '<div class="ptitle" style="margin-bottom:8px">📐 Normalización de features</div>' +
+        '<div class="ptitle" style="margin-bottom:8px">'+T("norm-features")+'</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px" id="lr-norm-group">' +
           _normCard("none",   "Sin normalización", "Coeficientes en unidades originales. Usa si ya normalizaste en Preprocesado.", true) +
           _normCard("zscore", "Z-score  (μ=0, σ=1)", "Permite comparar la magnitud de coeficientes entre variables.", false) +
@@ -2352,18 +2714,18 @@ async function renderLinreg(node) {
       // Context info: target + split
       '<div style="background:var(--bg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px">' +
         '<div style="font-size:12px;display:flex;justify-content:space-between">' +
-          '<span style="color:var(--sec)">Variable objetivo</span>' +
-          '<b style="color:var(--ink)">' + (upstreamTarget || '— definida en Datos') + '</b>' +
+          '<span style="color:var(--sec)">'+T("target-col")+'</span>' +
+          '<b style="color:var(--ink)">' + (upstreamTarget || (lang==="es"?'— definida en Datos':'— defined in Data')) + '</b>' +
         '</div>' +
         '<div style="font-size:12px;display:flex;justify-content:space-between">' +
-          '<span style="color:var(--sec)">Partición</span>' +
+          '<span style="color:var(--sec)">'+T("partition")+'</span>' +
           (splitInfo.has_split
             ? '<b style="color:var(--accent)">'+Math.round(splitInfo.ratio*100)+'% train / '+testPct+'% test · '+splitInfo.mode+'</b>'
-            : '<b style="color:#f59e0b">70/30 aleatorio (sin Preprocesado)</b>') +
+            : '<b style="color:#f59e0b">70/30 '+(lang==="es"?'aleatorio (sin Preprocesado)':'random (no Preprocessing)')+'</b>') +
         '</div>' +
       '</div>' +
 
-      '<button class="btn btn-black" id="btn-lr-run" style="width:100%;margin-top:2px">▶ Entrenar modelo</button>' +
+      '<button class="btn btn-black" id="btn-lr-run" style="width:100%;margin-top:2px">'+T("train")+'</button>' +
 
     '</div>' +
 
@@ -2372,8 +2734,8 @@ async function renderLinreg(node) {
 
       // Tab bar
       '<div style="display:flex;border-bottom:1px solid var(--border);padding:0 12px;gap:2px;flex-shrink:0">' +
-        '<button class="lr-main-tab" data-panel="train" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:700;border-bottom:2px solid var(--accent);color:var(--ink)">🏋️ Entrenar</button>' +
-        '<button class="lr-main-tab" data-panel="cv" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:400;border-bottom:2px solid transparent;color:var(--sec)">🔍 CV Hiperparámetro</button>' +
+        '<button class="lr-main-tab" data-panel="train" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:700;border-bottom:2px solid var(--accent);color:var(--ink)">'+T("train-panel")+'</button>' +
+        '<button class="lr-main-tab" data-panel="cv" style="padding:10px 16px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:400;border-bottom:2px solid transparent;color:var(--sec)">'+T("cv-panel")+'</button>' +
       '</div>' +
 
       // ── Panel: Entrenar ────────────────────────────────────────────────
@@ -2381,31 +2743,31 @@ async function renderLinreg(node) {
 
       '<div id="lr-progress-wrap" style="display:none">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-          '<span class="fl" style="font-size:12px">Entrenamiento</span>' +
+          '<span class="fl" style="font-size:12px">'+T("training-progress")+'</span>' +
           '<span id="lr-pct" style="font-size:11px;color:var(--sec);font-weight:700">0%</span>' +
         '</div>' +
         '<div style="background:var(--border);border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px">' +
           '<div id="lr-bar" style="height:100%;width:0%;background:var(--accent);border-radius:8px;transition:width 0.3s ease"></div>' +
         '</div>' +
-        '<div id="lr-status" style="font-size:12px;color:var(--sec)">Iniciando…</div>' +
+        '<div id="lr-status" style="font-size:12px;color:var(--sec)">'+T("starting")+'</div>' +
       '</div>' +
 
       '<div id="lr-quick-results" style="display:none">' +
         '<div id="lr-metrics-grid"></div>' +
         '<div style="margin-top:14px">' +
-          '<div class="fl" style="margin-bottom:8px;font-size:12px">Coeficientes — ordenados por magnitud absoluta</div>' +
+          '<div class="fl" style="margin-bottom:8px;font-size:12px">'+T("coefs-by-magnitude")+'</div>' +
           '<div id="lr-coef-img"></div>' +
         '</div>' +
         '<div style="margin-top:12px;padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--sec);line-height:1.6">' +
-          '💡 Conecta el bloque <b>Evaluación</b> para ver: residuos, Q-Q plot, VIF, Durbin-Watson y Breusch-Pagan.' +
+          T("eval-hint") +
         '</div>' +
       '</div>' +
 
       '<div id="lr-placeholder" style="color:var(--sec);font-size:12px;padding-top:4px;line-height:1.7">' +
-        'Selecciona el algoritmo y normalización, y pulsa <b>Entrenar modelo</b>.<br>' +
+        T("select-algo-hint") + '<br>' +
         (upstreamTarget
-          ? '🎯 Variable objetivo: <b>'+upstreamTarget+'</b>'
-          : '⚠️ Define la variable objetivo en el bloque <b>Datos</b> primero.') +
+          ? T("target-obj") + '<b>'+upstreamTarget+'</b>'
+          : T("define-target-hint")) +
       '</div>' +
 
       '</div>' + // end lr-panel-train
@@ -2415,49 +2777,48 @@ async function renderLinreg(node) {
 
         // Header info
         '<div style="padding:12px 14px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--sec);line-height:1.6">' +
-          '<b style="color:var(--ink)">Grid Search + Validación Cruzada</b><br>' +
-          'Prueba todas las combinaciones de <b>hiperparámetro × normalización</b> usando K-fold CV. ' +
-          'El mejor modelo se entrena automáticamente y queda listo para Evaluación.' +
+          '<b style="color:var(--ink)">'+T("cv-title")+'</b><br>' +
+          T("cv-desc") +
         '</div>' +
 
         '<div id="cv-params" style="display:flex;flex-direction:column;gap:12px">' +
 
           '<div style="padding:12px;background:var(--bg);border-radius:8px">' +
-            '<div class="ptitle" style="margin-bottom:10px">⚙️ Configuración del barrido</div>' +
+            '<div class="ptitle" style="margin-bottom:10px">'+T("cv-config")+'</div>' +
             '<div id="cv-hparam-section" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">' +
               '<div style="display:flex;gap:8px;align-items:flex-end">' +
                 '<div style="flex:1">' +
                   '<div style="font-size:11px;color:var(--sec);margin-bottom:4px" id="cv-param-label">λ (alpha)</div>' +
-                  '<div style="font-size:10px;color:var(--sec);margin-bottom:3px" id="cv-scale-note">Escala logarítmica · valores = 10^exp</div>' +
+                  '<div style="font-size:10px;color:var(--sec);margin-bottom:3px" id="cv-scale-note">'+T("cv-log-scale")+'</div>' +
                   '<div style="display:flex;gap:6px">' +
-                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Mín exp</div>' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">'+T("cv-min-exp")+'</div>' +
                       '<input type="number" id="cv-pmin" value="-4" step="0.5" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
-                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Máx exp</div>' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">'+T("cv-max-exp")+'</div>' +
                       '<input type="number" id="cv-pmax" value="3" step="0.5" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
-                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">Pasos</div>' +
+                    '<div style="flex:1"><div style="font-size:10px;color:var(--sec);margin-bottom:2px">'+T("cv-steps")+'</div>' +
                       '<input type="number" id="cv-steps" value="15" min="3" max="40" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px"></div>' +
                   '</div>' +
                 '</div>' +
                 '<div style="width:80px">' +
-                  '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Folds (K)</div>' +
+                  '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+T("cv-folds")+'</div>' +
                   '<input type="number" id="cv-folds" value="5" min="2" max="15" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px">' +
                 '</div>' +
               '</div>' +
             '</div>' +
             // OLS: only folds (no param sweep)
             '<div id="cv-ols-section" style="display:none;gap:8px">' +
-              '<div style="font-size:12px;color:var(--sec)">OLS no tiene hiperparámetro — se comparan las normalizaciones.</div>' +
-              '<div style="width:100px;margin-top:6px"><div style="font-size:11px;color:var(--sec);margin-bottom:4px">Folds (K)</div>' +
+              '<div style="font-size:12px;color:var(--sec)">'+T("cv-ols-note")+'</div>' +
+              '<div style="width:100px;margin-top:6px"><div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+T("cv-folds")+'</div>' +
                 '<input type="number" id="cv-folds-ols" value="5" min="2" max="15" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:12px">' +
               '</div>' +
             '</div>' +
           '</div>' +
 
           '<div style="font-size:11px;color:var(--sec);padding:8px 12px;background:var(--bg);border-radius:8px;line-height:1.6">' +
-            '🔒 <b>Sin data leakage:</b> la normalización se aplica dentro de cada fold mediante un Pipeline sklearn.' +
+            T("cv-no-leakage") +
           '</div>' +
 
-          '<button class="btn btn-black" id="btn-cv-run" style="width:100%">▶ Ejecutar Grid Search</button>' +
+          '<button class="btn btn-black" id="btn-cv-run" style="width:100%">'+T("run-gridsearch")+'</button>' +
           '<div id="cv-status" style="font-size:12px;color:var(--sec);text-align:center"></div>' +
           '<div id="cv-result"></div>' +
 
@@ -2541,7 +2902,7 @@ async function renderLinreg(node) {
     document.getElementById("lr-placeholder").style.display = "none";
     document.getElementById("lr-quick-results").style.display = "none";
     document.getElementById("lr-progress-wrap").style.display = "block";
-    document.getElementById("lr-status").textContent = "Iniciando…";
+    document.getElementById("lr-status").textContent = T("starting");
     document.getElementById("lr-bar").style.width = "0%";
     document.getElementById("lr-pct").textContent = "0%";
 
@@ -2580,7 +2941,7 @@ async function renderLinreg(node) {
       document.getElementById("lr-status").innerHTML = '<span style="color:#ff6b6b">❌ '+errMsg+'</span>';
       return;
     }
-    document.getElementById("lr-status").textContent = "✅ Entrenamiento completado";
+    document.getElementById("lr-status").textContent = lang==="es"?"✅ Entrenamiento completado":"✅ Training complete";
 
     var qr = await fetch("/api/model_result?node_id="+encodeURIComponent(node.id));
     var d  = await qr.json();
@@ -2736,7 +3097,7 @@ async function renderLinreg(node) {
     var cvStatusEl = document.getElementById("cv-status");
     var cvResultEl = document.getElementById("cv-result");
     cvStatusEl.textContent = "Ejecutando Grid Search " + kFolds + "-fold…";
-    cvResultEl.innerHTML   = '<div class="loading" style="font-size:12px">Calculando combinaciones…</div>';
+    cvResultEl.innerHTML   = '<div class="loading" style="font-size:12px">'+(lang==="es"?"Calculando combinaciones…":"Calculating combinations…")+'</div>';
 
     var resp = await fetch("/api/model_cv", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -2775,9 +3136,10 @@ async function renderLinreg(node) {
       ? (cvd.test_metrics && cvd.test_metrics.RMSE != null ? cvd.test_metrics.RMSE : "—")
       : (cvd.test_metrics && cvd.test_metrics.f1_macro != null ? cvd.test_metrics.f1_macro : "—");
 
-    // Best model summary card
-    var paramLine = hasParam
-      ? '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+(cfg.label||'param')+'</div><div style="font-size:18px;font-weight:800;color:var(--accent)">'+bestPvDisp+'</div></div>'
+    // Best model summary card — show lambda if available, regardless of current method selector
+    var paramLineLabel = (cfg && cfg.label) || cvd.param_label || 'λ';
+    var paramLine = (bestPvDisp != null && bestPvDisp !== '')
+      ? '<div style="flex:1"><div style="font-size:10px;color:var(--sec)">'+paramLineLabel+'</div><div style="font-size:18px;font-weight:800;color:var(--accent)">'+bestPvDisp+'</div></div>'
       : '';
     var resultHTML =
       '<div style="display:flex;flex-direction:column;gap:12px">' +
@@ -2942,7 +3304,7 @@ async function renderModelEval(node) {
           (hasResult ? '✅ Listo para evaluar' : '⚠️ Entrena o carga un modelo primero') +
         '</div>' +
       '</div>' +
-      '<button class="btn btn-black" id="btn-eval-run" style="width:100%"' + (hasResult ? '' : ' disabled') + '>📊 Evaluar</button>' +
+      '<button class="btn btn-black" id="btn-eval-run" style="width:100%"' + (hasResult ? '' : ' disabled') + '>'+T("eval-btn")+'</button>' +
       (!hasResult ? '<div style="font-size:11px;color:#f59e0b;line-height:1.5">Entrena el modelo o cárgalo desde un .pkl.</div>' : '') +
       '<div class="psec" style="margin-top:4px">' +
         '<div class="ptitle">📖 Qué verás</div>' +
@@ -2956,12 +3318,14 @@ async function renderModelEval(node) {
     '</div>' +
 
     '<div style="display:flex;flex-direction:column;height:100%;overflow:hidden">' +
-      '<div id="eval-tabs" style="display:flex;gap:0;flex-shrink:0;border-bottom:1px solid var(--border)">' +
-        _evalTab("metrics","📊 Métricas", true) +
-        _evalTab("plots","📈 Gráficas", false) +
-        _evalTab("coef","🔢 Coeficientes", false) +
-        _evalTab("assump","🔬 Supuestos", false) +
-        _evalTab("cv","🔍 CV", false) +
+      '<div id="eval-tabs" style="display:flex;gap:0;flex-shrink:0;border-bottom:1px solid var(--border);overflow-x:auto">' +
+        _evalTab("metrics", T("tab-metrics"), true) +
+        _evalTab("plots",   T("tab-plots"),   false) +
+        _evalTab("coef",    T("tab-coef"),    false) +
+        _evalTab("roc",     T("tab-roc"),     false) +
+        _evalTab("boundary",T("tab-boundary"),false) +
+        _evalTab("assump",  T("tab-assump"),  false) +
+        _evalTab("cv",      T("tab-cv"),      false) +
       '</div>' +
       '<div id="eval-body" style="flex:1;overflow-y:auto;padding:16px">' +
         '<div style="color:var(--sec);font-size:12px">' +
@@ -3007,7 +3371,7 @@ async function renderModelEval(node) {
 
   document.getElementById("btn-eval-run").onclick = async function() {
     var bodyEl = document.getElementById("eval-body");
-    bodyEl.innerHTML = '<div class="loading" style="font-size:12px">Calculando evaluación completa…</div>';
+    bodyEl.innerHTML = '<div class="loading" style="font-size:12px">'+(lang==="es"?"Calculando evaluación completa…":"Running full evaluation…")+'</div>';
     // Todos los tipos de modelo usan model_evaluate — load_model inyecta en _MODEL_STORE al cargar
     var resp = await fetch("/api/model_evaluate", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -3050,7 +3414,7 @@ function _renderEvalTab(tab, d, modelNode) {
 
   var headerHtml =
     '<div style="font-size:11px;color:var(--sec);margin-bottom:12px;display:flex;gap:10px;align-items:center">' +
-      '<span style="font-weight:700;color:var(--ink)">'+(isCls?'🔵 Clasificación':'🟠 Regresión')+'</span>' +
+      '<span style="font-weight:700;color:var(--ink)">'+(isCls?T("cls-type"):T("reg-type"))+'</span>' +
       '<span>'+(d.model_type||"OLS").toUpperCase()+(d.model_type&&d.model_type!=="linreg"?" · λ="+d.alpha:"")+" · target: <b>"+d.target_col+"</b>"+" · train="+d.n_train+" / test="+d.n_test+'</span>' +
     '</div>';
 
@@ -3101,7 +3465,7 @@ function _renderEvalTab(tab, d, modelNode) {
     if (!isCls && d.durbin_watson != null) {
       statsHtml =
         '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:1.9">' +
-          '<div style="font-weight:700;margin-bottom:4px;color:var(--ink)">Tests estadísticos</div>' +
+          '<div style="font-weight:700;margin-bottom:4px;color:var(--ink)">'+T("stat-tests")+'</div>' +
           '<div style="display:grid;grid-template-columns:170px 70px 1fr;gap:4px;align-items:center">' +
             '<span style="color:var(--sec)">Durbin-Watson</span><b>'+d.durbin_watson+'</b><span>'+d.dw_interp+'</span></div>' +
           '<div style="display:grid;grid-template-columns:170px 70px 1fr;gap:4px;align-items:center">' +
@@ -3126,43 +3490,43 @@ function _renderEvalTab(tab, d, modelNode) {
         return '<tr><td style="padding:6px 10px;font-size:11px;color:var(--sec);font-weight:600">Real: '+classes[ri]+'</td>'+cmCells[ri]+'</tr>';
       }).join("");
       cmHtml =
-        '<div style="margin-top:14px"><div class="fl" style="margin-bottom:8px">Matriz de confusión (test)</div>' +
+        '<div style="margin-top:14px"><div class="fl" style="margin-bottom:8px">'+T("confusion-matrix-test")+'</div>' +
           '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px">'+cmHeader+cmBody+'</table></div>' +
         '</div>';
     }
 
     bodyEl.innerHTML = headerHtml +
-      '<div class="fl" style="margin-bottom:6px">Métricas en test</div>' + testGrid +
-      (trainGrid ? '<div class="fl" style="margin-bottom:6px">Métricas en train</div>' + trainGrid : '') +
+      '<div class="fl" style="margin-bottom:6px">'+T("metrics-test")+'</div>' + testGrid +
+      (trainGrid ? '<div class="fl" style="margin-bottom:6px">'+T("metrics-train")+'</div>' + trainGrid : '') +
       statsHtml + cmHtml;
 
   } else if (tab === "plots") {
     function _imgCard(title, b64) {
-      if (!b64) return '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+title+': no disponible para modelo cargado desde .pkl.</div>';
+      if (!b64) return '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+title+': '+T("coef-not-avail-pkl")+'</div>';
       return '<div><div class="fl" style="font-size:12px;margin-bottom:4px">'+title+'</div>' +
         '<img src="data:image/png;base64,'+b64+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)"></div>';
     }
     if (isCls) {
       bodyEl.innerHTML = headerHtml + '<div style="display:flex;flex-direction:column;gap:16px">' +
-        _imgCard("Matriz de confusión", d.cm_img) + '</div>';
+        _imgCard(T("confusion-matrix"), d.cm_img) + '</div>';
     } else {
       bodyEl.innerHTML = headerHtml +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-          _imgCard("Predicho vs Real", d.pred_img) +
-          _imgCard("Residuos vs Ajustados", d.resid_img) +
-          '<div style="grid-column:span 2">' + _imgCard("Q-Q Plot de residuos (normalidad)", d.qq_img) + '</div>' +
+          _imgCard(T("pred-vs-actual"), d.pred_img) +
+          _imgCard(T("residuals-vs-fitted"), d.resid_img) +
+          '<div style="grid-column:span 2">' + _imgCard(T("qq-plot"), d.qq_img) + '</div>' +
         '</div>';
     }
 
   } else if (tab === "coef") {
     var coefs = d.coefficients || [];
-    var coefLabel = isCls ? "Peso / Importancia" : "Coeficiente";
+    var coefLabel = isCls ? T("coef-weight") : T("coef-label");
     var coefImg = d.coef_img
       ? '<div style="margin-bottom:12px"><img src="data:image/png;base64,'+d.coef_img+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)"></div>'
       : '';
     var coefTable = coefs.length
       ? '<div class="crep">' +
-          '<div class="crep-hdr" style="grid-template-columns:1.8fr 1fr"><span>Variable</span><span>'+coefLabel+'</span></div>' +
+          '<div class="crep-hdr" style="grid-template-columns:1.8fr 1fr"><span>'+T("variable")+'</span><span>'+coefLabel+'</span></div>' +
           coefs.map(function(c){
             var color = c[1]>0?'var(--accent)':'#ef4444';
             return '<div class="crep-row" style="grid-template-columns:1.8fr 1fr">' +
@@ -3171,10 +3535,10 @@ function _renderEvalTab(tab, d, modelNode) {
           }).join("") +
           (!isCls && d.intercept!=null
             ? '<div class="crep-row" style="grid-template-columns:1.8fr 1fr;border-top:2px solid var(--border);margin-top:4px">' +
-                '<span style="color:var(--sec)">Intercepto (β₀)</span><span style="font-weight:600">'+d.intercept+'</span></div>'
+                '<span style="color:var(--sec)">'+T("intercept")+'</span><span style="font-weight:600">'+d.intercept+'</span></div>'
             : '') +
         '</div>'
-      : '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">Coeficientes no disponibles para este modelo.</div>';
+      : '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+T("coef-unavailable")+'</div>';
     bodyEl.innerHTML = headerHtml + coefImg + coefTable;
 
   } else if (tab === "cv") {
@@ -3186,9 +3550,7 @@ function _renderEvalTab(tab, d, modelNode) {
     if (!cvd || !cvd.cv_img) {
       bodyEl.innerHTML = headerHtml +
         '<div style="padding:20px;color:var(--sec);font-size:13px;line-height:1.7">' +
-          (cvd
-            ? '⚠️ La imagen del CV no está disponible en el .pkl guardado.'
-            : 'No se ha ejecutado CV para este modelo.<br>Ve al bloque Modelo → pestaña <b>🔍 CV Hiperparámetro</b>, ejecuta el barrido, y pulsa <b>Evaluar</b> de nuevo.') +
+          (cvd ? T("cv-no-img") : T("cv-no-run")) +
         '</div>';
       return;
     }
@@ -3207,11 +3569,11 @@ function _renderEvalTab(tab, d, modelNode) {
       '<div style="display:flex;flex-direction:column;gap:14px">' +
         '<div style="display:flex;gap:12px">' +
           '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
-            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Mejor '+pLabel+'</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+T("cv-best-param")+pLabel+'</div>' +
             '<div style="font-size:26px;font-weight:800;color:var(--accent)">'+bestFmt+'</div>' +
           '</div>' +
           '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
-            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+(cvd.metric_label||'Métrica')+' óptimo</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+(cvd.metric_label||(lang==="es"?'Métrica':'Metric'))+' '+T("cv-optimal")+'</div>' +
             '<div style="font-size:26px;font-weight:800;color:var(--ink)">'+(best.score_mean||'—')+'</div>' +
           '</div>' +
           '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
@@ -3221,10 +3583,64 @@ function _renderEvalTab(tab, d, modelNode) {
         '</div>' +
         '<img src="data:image/png;base64,'+cvd.cv_img+'" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
         '<div style="font-size:11px;color:var(--sec);padding:8px 12px;background:var(--bg);border-radius:8px;line-height:1.6">' +
-          '<b>Método:</b> '+((cvd.method||'—').toUpperCase())+' · <b>Problema:</b> '+(cvd.problem_type||'—')+' · ' +
-          '<b>Sin data leakage:</b> normalización dentro de cada fold (Pipeline sklearn).' +
+          '<b>'+T("cv-method")+':</b> '+((cvd.method||'—').toUpperCase())+' · <b>'+T("cv-problem")+':</b> '+(cvd.problem_type||'—')+' · ' +
+          '<b>'+T("cv-no-leak")+':</b> '+T("cv-pipeline") +
         '</div>' +
       '</div>';
+
+  } else if (tab === "roc") {
+    if (!isCls) {
+      bodyEl.innerHTML = headerHtml + '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+T("roc-cls-only")+'</div>';
+      return;
+    }
+    if (d.roc_img) {
+      bodyEl.innerHTML = headerHtml +
+        '<div style="margin-bottom:8px;font-size:12px;color:var(--sec)">'+T("roc-desc")+'</div>' +
+        '<img src="data:image/png;base64,'+d.roc_img+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)">';
+    } else {
+      bodyEl.innerHTML = headerHtml +
+        '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+T("roc-unavailable")+'</div>';
+    }
+
+  } else if (tab === "boundary") {
+    if (!isCls) {
+      bodyEl.innerHTML = headerHtml + '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+T("boundary-cls-only")+'</div>';
+      return;
+    }
+    var features = d.features || [];
+    if (features.length < 2) {
+      bodyEl.innerHTML = headerHtml + '<div style="padding:14px;background:var(--bg);border-radius:8px;color:var(--sec);font-size:12px">'+T("boundary-min-features")+'</div>';
+      return;
+    }
+    var featOpts = features.map(function(f){ return '<option value="'+f+'">'+f+'</option>'; }).join("");
+    bodyEl.innerHTML = headerHtml +
+      '<div style="margin-bottom:12px;font-size:12px;color:var(--sec)">'+T("boundary-desc")+'</div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">' +
+        '<div><label style="font-size:11px;color:var(--sec)">'+T("feature-x")+'</label>' +
+          '<select id="bd-feat-x" style="display:block;margin-top:4px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--ink);font-size:13px">' + featOpts + '</select></div>' +
+        '<div><label style="font-size:11px;color:var(--sec)">'+T("feature-y")+'</label>' +
+          '<select id="bd-feat-y" style="display:block;margin-top:4px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--ink);font-size:13px">' +
+            features.map(function(f,i){ return '<option value="'+f+'"'+(i===1?' selected':'')+'>'+f+'</option>'; }).join("") +
+          '</select></div>' +
+        '<button id="bd-run" class="btn btn-black" style="margin-top:18px">'+T("boundary-generate")+'</button>' +
+      '</div>' +
+      '<div id="bd-result"></div>';
+
+    document.getElementById("bd-run").onclick = async function() {
+      var fx = document.getElementById("bd-feat-x").value;
+      var fy = document.getElementById("bd-feat-y").value;
+      if (fx === fy) { document.getElementById("bd-result").innerHTML = '<div style="color:#f59e0b;font-size:12px">'+T("boundary-two-diff")+'</div>'; return; }
+      document.getElementById("bd-result").innerHTML = '<div style="color:var(--sec);font-size:12px">'+T("boundary-generating")+'</div>';
+      var r = await fetch("/api/decision_boundary", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ node_id: modelNode ? String(modelNode.id) : "", feat_x: fx, feat_y: fy }) });
+      var res = await r.json();
+      if (res.error) {
+        document.getElementById("bd-result").innerHTML = '<div style="color:#ff6b6b;font-size:12px">'+res.error+'</div>';
+      } else {
+        document.getElementById("bd-result").innerHTML =
+          '<img src="data:image/png;base64,'+res.img+'" style="width:100%;border-radius:6px;cursor:zoom-in" onclick="expandImg(this.src)">';
+      }
+    };
 
   } else if (tab === "assump") {
     if (isCls) {
@@ -3232,13 +3648,13 @@ function _renderEvalTab(tab, d, modelNode) {
       var classes = d.classes || [];
       bodyEl.innerHTML = headerHtml +
         '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:1.9">' +
-          '<div style="font-weight:700;margin-bottom:8px;color:var(--ink)">Supuestos de clasificación</div>' +
-          '<div style="color:var(--sec)">Clases detectadas: <b>'+classes.join(", ")+'</b></div>' +
+          '<div style="font-weight:700;margin-bottom:8px;color:var(--ink)">'+T("assump-cls-title")+'</div>' +
+          '<div style="color:var(--sec)">'+T("assump-cls-detected")+'<b>'+classes.join(", ")+'</b></div>' +
           '<div style="margin-top:8px;color:var(--sec);line-height:1.7">' +
-            'La Regresión Logística asume:<br>' +
-            '• Independencia entre observaciones<br>' +
-            '• Ausencia de multicolinealidad extrema entre features<br>' +
-            '• Tamaño de muestra suficiente por clase' +
+            T("assump-lr-title")+'<br>' +
+            '• '+T("assump-lr-1")+'<br>' +
+            '• '+T("assump-lr-2")+'<br>' +
+            '• '+T("assump-lr-3") +
           '</div>' +
         '</div>';
     } else {
@@ -3251,12 +3667,12 @@ function _renderEvalTab(tab, d, modelNode) {
               '<span style="color:'+color+';font-weight:700">'+v.vif+'</span>' +
               '<span style="font-size:11px">'+label+'</span></div>';
           }).join("")
-        : '<div style="color:var(--sec);font-size:12px;padding:8px">No hay suficientes datos para calcular VIF.</div>';
+        : '<div style="color:var(--sec);font-size:12px;padding:8px">'+T("vif-no-data")+'</div>';
 
       bodyEl.innerHTML = headerHtml +
         '<div style="display:flex;flex-direction:column;gap:16px">' +
           '<div>' +
-            '<div class="fl" style="margin-bottom:8px">Tests de supuestos del modelo</div>' +
+            '<div class="fl" style="margin-bottom:8px">'+T("assump-tests")+'</div>' +
             '<div style="padding:12px;background:var(--bg);border-radius:8px;font-size:12px;line-height:2">' +
               '<div style="display:grid;grid-template-columns:180px 75px 1fr;align-items:center;gap:4px">' +
                 '<span style="color:var(--sec)">Durbin-Watson</span><b>'+(d.durbin_watson||'—')+'</b><span>'+(d.dw_interp||'')+'</span></div>' +
@@ -3264,18 +3680,17 @@ function _renderEvalTab(tab, d, modelNode) {
                 '<span style="color:var(--sec)">Breusch-Pagan (LM)</span><b>'+(d.breusch_pagan||'—')+'</b><span>'+(d.bp_interp||'')+'</span></div>' +
             '</div>' +
             '<div style="font-size:11px;color:var(--sec);margin-top:8px;line-height:1.7">' +
-              '<b>Durbin-Watson:</b> rango [0,4]. Cerca de 2 = sin autocorrelación en residuos.<br>' +
-              '<b>Breusch-Pagan:</b> LM &gt; 3.84 (χ²₁ al 5%) sugiere heterocedasticidad.' +
+              T("dw-hint") + '<br>' + T("bp-hint") +
             '</div>' +
           '</div>' +
           '<div>' +
-            '<div class="fl" style="margin-bottom:8px">VIF — Detección de multicolinealidad</div>' +
+            '<div class="fl" style="margin-bottom:8px">'+T("vif-title")+'</div>' +
             '<div class="crep">' +
-              '<div class="crep-hdr" style="grid-template-columns:1.8fr 0.7fr 0.8fr"><span>Variable</span><span>VIF</span><span>Estado</span></div>' +
+              '<div class="crep-hdr" style="grid-template-columns:1.8fr 0.7fr 0.8fr"><span>'+T("variable")+'</span><span>VIF</span><span>'+T("vif-state")+'</span></div>' +
               vifRows +
             '</div>' +
             '<div style="font-size:11px;color:var(--sec);margin-top:8px;line-height:1.7">' +
-              'VIF &lt; 5 → sin problema · VIF 5–10 → multicolinealidad moderada · VIF &gt; 10 → coeficientes inestables.' +
+              T("vif-hint") +
             '</div>' +
           '</div>' +
         '</div>';
@@ -3304,16 +3719,16 @@ async function renderTabPreprocess(node) {
 
       // Data Sampler
       '<div class="psec">' +
-        '<div class="ptitle">✂️ Data Sampler (Partición)</div>' +
-        '<div class="fg"><div class="fl">Proporción entrenamiento</div>' +
+        '<div class="ptitle">✂️ Data Sampler ('+(lang==="es"?'Partición':'Split')+')</div>' +
+        '<div class="fg"><div class="fl">'+(lang==="es"?'Proporción entrenamiento':'Training proportion')+'</div>' +
           '<div class="rrow"><input type="range" id="tp-ratio" min="0.5" max="0.95" step="0.05" value="0.7">' +
             '<input type="number" class="inp rinp" id="tp-ratiov" value="0.7" min="0.5" max="0.95" step="0.05"></div></div>' +
-        '<div class="fg"><div class="fl">Modo</div>' +
+        '<div class="fg"><div class="fl">'+(lang==="es"?'Modo':'Mode')+'</div>' +
           '<select class="inp" id="tp-mode">' +
-            '<option value="random">Aleatorio</option>' +
-            '<option value="stratified">Estratificado</option>' +
+            '<option value="random">'+(lang==="es"?'Aleatorio':'Random')+'</option>' +
+            '<option value="stratified">'+(lang==="es"?'Estratificado':'Stratified')+'</option>' +
           '</select></div>' +
-        '<div class="fg"><div class="fl">Variable objetivo (para estratificado)</div>' +
+        '<div class="fg"><div class="fl">'+(lang==="es"?'Variable objetivo (para estratificado)':'Target variable (for stratified)')+'</div>' +
           '<select class="inp" id="tp-target"><option value="">— ninguno —</option>' +
             allColNames.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join("") +
           '</select></div>' +
@@ -3323,69 +3738,70 @@ async function renderTabPreprocess(node) {
 
       // Imputación
       '<div class="psec">' +
-        '<div class="ptitle">🩹 Imputación de valores ausentes</div>' +
-        '<div class="fg"><div class="fl">Método</div>' +
+        '<div class="ptitle">🩹 '+(lang==="es"?'Imputación de valores ausentes':'Missing value imputation')+'</div>' +
+        '<div class="fg"><div class="fl">'+(lang==="es"?'Método':'Method')+'</div>' +
           '<select class="inp" id="tp-impute">' +
-            '<option value="mean">Media (numérico) / Moda (categórico)</option>' +
-            '<option value="median">Mediana / Moda</option>' +
-            '<option value="mode">Moda siempre</option>' +
-            '<option value="zero">Cero / cadena vacía</option>' +
-            '<option value="drop">Eliminar filas con ausentes</option>' +
+            '<option value="mean">'+(lang==="es"?'Media (numérico) / Moda (categórico)':'Mean (numeric) / Mode (categorical)')+'</option>' +
+            '<option value="median">'+(lang==="es"?'Mediana / Moda':'Median / Mode')+'</option>' +
+            '<option value="mode">'+(lang==="es"?'Moda siempre':'Always mode')+'</option>' +
+            '<option value="zero">'+(lang==="es"?'Cero / cadena vacía':'Zero / empty string')+'</option>' +
+            '<option value="drop">'+(lang==="es"?'Eliminar filas con ausentes':'Drop rows with missing')+'</option>' +
           '</select></div>' +
         '<div class="psec" style="margin-top:4px;background:transparent;padding:6px 0">' +
           '<div style="font-size:11px;color:var(--sec);line-height:1.6">' +
-            '<b>Media:</b> buena para distribuciones simétricas, sensible a outliers.<br>' +
-            '<b>Mediana:</b> robusta a outliers, ideal para distribuciones sesgadas.<br>' +
-            '<b>Eliminar:</b> solo si la cantidad de nulos es pequeña (&lt;5%).' +
+            (lang==="es"
+              ? '<b>Media:</b> buena para distribuciones simétricas, sensible a outliers.<br><b>Mediana:</b> robusta a outliers, ideal para distribuciones sesgadas.<br><b>Eliminar:</b> solo si la cantidad de nulos es pequeña (&lt;5%).'
+              : '<b>Mean:</b> good for symmetric distributions, sensitive to outliers.<br><b>Median:</b> robust to outliers, ideal for skewed distributions.<br><b>Drop:</b> only if missing count is small (&lt;5%).') +
           '</div>' +
         '</div>' +
       '</div>' +
 
       // Normalización
       '<div class="psec">' +
-        '<div class="ptitle">📐 Normalización</div>' +
-        '<div class="fg"><div class="fl">Método</div>' +
+        '<div class="ptitle">📐 '+T("normalization")+'</div>' +
+        '<div class="fg"><div class="fl">'+(lang==="es"?'Método':'Method')+'</div>' +
           '<select class="inp" id="tp-norm">' +
-            '<option value="none">Sin normalización</option>' +
+            '<option value="none">'+T("no-norm")+'</option>' +
             '<option value="minmax">Min-Max  →  [0, 1]</option>' +
             '<option value="zscore">Z-score  →  μ=0, σ=1</option>' +
           '</select></div>' +
         '<div class="fg" style="flex-direction:row;align-items:center;gap:8px;margin-top:6px">' +
           '<input type="checkbox" id="tp-fittrain" checked>' +
-          '<label for="tp-fittrain" style="font-size:12px">Ajustar solo en entrenamiento (evitar data leakage)</label>' +
+          '<label for="tp-fittrain" style="font-size:12px">'+(lang==="es"?'Ajustar solo en entrenamiento (evitar data leakage)':'Fit only on training set (avoid data leakage)')+'</label>' +
         '</div>' +
         '<div class="psec" style="margin-top:4px;background:transparent;padding:6px 0">' +
           '<div style="font-size:11px;color:var(--sec);line-height:1.6">' +
-            '<b>Min-Max:</b> mantiene la forma de la distribución; sensible a outliers.<br>' +
-            '<b>Z-score:</b> robusta a outliers; necesaria para SVM, KNN, redes neuronales.' +
+            (lang==="es"
+              ? '<b>Min-Max:</b> mantiene la forma de la distribución; sensible a outliers.<br><b>Z-score:</b> robusta a outliers; necesaria para SVM, KNN, redes neuronales.'
+              : '<b>Min-Max:</b> preserves distribution shape; sensitive to outliers.<br><b>Z-score:</b> robust to outliers; required for SVM, KNN, neural networks.') +
           '</div>' +
         '</div>' +
       '</div>' +
 
       // Limpieza de categorías
       '<div class="psec">' +
-        '<div class="ptitle">🔠 Limpieza de categorías</div>' +
+        '<div class="ptitle">🔠 '+(lang==="es"?'Limpieza de categorías':'Category cleanup')+'</div>' +
         '<div class="fg" style="flex-direction:row;align-items:center;gap:8px">' +
           '<input type="checkbox" id="tp-catfix" checked>' +
-          '<label for="tp-catfix" style="font-size:12px">Estandarizar texto (lowercase + strip)</label>' +
+          '<label for="tp-catfix" style="font-size:12px">'+(lang==="es"?'Estandarizar texto (lowercase + strip)':'Standardize text (lowercase + strip)')+'</label>' +
         '</div>' +
-        '<div style="font-size:11px;color:var(--sec);margin-top:4px">Normaliza "Yes", "YES", "yes" → "yes"</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:4px">'+(lang==="es"?'Normaliza "Yes", "YES", "yes" → "yes"':'Normalizes "Yes", "YES", "yes" → "yes"')+'</div>' +
       '</div>' +
 
-      '<button class="btn btn-black" id="btn-tp-run" style="width:100%">🧹 Aplicar preprocesado</button>' +
+      '<button class="btn btn-black" id="btn-tp-run" style="width:100%">'+T("apply-preprocess")+'</button>' +
     '</div>' +
 
     // ── RIGHT: results ────────────────────────────────────────────────
     '<div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">' +
-      '<div class="fl">Resultados</div>' +
-      '<div id="tp-results"><div style="color:var(--sec);font-size:12px">Configura y pulsa Aplicar.</div></div>' +
+      '<div class="fl">'+(lang==="es"?'Resultados':'Results')+'</div>' +
+      '<div id="tp-results"><div style="color:var(--sec);font-size:12px">'+(lang==="es"?'Configura y pulsa Aplicar.':'Configure and click Apply.')+'</div></div>' +
       '<div id="tp-plots" style="display:none">' +
         '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Box plots (detección de outliers)</div>' +
+        '<div class="fl" style="margin-bottom:6px">'+(lang==="es"?'Box plots (detección de outliers)':'Box plots (outlier detection)')+'</div>' +
         '<div id="tp-box-chart"></div>' +
         '<hr class="sep">' +
-        '<div class="fl" style="margin-bottom:6px">Distribución antes/después</div>' +
-        '<div class="fg"><div class="fl">Variable</div>' +
+        '<div class="fl" style="margin-bottom:6px">'+(lang==="es"?'Distribución antes/después':'Distribution before/after')+'</div>' +
+        '<div class="fg"><div class="fl">'+T("variable")+'</div>' +
           '<select class="inp" id="tp-before-col">' +
             numCols.map(function(c){ return '<option value="'+c.name+'">'+c.name+'</option>'; }).join("") +
           '</select></div>' +
@@ -3393,11 +3809,11 @@ async function renderTabPreprocess(node) {
         '<div id="tp-dist-chart"></div>' +
       '</div>' +
       '<div class="psec" style="margin-top:8px">' +
-        '<div class="ptitle">ℹ️ Consejos de preprocesado</div>' +
+        '<div class="ptitle">ℹ️ '+(lang==="es"?'Consejos de preprocesado':'Preprocessing tips')+'</div>' +
         '<div style="font-size:11px;color:var(--ink);line-height:1.7">' +
-          '<b>¿Por qué no normalizar con datos de prueba?</b> Causaría data leakage: el modelo "vería" estadísticas del test durante el entrenamiento.<br>' +
-          '<b>Min-Max vs Z-score con outliers:</b> Min-Max comprime los valores normales al ~0, Z-score los desplaza menos.<br>' +
-          '<b>Estratificado vs aleatorio:</b> estratificado garantiza la misma proporción de clases en ambas particiones.' +
+          (lang==="es"
+            ? '<b>¿Por qué no normalizar con datos de prueba?</b> Causaría data leakage: el modelo "vería" estadísticas del test durante el entrenamiento.<br><b>Min-Max vs Z-score con outliers:</b> Min-Max comprime los valores normales al ~0, Z-score los desplaza menos.<br><b>Estratificado vs aleatorio:</b> estratificado garantiza la misma proporción de clases en ambas particiones.'
+            : '<b>Why not normalize with test data?</b> It would cause data leakage: the model would "see" test statistics during training.<br><b>Min-Max vs Z-score with outliers:</b> Min-Max compresses normal values toward ~0, Z-score shifts them less.<br><b>Stratified vs random:</b> stratified guarantees the same class proportions in both splits.') +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -5705,7 +6121,7 @@ async function renderSaveModel(node) {
   // ── 3. Constantes de UI ───────────────────────────────────────────────────
   var MODEL_TYPES = ["linreg", "load_model", "knn"];  // ampliar con nuevos modelos
   var _sHdr = function(t) {
-    return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin:14px 0 6px">' + t + '</div>';
+    return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin:14px 0 6px">' + T(t) + '</div>';
   };
   var _chkRow = function(id, label, sublabel, checked) {
     var isChecked = (checked === false) ? '' : 'checked';
@@ -5748,24 +6164,24 @@ async function renderSaveModel(node) {
 
     if (!isNlpPre) {
       // Tabular — radio: dataset completo O zip train/test
-      sectionsHtml += _sHdr("📊 Dataset preprocesado");
+      sectionsHtml += _sHdr("save-section-dataset");
       sectionsHtml += _radioRow("preproc_export", "preproc__csv__" + upNode.id,
-        "Dataset completo preprocesado (.csv)",
-        "Todas las filas y columnas transformadas",
+        T("save-preproc-full"),
+        T("save-preproc-full-sub"),
         !hasSplit);   // default si no hay partición
       if (hasSplit) {
         sectionsHtml += _radioRow("preproc_export", "preproc__split__" + upNode.id,
-          "Partición train + test (.zip con dos .csv)",
-          "Ratio " + upNode.data.splitRatio + " · " + (upNode.data.splitMode || "aleatorio"),
+          T("save-preproc-split"),
+          "Ratio " + upNode.data.splitRatio + " · " + (upNode.data.splitMode || T("split-random")),
           true);   // default si hay partición
       }
     } else {
       // NLP
       var status = await fetch("/api/save_status").then(function(r){ return r.json(); }).catch(function(){ return {}; });
       var nlp = status.nlp || {};
-      sectionsHtml += _sHdr("📝 Corpus NLP");
-      sectionsHtml += _chkRow("nlp__raw", "Corpus original (.csv)", (nlp.n_texts || "?") + " documentos");
-      if (nlp.has_processed) sectionsHtml += _chkRow("nlp__processed", "Corpus preprocesado (.csv)", "");
+      sectionsHtml += _sHdr("save-section-nlp");
+      sectionsHtml += _chkRow("nlp__raw", T("save-nlp-raw"), (nlp.n_texts || "?") + (lang==="es"?" documentos":" documents"));
+      if (nlp.has_processed) sectionsHtml += _chkRow("nlp__processed", T("save-nlp-proc"), "");
       ctx.nlp = nlp;
     }
 
@@ -5779,7 +6195,7 @@ async function renderSaveModel(node) {
       var sub = (mEntry.problem_type || "") +
                 (mEntry.n_train ? " · " + mEntry.n_train + " train / " + mEntry.n_test + " test" : "") +
                 (upNode.data && upNode.data.cvResult ? " · CV" : "");
-      sectionsHtml += _sHdr("🤖 Modelo entrenado");
+      sectionsHtml += _sHdr("save-section-model");
       sectionsHtml += _chkRow("model__" + upNode.id, lbl + " (.pkl)", sub);
     }
     ctx.allTabModels = allTabModels;
@@ -5806,13 +6222,13 @@ async function renderSaveModel(node) {
     }
 
     if (evalModelNodeId) {
-      sectionsHtml += _sHdr("📊 Resultados de Evaluación");
-      sectionsHtml += _radioRow("eval_export", "eval__zip",          "Todo en un .zip (métricas + plots)", "JSON · CSV · PNGs disponibles", true);
-      sectionsHtml += _radioRow("eval_export", "eval__metrics__json", "Solo métricas (.json)", "", false);
-      sectionsHtml += _radioRow("eval_export", "eval__metrics__csv",  "Solo métricas (.csv)",  "", false);
+      sectionsHtml += _sHdr("save-section-eval");
+      sectionsHtml += _radioRow("eval_export", "eval__zip",          T("save-eval-zip"), T("save-eval-zip-sub"), true);
+      sectionsHtml += _radioRow("eval_export", "eval__metrics__json", T("save-eval-json"), "", false);
+      sectionsHtml += _radioRow("eval_export", "eval__metrics__csv",  T("save-eval-csv"),  "", false);
     } else {
       sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
-        '⚠️ Pulsa <b>Evaluar</b> en el bloque Evaluación antes de guardar.</div>';
+        T("save-eval-run-first") + '</div>';
     }
     ctx.evalModelNodeId = evalModelNodeId;
     ctx.evalNode = upNode;
@@ -5821,24 +6237,25 @@ async function renderSaveModel(node) {
   } else if (upType === "plots") {
     var hist = (upNode.data && upNode.data.plotHistory) || [];
     if (hist.length) {
-      sectionsHtml += _sHdr("📦 Exportar plots");
+      sectionsHtml += _sHdr("save-section-plots");
       sectionsHtml += _radioRow("plots_export", "plots__zip__" + upNode.id,
-        "Todos los plots en un .zip",
-        hist.length + " imagen" + (hist.length !== 1 ? "es" : "") + " · " +
+        T("save-plots-zip"),
+        hist.length + (lang==="es"
+          ? (" imagen" + (hist.length !== 1 ? "es" : ""))
+          : (" image" + (hist.length !== 1 ? "s" : ""))) + " · " +
         hist.map(function(p){ return p.label; }).join(", ").slice(0, 60) + (hist.length > 3 ? "…" : ""),
         true);
     } else {
       sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
-        '🫙 El bloque Plots no tiene gráficas generadas todavía.<br>' +
-        '<span style="font-size:11px">Genera al menos una gráfica y vuelve aquí.</span></div>';
+        T("save-plots-empty") + '<br>' +
+        '<span style="font-size:11px">' + T("save-plots-empty-sub") + '</span></div>';
     }
     ctx.plotsNode = upNode;
 
   // ── 8. Sin conexión o tipo desconocido ────────────────────────────────────
   } else {
     sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
-      '🫙 Conecta este bloque a un bloque de Preprocesado, Modelo, Evaluación o Plots.' +
-      '</div>';
+      T("save-connect") + '</div>';
   }
 
   var hasAnything = sectionsHtml.indexOf("sv-chk") !== -1 || sectionsHtml.indexOf("sv-radio") !== -1;
@@ -5846,11 +6263,11 @@ async function renderSaveModel(node) {
   mBody.innerHTML =
     '<div style="padding:16px;display:flex;flex-direction:column;gap:0;max-width:520px">' +
       (hasAnything
-        ? '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">Selecciona qué quieres exportar del bloque conectado.</div>'
+        ? '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">' + T("save-what") + '</div>'
         : '') +
       sectionsHtml +
       (hasAnything
-        ? '<button class="btn btn-black" id="btn-sv-download" style="width:100%;margin-top:14px">💾 Guardar seleccionados…</button>'
+        ? '<button class="btn btn-black" id="btn-sv-download" style="width:100%;margin-top:14px">' + T("save-download") + '</button>'
         : '') +
       '<div id="sv-status" style="font-size:12px;color:var(--sec);text-align:center;margin-top:8px"></div>' +
     '</div>';
@@ -5864,8 +6281,8 @@ async function renderSaveModel(node) {
     var checked = Array.from(document.querySelectorAll(".sv-chk:checked")).map(function(c){ return c.dataset.id; });
     var radioSel = document.querySelector(".sv-radio:checked");
     if (radioSel) checked.push(radioSel.dataset.id);
-    if (!checked.length) { statEl.textContent = "⚠️ Selecciona al menos un elemento."; return; }
-    statEl.textContent = "Guardando…";
+    if (!checked.length) { statEl.textContent = T("save-nothing"); return; }
+    statEl.textContent = T("save-saving");
     var saved = 0, errors = [];
 
     // Helper: descarga un Blob con diálogo o fallback
@@ -5958,7 +6375,7 @@ async function renderSaveModel(node) {
       } else if (id.startsWith("preproc__split__")) {
         var nid        = id.replace("preproc__split__", "");
         var splitRatio = (upNode && upNode.data && upNode.data.splitRatio) || 0.7;
-        statEl.textContent = "Construyendo ZIP train/test…";
+        statEl.textContent = T("save-building-split");
         var pick = await fetch("/api/pick_export_path", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: "/api/export_split_zip",
@@ -6007,7 +6424,7 @@ async function renderSaveModel(node) {
       } else if (id === "eval__metrics__json") {
         var mNid = ctx.evalModelNodeId;
         if (!mNid) { errors.push("eval_metrics.json: sin modelo"); continue; }
-        statEl.textContent = "Guardando eval_metrics.json…";
+        statEl.textContent = T("save-saving") + " eval_metrics.json…";
         var pick = await fetch("/api/pick_export_path", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: "/api/export_eval_metrics",
@@ -6024,7 +6441,7 @@ async function renderSaveModel(node) {
       } else if (id === "eval__metrics__csv") {
         var mNid = ctx.evalModelNodeId;
         if (!mNid) { errors.push("eval_metrics.csv: sin modelo"); continue; }
-        statEl.textContent = "Guardando eval_metrics.csv…";
+        statEl.textContent = T("save-saving") + " eval_metrics.csv…";
         var pick = await fetch("/api/pick_export_path", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: "/api/export_eval_metrics",
@@ -6041,7 +6458,7 @@ async function renderSaveModel(node) {
       } else if (id === "eval__zip") {
         var mNid = ctx.evalModelNodeId;
         if (!mNid) { errors.push("eval.zip: sin modelo conectado"); continue; }
-        statEl.textContent = "Construyendo ZIP… (puede tardar unos segundos)";
+        statEl.textContent = T("save-building-zip");
         var pick = await fetch("/api/pick_export_path", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: "/api/export_eval_zip",
@@ -6072,7 +6489,7 @@ async function renderSaveModel(node) {
         var pNode = nodeById(parseInt(pNid));
         var ph    = pNode && pNode.data && pNode.data.plotHistory;
         if (!ph || !ph.length) { errors.push("plots.zip: no hay gráficas"); continue; }
-        statEl.textContent = "Construyendo ZIP de plots…";
+        statEl.textContent = T("save-building-plots");
         // Enviar plots al servidor para ZIP + diálogo nativo
         var plotsPayload = ph.map(function(p, idx) {
           return { label: p.label || ("plot_" + (idx+1)), img: p.img || p.src || "" };
@@ -6121,44 +6538,44 @@ async function renderLoadModel(node) {
       '<div style="padding:16px;display:flex;flex-direction:column;gap:14px;max-width:520px">' +
 
       // ── Selector de qué cargar (futuro: CSV, sesión…) ──────────────────
-      '<div class="fg"><div class="fl">¿Qué quieres cargar?</div>' +
+      '<div class="fg"><div class="fl">'+T("load-what")+'</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">' +
           '<label class="algo-btn" style="padding:10px">' +
             '<input type="radio" name="lm-what" value="model" checked>' +
-            '<span style="font-size:12px">🤖 Modelo (.pkl)</span></label>' +
-          '<label class="algo-btn" style="padding:10px;opacity:.45;pointer-events:none" title="Próximamente">' +
+            '<span style="font-size:12px">'+T("load-pkl")+'</span></label>' +
+          '<label class="algo-btn" style="padding:10px;opacity:.45;pointer-events:none" title="'+( lang==="es"?"Próximamente":"Coming soon")+'">' +
             '<input type="radio" name="lm-what" value="csv" disabled>' +
-            '<span style="font-size:12px">📄 CSV (próx.)</span></label>' +
+            '<span style="font-size:12px">'+T("load-csv-soon")+'</span></label>' +
         '</div>' +
       '</div>' +
 
       // ── Dropzone PKL ───────────────────────────────────────────────────
-      '<div class="fg"><div class="fl">Fichero .pkl</div>' +
-        '<div class="dropzone" id="lm-dz">📂 Suelta el .pkl o haz clic para buscar</div>' +
+      '<div class="fg"><div class="fl">'+T("load-pkl-file")+'</div>' +
+        '<div class="dropzone" id="lm-dz">'+T("load-drop-pkl")+'</div>' +
         '<input type="file" accept=".pkl" id="lm-fi" style="display:none">' +
       '</div>' +
 
       // ── Modo de evaluación ─────────────────────────────────────────────
       '<div class="fg" id="lm-mode-wrap" style="display:' + (loaded ? 'block' : 'none') + '">' +
-        '<div class="fl" style="margin-bottom:6px">Modo de evaluación</div>' +
+        '<div class="fl" style="margin-bottom:6px">'+T("load-eval-mode")+'</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
           '<label class="algo-btn" style="padding:10px">' +
             '<input type="radio" name="lm-mode" value="saved" ' + (mode==="saved"?"checked":"") + '>' +
-            '<span style="font-size:11px;line-height:1.4">🗂️ Usar test set<br><span style="color:var(--sec)">del entrenamiento original</span></span></label>' +
+            '<span style="font-size:11px;line-height:1.4">'+T("load-saved")+'<br><span style="color:var(--sec)">'+T("load-saved-sub")+'</span></span></label>' +
           '<label class="algo-btn" style="padding:10px">' +
             '<input type="radio" name="lm-mode" value="new" ' + (mode==="new"?"checked":"") + '>' +
-            '<span style="font-size:11px;line-height:1.4">📤 Datos nuevos<br><span style="color:var(--sec)">sube un CSV distinto</span></span></label>' +
+            '<span style="font-size:11px;line-height:1.4">'+T("load-new")+'<br><span style="color:var(--sec)">'+T("load-new-sub")+'</span></span></label>' +
         '</div>' +
       '</div>' +
 
       // ── Dropzone CSV nuevos datos ──────────────────────────────────────
       '<div id="lm-csv-wrap" style="display:none">' +
-        '<div class="fg"><div class="fl">CSV con datos nuevos</div>' +
-          '<div class="dropzone" id="lm-csv-dz">📄 Suelta el CSV o haz clic</div>' +
+        '<div class="fg"><div class="fl">'+T("load-csv-file")+'</div>' +
+          '<div class="dropzone" id="lm-csv-dz">'+T("load-drop-csv")+'</div>' +
           '<input type="file" accept=".csv" id="lm-csv-fi" style="display:none">' +
         '</div>' +
         '<div style="font-size:11px;color:var(--sec);margin-top:4px">' +
-          'Debe tener las mismas columnas que el dataset de entrenamiento.' +
+          T("load-csv-hint") +
         '</div>' +
       '</div>' +
 
@@ -6167,7 +6584,7 @@ async function renderLoadModel(node) {
         (loaded ? _lmInfoHtml(loaded) : '') +
       '</div>' +
 
-      '<button class="btn btn-black" id="btn-lm-eval" style="width:100%;display:' + (loaded ? 'block' : 'none') + '">▶ Evaluar</button>' +
+      '<button class="btn btn-black" id="btn-lm-eval" style="width:100%;display:' + (loaded ? 'block' : 'none') + '">'+T("load-eval-btn")+'</button>' +
       '<div id="lm-results" style="margin-top:4px"></div>' +
     '</div>';
 
@@ -6210,12 +6627,12 @@ async function renderLoadModel(node) {
     var metricLabel = isReg
       ? (tm.r2  != null ? '✅ Test R²: <b>' + tm.r2  + '</b>' : '')
       : (tm.f1  != null ? '✅ Test F1: <b>' + tm.f1  + '</b>' : '');
-    return '<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:4px">Modelo cargado</div>' +
+    return '<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:4px">'+T("load-model-title")+'</div>' +
       '<div style="font-size:11px;color:var(--sec);line-height:1.7">' +
-        '🧮 Tipo: <b>' + (meta.model_type || '—').toUpperCase() + '</b><br>' +
-        '🎯 Variable objetivo: <b>' + (meta.target_col || '—') + '</b><br>' +
-        '📊 Problema: <b>' + (meta.problem_type || '—') + '</b><br>' +
-        '📐 Features: <b>' + ((meta.features || []).length) + '</b><br>' +
+        T("load-type") + '<b>' + (meta.model_type || '—').toUpperCase() + '</b><br>' +
+        T("load-target") + '<b>' + (meta.target_col || '—') + '</b><br>' +
+        T("load-problem") + '<b>' + (meta.problem_type || '—') + '</b><br>' +
+        T("load-features") + '<b>' + ((meta.features || []).length) + '</b><br>' +
         metricLabel +
       '</div>';
   }
@@ -6223,11 +6640,11 @@ async function renderLoadModel(node) {
   async function handlePkl(file) {
     if (!file) return;
     var dz = document.getElementById("lm-dz");
-    dz.textContent = "⏳ Cargando " + file.name + "…";
+    dz.textContent = T("load-loading") + file.name + "…";
     var fd = new FormData(); fd.append("file", file); fd.append("node_id", String(node.id));
     var resp = await fetch("/api/load_tab_model", { method: "POST", body: fd });
     var d = await resp.json();
-    if (d.error) { toast(d.error); dz.textContent = "📂 Suelta el .pkl o haz clic para buscar"; return; }
+    if (d.error) { toast(d.error); dz.textContent = T("load-drop-pkl"); return; }
     dz.textContent = "✓ " + file.name;
     loaded = d; node.data.loadedMeta = d;
     document.getElementById("lm-mode-wrap").style.display = "block";
@@ -6235,12 +6652,12 @@ async function renderLoadModel(node) {
     document.getElementById("lm-info").innerHTML = _lmInfoHtml(d);
     document.getElementById("btn-lm-eval").style.display = "block";
     setNS(node.id, (d.model_type || "modelo").toUpperCase() + " · " + (d.target_col || ""));
-    setNB(node.id, "cargado", "badge-info");
+    setNB(node.id, lang==="es"?"cargado":"loaded", "badge-info");
   }
 
   async function runEval() {
     var resEl = document.getElementById("lm-results");
-    resEl.innerHTML = '<div class="loading" style="font-size:12px">Evaluando…</div>';
+    resEl.innerHTML = '<div class="loading" style="font-size:12px">'+T("load-evaluating")+'</div>';
     var body = { node_id: String(node.id), mode: mode };
     if (mode === "new" && node.data.newCsvFile) {
       var fd = new FormData();
@@ -6287,16 +6704,16 @@ async function renderLoadModel(node) {
           '<div class="mcard"><div class="mval">' + (m.recall||'—') + '</div><div class="mlbl">Recall</div></div>' +
         '</div>';
     var skippedWarn = (d.skipped_rows > 0)
-      ? '<div style="margin-top:6px;padding:6px 8px;background:#7c3a1e22;border-radius:6px;font-size:11px;color:#f59e0b">⚠️ ' + d.skipped_rows + ' fila' + (d.skipped_rows > 1 ? 's eliminadas' : ' eliminada') + ' por valores no numéricos o vacíos.</div>'
+      ? '<div style="margin-top:6px;padding:6px 8px;background:#7c3a1e22;border-radius:6px;font-size:11px;color:#f59e0b">⚠️ ' + d.skipped_rows + ' ' + (d.skipped_rows > 1 ? T("load-skipped-rows") : T("load-skipped-row")) + '</div>'
       : '';
     resEl.innerHTML =
       '<hr class="sep">' +
-      '<div class="fl" style="margin-bottom:6px">Resultado evaluación' + (d.source === "new" ? " (datos nuevos, " + (d.n_rows||0) + " filas)" : " (test set original)") + '</div>' +
+      '<div class="fl" style="margin-bottom:6px">'+T("load-result") + (d.source === "new" ? " (" + T("load-result-new") + ", " + (d.n_rows||0) + (lang==="es"?" filas)":" rows)") : " (" + T("load-result-original") + ")") + '</div>' +
       metricsHtml +
       skippedWarn +
-      (d.cm_img ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">Matriz de confusión</div>' +
+      (d.cm_img ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">'+T("load-cm")+'</div>' +
         '<img src="data:image/png;base64,' + d.cm_img + '" style="width:100%;cursor:zoom-in;border-radius:6px" onclick="expandImg(this.src)"></div>' : '') +
-      (d.report_txt ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">Classification report</div>' +
+      (d.report_txt ? '<div style="margin-top:10px"><div class="fl" style="margin-bottom:4px;font-size:11px">'+T("load-cls-report")+'</div>' +
         '<pre style="font-size:10px;background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;color:var(--ink)">' + d.report_txt + '</pre></div>' : '');
     setOK(node.id, true);
     setNB(node.id, isReg ? "R²=" + (m.r2||'—') : "F1=" + (m.f1||'—'), "badge-ok");
