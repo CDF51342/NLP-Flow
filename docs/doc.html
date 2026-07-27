@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NLP Flow v4 — Documentación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f5f5f5; --card:#fff; --ink:#121212; --sec:#656565; --ter:#909090;
+  --border:#dedede; --hair:rgba(18,18,18,.07);
+  --accent:#19e68c; --accent-tint:rgba(25,230,140,.13);
+  --shadow:0 2px 4px rgba(0,0,0,.04),0 8px 20px -8px rgba(0,0,0,.12);
+  --shadow-h:0 2px 6px rgba(0,0,0,.06),0 12px 28px -8px rgba(0,0,0,.16);
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --radius:13px; --pill:99px; --fast:140ms ease;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
+a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
+
+/* ── Topbar ── */
+.topbar{display:flex;align-items:center;gap:10px;padding:0 24px;background:var(--card);border-bottom:1.5px solid var(--border);height:54px;position:sticky;top:0;z-index:100}
+.logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.logo-grid span{width:9px;height:9px;border-radius:2px;display:block}
+.topbar-name{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.topbar-ver{font-size:12px;color:var(--sec);margin-left:2px;font-weight:400}
+.topbar-spacer{flex:1}
+.lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden}
+.lang-btn{padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast)}
+.lang-btn.active{background:var(--accent-tint);color:var(--ink);border-bottom:2px solid var(--accent)}
+.lang-btn:hover:not(.active){background:var(--bg)}
+
+/* ── Page ── */
+.page{max-width:960px;margin:0 auto;padding:44px 24px 100px}
+.lang-content{display:none}.lang-content.visible{display:block}
+
+/* ── Hero (full width) ── */
+.hero{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:40px 44px;margin-bottom:32px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:280px;height:280px;border-radius:50%;background:var(--accent-tint);pointer-events:none}
+.hero h1{font-size:32px;font-weight:700;letter-spacing:-.025em;margin-bottom:10px;position:relative}
+.hero h1 span{color:var(--accent)}
+.hero p{font-size:15.5px;color:var(--sec);max-width:560px;position:relative}
+.hero-badges{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap;position:relative}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:4px 11px;border-radius:var(--pill)}
+.badge-green{background:var(--accent-tint);color:#0a7a45}
+.badge-gray{background:var(--bg);border:1.5px solid var(--border);color:var(--sec)}
+
+/* ── Row (horizontal pair / triple) ── */
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:680px){.row-2,.row-3{grid-template-columns:1fr}}
+.row-2 > *, .row-3 > *{margin-bottom:0}
+
+/* ── Section title ── */
+.sec-title{font-size:17px;font-weight:700;margin:36px 0 14px;display:flex;align-items:center;gap:9px}
+.sec-title::before{content:'';display:block;width:4px;height:20px;background:var(--accent);border-radius:var(--pill);flex-shrink:0}
+.sec-title.no-top{margin-top:0}
+
+/* ── Card ── */
+.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:24px 28px;box-shadow:var(--shadow);margin-bottom:14px}
+.card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.card-label::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:var(--pill);display:block}
+
+/* ── Code ── */
+pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:16px 20px;font-size:13px;overflow-x:auto;margin-bottom:14px;line-height:1.55}
+code{font-family:'SF Mono','Fira Code',monospace}
+p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12.5px}
+
+/* ── File tree ── */
+.tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:18px 22px;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.9;margin-bottom:0}
+.tree .dir{color:var(--accent)}.tree .comment{color:#888}
+
+/* ── Block categories ── */
+.cat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin:20px 0 8px;padding-left:6px;border-left:3px solid var(--accent)}
+
+/* ── Block accordion ── */
+.block-item{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow);transition:box-shadow var(--fast)}
+.block-item:hover{box-shadow:var(--shadow-h)}
+.block-header{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;user-select:none}
+.block-icon{font-size:22px;flex-shrink:0}
+.block-meta{flex:1}
+.block-name{font-size:14px;font-weight:700}
+.block-tagline{font-size:12.5px;color:var(--sec);margin-top:2px}
+.block-ports-row{display:flex;gap:6px;flex-shrink:0}
+.port-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:var(--pill)}
+.port-in{background:#e0f0ff;color:#1a6cf6}
+.port-out{background:var(--accent-tint);color:#0a7a45}
+.port-none{background:var(--bg);border:1px solid var(--border);color:var(--ter)}
+.block-chevron{color:var(--ter);font-size:11px;transition:transform var(--fast);flex-shrink:0;margin-left:8px}
+.block-item.open .block-chevron{transform:rotate(180deg)}
+.block-body{display:none;padding:0 18px 18px;border-top:1px solid var(--hair)}
+.block-item.open .block-body{display:block}
+.block-body p{font-size:13.5px;color:var(--sec);margin:14px 0 12px}
+.conn-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.conn-group{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;flex:1;min-width:160px}
+.conn-group-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:8px}
+.conn-chips{display:flex;flex-wrap:wrap;gap:5px}
+.conn-chip{font-size:12px;font-weight:600;padding:3px 10px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--pill);color:var(--ink)}
+.conn-chip.none{color:var(--ter);font-style:italic;border-style:dashed}
+.block-example{background:#1a1a1a;border-radius:10px;padding:14px;margin-top:4px;display:flex;align-items:center;justify-content:center;min-height:60px}
+.mock-pipeline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center}
+.mock-node{background:#2a2a2a;border:1.5px solid #3a3a3a;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;color:#e8e8e8;white-space:nowrap}
+.mock-node.active{border-color:var(--accent);color:var(--accent)}
+.mock-arrow{color:var(--accent);font-size:16px;font-weight:700}
+
+/* ── Pipeline ── */
+.pipeline{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:14px 18px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);margin:10px 0}
+.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;white-space:nowrap}
+.pip-arrow{color:var(--accent);font-size:20px;padding:0 5px;font-weight:700;line-height:1}
+.pip-sep{margin:0 12px;color:var(--ter);font-size:13px}
+
+/* ── Tables ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:10px 14px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
+td{padding:10px 14px;border-bottom:1px solid var(--hair)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg)}
+
+/* ── Kbd ── */
+kbd{background:var(--card);border:1.5px solid var(--border);border-radius:5px;padding:1px 7px;font-size:12px;box-shadow:0 1px 0 var(--border)}
+
+/* ── Note ── */
+.note{background:var(--accent-tint);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;font-size:13.5px;color:var(--ink);margin:12px 0 0}
+
+/* ── Prose ── */
+p{font-size:14.5px;margin-bottom:12px}
+ul,ol{padding-left:20px;margin-bottom:12px}
+li{font-size:14.5px;margin-bottom:5px}
+h3{font-size:14px;font-weight:700;margin:18px 0 10px}
+
+/* ── Footer ── */
+.footer{margin-top:60px;padding-top:28px;border-top:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.footer-credits{font-size:13px;color:var(--sec)}
+.footer-credits strong{color:var(--ink)}
+.footer-credits a{color:var(--accent);font-weight:600}
+.footer-logo{display:flex;align-items:center;gap:8px;opacity:.45}
+.footer-logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.footer-logo-grid span{width:7px;height:7px;border-radius:2px;display:block}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo-grid">
+    <span style="background:#121212"></span><span style="background:#19e68c"></span>
+    <span style="background:#19e68c"></span><span style="background:#121212"></span>
+  </div>
+  <span class="topbar-name">NLP Flow</span><span class="topbar-ver">v4 · docs</span>
+  <div class="topbar-spacer"></div>
+  <div class="lang-bar">
+    <button class="lang-btn active" onclick="setLang('es')">🇪🇸 Español</button>
+    <button class="lang-btn"        onclick="setLang('en')">🇬🇧 English</button>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════ ESPAÑOL ══════════════════════ -->
+<div class="lang-content visible" id="content-es">
+
+  <!-- Hero (ancho completo) -->
+  <div class="hero">
+    <h1>NLP Flow <span>v4</span></h1>
+    <p>Entorno visual de machine learning basado en pipelines. Conectas bloques en un canvas, configuras cada uno con doble clic y ejecutas el flujo completo con un botón. Sin código.</p>
+    <div class="hero-badges">
+      <span class="badge badge-green">Sin código</span>
+      <span class="badge badge-gray">Python 3.10+</span>
+      <span class="badge badge-gray">Flask</span>
+      <span class="badge badge-gray">scikit-learn</span>
+      <span class="badge badge-gray">localhost:5053</span>
+    </div>
+  </div>
+
+  <!-- Fila 1: Arranque + Estructura -->
+  <div class="row-2">
+    <div class="card">
+      <div class="card-label">Requisitos y arranque</div>
+      <p>Instala dependencias:</p>
+      <pre><code>pip install -r requirements.txt</code></pre>
+      <p><strong>Modo escritorio</strong> — ventana nativa 1440×900:</p>
+      <pre><code>python main.py</code></pre>
+      <p><strong>Solo navegador:</strong></p>
+      <pre style="margin-bottom:0"><code>python server.py
+# http://localhost:5053</code></pre>
+    </div>
+    <div class="card">
+      <div class="card-label">Estructura del proyecto</div>
+      <div class="tree">
+        <span class="dir">NLP-flow/</span><br>
+        ├── main.py      <span class="comment"># Flask + ventana</span><br>
+        ├── server.py    <span class="comment"># Backend 55+ rutas</span><br>
+        ├── requirements.txt<br>
+        ├── <span class="dir">docs/</span><br>
+        │&nbsp;&nbsp;└── doc.html <span class="comment"># GitHub Pages</span><br>
+        └── <span class="dir">static/</span><br>
+        &nbsp;&nbsp;&nbsp;├── index.html<br>
+        &nbsp;&nbsp;&nbsp;└── style.css
+      </div>
+    </div>
+  </div>
+
+  <!-- Bloques (ancho completo) -->
+  <div class="sec-title">Bloques disponibles</div>
+  <p style="color:var(--sec);font-size:14px;margin-bottom:14px">Haz clic en cualquier bloque para ver descripción, conexiones permitidas y un ejemplo.</p>
+
+  <div class="cat-label">📦 Datos de entrada</div>
+  <div id="es-blocks-data"></div>
+  <div class="cat-label">🔧 Procesado</div>
+  <div id="es-blocks-proc"></div>
+  <div class="cat-label">📉 Modelos tabulares</div>
+  <div id="es-blocks-models"></div>
+  <div class="cat-label">🧠 NLP — texto</div>
+  <div id="es-blocks-nlp"></div>
+
+  <!-- Fila 2: Pipelines + Datasets -->
+  <div class="row-2" style="margin-top:36px">
+    <div class="card">
+      <div class="card-label">Pipelines típicas</div>
+      <h3 style="margin-top:4px">Clasificación / regresión tabular</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
+        <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow">→</div>
+        <div class="pip-node">📋 Evaluación</div><div class="pip-arrow">→</div>
+        <div class="pip-node">💾 Guardar</div>
+      </div>
+      <h3>Exploración</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔬 Análisis</div>
+        <span class="pip-sep">o</span>
+        <div class="pip-node">📊 Plots</div>
+      </div>
+      <h3>NLP — texto</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🧠 Entrena</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🎯 Clasifica</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Datasets incluidos</div>
+      <h3 style="margin-top:4px">Texto</h3>
+      <div class="tbl-wrap"><table>
+        <tr><th>Dataset</th><th>Tarea</th></tr>
+        <tr><td>🎬 Movie Reviews</td><td>Clasificación</td></tr>
+        <tr><td>📧 Spam vs Ham</td><td>Clasificación</td></tr>
+        <tr><td>😊 Twitter Sentiment</td><td>Clasificación</td></tr>
+        <tr><td>📰 News</td><td>Topic model</td></tr>
+      </table></div>
+      <h3>Tabulares</h3>
+      <div class="tbl-wrap"><table>
+        <tr><th>Dataset</th><th>Tarea</th></tr>
+        <tr><td>🏥 Patient Health Risk</td><td>Clasificación</td></tr>
+        <tr><td>🏠 California Housing</td><td>Regresión</td></tr>
+      </table></div>
+      <div class="note">También puedes subir tu propio CSV desde el bloque <strong>Datos</strong>.</div>
+    </div>
+  </div>
+
+  <!-- Fila 3: Atajos + Guardar + Técnicas (tres columnas) -->
+  <div class="row-3">
+    <div class="card">
+      <div class="card-label">Atajos de teclado</div>
+      <div class="tbl-wrap"><table>
+        <tr><th>Atajo</th><th>Acción</th></tr>
+        <tr><td>Doble clic</td><td>Abre popup del bloque</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + clic</td><td>Multi-selección</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>A</kbd></td><td>Seleccionar todos</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>C/V</kbd></td><td>Copiar / Pegar</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>Z/Y</kbd></td><td>Deshacer / Rehacer</td></tr>
+        <tr><td><kbd>Supr</kbd> / <kbd>⌫</kbd></td><td>Eliminar selección</td></tr>
+        <tr><td>Rueda ratón</td><td>Zoom in/out</td></tr>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Guardar y cargar</div>
+      <ul>
+        <li><strong>💾 Guardar sesión (.zip)</strong> — canvas + configuración completa</li>
+        <li><strong>📂 Cargar sesión (.zip)</strong> — restaura un canvas guardado</li>
+        <li><strong>🗺 Exportar (.json)</strong> — estructura de bloques y conexiones</li>
+      </ul>
+      <div class="note">Los datos no se persisten entre sesiones. Al restaurar, recarga el dataset en el bloque Datos.</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Notas técnicas</div>
+      <ul>
+        <li>Servidor en <code>localhost:5053</code>, sin puertos externos</li>
+        <li>Modelos en memoria — se borran al reiniciar</li>
+        <li>Gráficas con matplotlib → PNG en base64</li>
+        <li>Cada nodo Datos tiene su slot <code>_NODE_DATA[id]</code> — pipelines en paralelo posibles</li>
+        <li>SPA sin frameworks — estado del canvas en memoria JS</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-credits">
+      Desarrollado por <strong>Carlos Díez-Fenoy</strong> ·
+      <a href="https://github.com/cdf51342" target="_blank">@CDF51342</a> en GitHub
+    </div>
+    <div class="footer-logo">
+      <div class="footer-logo-grid">
+        <span style="background:#121212"></span><span style="background:#19e68c"></span>
+        <span style="background:#19e68c"></span><span style="background:#121212"></span>
+      </div>
+      <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+    </div>
+  </div>
+
+</div><!-- /es -->
+
+<!-- ══════════════════════ ENGLISH ══════════════════════ -->
+<div class="lang-content" id="content-en">
+
+  <div class="hero">
+    <h1>NLP Flow <span>v4</span></h1>
+    <p>Visual machine learning environment based on pipelines. Connect blocks on a canvas, configure each one with a double-click, and run the full flow with a single button. No coding required.</p>
+    <div class="hero-badges">
+      <span class="badge badge-green">No code</span>
+      <span class="badge badge-gray">Python 3.10+</span>
+      <span class="badge badge-gray">Flask</span>
+      <span class="badge badge-gray">scikit-learn</span>
+      <span class="badge badge-gray">localhost:5053</span>
+    </div>
+  </div>
+
+  <div class="row-2">
+    <div class="card">
+      <div class="card-label">Requirements & startup</div>
+      <p>Install dependencies:</p>
+      <pre><code>pip install -r requirements.txt</code></pre>
+      <p><strong>Desktop mode</strong> — native window 1440×900:</p>
+      <pre><code>python main.py</code></pre>
+      <p><strong>Browser only:</strong></p>
+      <pre style="margin-bottom:0"><code>python server.py
+# http://localhost:5053</code></pre>
+    </div>
+    <div class="card">
+      <div class="card-label">Project structure</div>
+      <div class="tree">
+        <span class="dir">NLP-flow/</span><br>
+        ├── main.py      <span class="comment"># Flask + window</span><br>
+        ├── server.py    <span class="comment"># Backend 55+ routes</span><br>
+        ├── requirements.txt<br>
+        ├── <span class="dir">docs/</span><br>
+        │&nbsp;&nbsp;└── doc.html <span class="comment"># GitHub Pages</span><br>
+        └── <span class="dir">static/</span><br>
+        &nbsp;&nbsp;&nbsp;├── index.html<br>
+        &nbsp;&nbsp;&nbsp;└── style.css
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-title">Available blocks</div>
+  <p style="color:var(--sec);font-size:14px;margin-bottom:14px">Click any block to see its description, allowed connections and a usage example.</p>
+
+  <div class="cat-label">📦 Data input</div>
+  <div id="en-blocks-data"></div>
+  <div class="cat-label">🔧 Processing</div>
+  <div id="en-blocks-proc"></div>
+  <div class="cat-label">📉 Tabular models</div>
+  <div id="en-blocks-models"></div>
+  <div class="cat-label">🧠 NLP — text</div>
+  <div id="en-blocks-nlp"></div>
+
+  <div class="row-2" style="margin-top:36px">
+    <div class="card">
+      <div class="card-label">Typical pipelines</div>
+      <h3 style="margin-top:4px">Tabular classification / regression</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
+        <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow">→</div>
+        <div class="pip-node">📋 Evaluation</div><div class="pip-arrow">→</div>
+        <div class="pip-node">💾 Save</div>
+      </div>
+      <h3>Data exploration</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔬 Analysis</div>
+        <span class="pip-sep">or</span>
+        <div class="pip-node">📊 Plots</div>
+      </div>
+      <h3>NLP — text</h3>
+      <div class="pipeline">
+        <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🧠 Training</div><div class="pip-arrow">→</div>
+        <div class="pip-node">🎯 Classify</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Included datasets</div>
+      <h3 style="margin-top:4px">Text</h3>
+      <div class="tbl-wrap"><table>
+        <tr><th>Dataset</th><th>Task</th></tr>
+        <tr><td>🎬 Movie Reviews</td><td>Classification</td></tr>
+        <tr><td>📧 Spam vs Ham</td><td>Classification</td></tr>
+        <tr><td>😊 Twitter Sentiment</td><td>Classification</td></tr>
+        <tr><td>📰 News</td><td>Topic model</td></tr>
+      </table></div>
+      <h3>Tabular</h3>
+      <div class="tbl-wrap"><table>
+        <tr><th>Dataset</th><th>Task</th></tr>
+        <tr><td>🏥 Patient Health Risk</td><td>Classification</td></tr>
+        <tr><td>🏠 California Housing</td><td>Regression</td></tr>
+      </table></div>
+      <div class="note">You can also upload your own CSV from the <strong>Data</strong> block.</div>
+    </div>
+  </div>
+
+  <div class="row-3">
+    <div class="card">
+      <div class="card-label">Keyboard shortcuts</div>
+      <div class="tbl-wrap"><table>
+        <tr><th>Shortcut</th><th>Action</th></tr>
+        <tr><td>Double-click</td><td>Open block popup</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + click</td><td>Multi-select</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>A</kbd></td><td>Select all</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>C/V</kbd></td><td>Copy / Paste</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd> + <kbd>Z/Y</kbd></td><td>Undo / Redo</td></tr>
+        <tr><td><kbd>Del</kbd> / <kbd>⌫</kbd></td><td>Delete selection</td></tr>
+        <tr><td>Mouse wheel</td><td>Zoom in/out</td></tr>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Saving and loading</div>
+      <ul>
+        <li><strong>💾 Save session (.zip)</strong> — canvas + full configuration</li>
+        <li><strong>📂 Load session (.zip)</strong> — restores a saved canvas</li>
+        <li><strong>🗺 Export (.json)</strong> — block structure and connections</li>
+      </ul>
+      <div class="note">Data is not persisted between sessions. When restoring, reload the dataset in the Data block.</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Technical notes</div>
+      <ul>
+        <li>Server on <code>localhost:5053</code>, no external ports</li>
+        <li>Models in memory — cleared on server restart</li>
+        <li>Plots via matplotlib → base64 PNG</li>
+        <li>Each Data node has its own slot <code>_NODE_DATA[id]</code></li>
+        <li>Framework-free SPA — canvas state in JS memory</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-credits">
+      Developed by <strong>Carlos Díez-Fenoy</strong> ·
+      <a href="https://github.com/cdf51342" target="_blank">@CDF51342</a> on GitHub
+    </div>
+    <div class="footer-logo">
+      <div class="footer-logo-grid">
+        <span style="background:#121212"></span><span style="background:#19e68c"></span>
+        <span style="background:#19e68c"></span><span style="background:#121212"></span>
+      </div>
+      <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+    </div>
+  </div>
+
+</div><!-- /en -->
+</div><!-- /page -->
+
+<script>
+var BLOCKS = {
+  es: {
+    data: [
+      { icon:'📂', name:'Datos', tagline:'Carga datasets y configura columnas', portsIn:[], portsOut:['Análisis','Plots','Preprocesado','Regresión Lineal','Entrenamiento NLP','Topic Model'],
+        desc:'Punto de entrada de cualquier pipeline. Selecciona un dataset built-in (texto o tabular) o sube un CSV propio. Define la columna objetivo (target) y las features.',
+        example:{ nodes:['📂 Datos','🔧 Preprocesado','📉 Reg. Lineal'], active:'📂 Datos' }
+      },
+      { icon:'📂', name:'Cargar Modelo', tagline:'Carga un modelo .pkl guardado', portsIn:[], portsOut:['Evaluación'],
+        desc:'Carga un modelo entrenado y guardado en formato .pkl. Lo evalúa con el test set guardado o con datos nuevos en CSV.',
+        example:{ nodes:['📂 Cargar Modelo','📋 Evaluación'], active:'📂 Cargar Modelo' }
+      }
+    ],
+    proc: [
+      { icon:'🔬', name:'Análisis', tagline:'Estadísticas descriptivas del dataset', portsIn:['Datos'], portsOut:[],
+        desc:'Muestra información del dataset: filas, columnas, tipos, valores nulos y estadísticas básicas. Solo recibe datos, no los pasa adelante.',
+        example:{ nodes:['📂 Datos','🔬 Análisis'], active:'🔬 Análisis' }
+      },
+      { icon:'📊', name:'Plots', tagline:'Visualizaciones exploratorias', portsIn:['Datos'], portsOut:['Preprocesado','Regresión Lineal'],
+        desc:'Genera gráficas exploratorias: histograma, boxplot, scatter, correlación, barras, tarta, líneas. Incluye historial para comparar gráficas. Las opciones se adaptan al tipo de problema.',
+        example:{ nodes:['📂 Datos','📊 Plots','🔧 Preprocesado'], active:'📊 Plots' }
+      },
+      { icon:'🔧', name:'Preprocesado', tagline:'Limpieza y transformación de datos', portsIn:['Datos','Plots'], portsOut:['Regresión Lineal','Entrenamiento NLP'],
+        desc:'Imputación (media, mediana, moda, constante), normalización (MinMax, Standard, Robust), codificación (OneHot, Label), split train/test, selección de features y tratamiento de desbalanceo.',
+        example:{ nodes:['📂 Datos','🔧 Preprocesado','📉 Reg. Lineal'], active:'🔧 Preprocesado' }
+      }
+    ],
+    models: [
+      { icon:'📉', name:'Regresión Lineal', tagline:'OLS, Ridge y LASSO — tabular', portsIn:['Datos','Plots','Preprocesado'], portsOut:['Evaluación','Guardar'],
+        desc:'Entrena un modelo lineal sobre datos tabulares. Detecta automáticamente si el target es numérico (regresión) o categórico (clasificación). Soporta OLS, Ridge (L2) y LASSO (L1) con grid search CV para optimizar lambda o C.',
+        example:{ nodes:['🔧 Preprocesado','📉 Reg. Lineal','📋 Evaluación'], active:'📉 Reg. Lineal' }
+      },
+      { icon:'📋', name:'Evaluación', tagline:'Métricas y visualizaciones del modelo', portsIn:['Regresión Lineal','Cargar Modelo'], portsOut:['Guardar'],
+        desc:'Clasificación: accuracy, F1, precisión, recall, matriz de confusión, curva ROC, frontera de decisión. Regresión: RMSE, MAE, R², supuestos del modelo. Incluye tab de CV con resultados del grid search.',
+        example:{ nodes:['📉 Reg. Lineal','📋 Evaluación','💾 Guardar'], active:'📋 Evaluación' }
+      },
+      { icon:'💾', name:'Guardar', tagline:'Exporta modelo, métricas y gráficas', portsIn:['Regresión Lineal','Evaluación'], portsOut:[],
+        desc:'Exporta: modelo como .pkl (incluye X_test, y_test y nombres de columnas), métricas como .json o .csv, y gráficas como .png.',
+        example:{ nodes:['📋 Evaluación','💾 Guardar'], active:'💾 Guardar' }
+      }
+    ],
+    nlp: [
+      { icon:'🧠', name:'Entrenamiento NLP', tagline:'TF-IDF + clasificador sobre texto', portsIn:['Datos','Preprocesado'], portsOut:['Clasificar NLP'],
+        desc:'Pipeline de texto completo: tokenización, TF-IDF y clasificador. Compatible con Movie Reviews, Spam vs Ham y Twitter Sentiment.',
+        example:{ nodes:['📂 Datos','🧠 Entrenamiento','🎯 Clasificar'], active:'🧠 Entrenamiento' }
+      },
+      { icon:'🗂️', name:'Topic Model', tagline:'LDA — descubrimiento de temas', portsIn:['Datos'], portsOut:[],
+        desc:'Aplica LDA sobre un corpus para descubrir temas latentes. Muestra los términos más representativos de cada topic.',
+        example:{ nodes:['📂 Datos','🗂️ Topic Model'], active:'🗂️ Topic Model' }
+      },
+      { icon:'🎯', name:'Clasificar NLP', tagline:'Clasifica nuevas muestras de texto', portsIn:['Entrenamiento NLP'], portsOut:[],
+        desc:'Recibe texto nuevo (escrito o en CSV) y lo clasifica con el modelo NLP entrenado en el bloque anterior.',
+        example:{ nodes:['🧠 Entrenamiento','🎯 Clasificar NLP'], active:'🎯 Clasificar NLP' }
+      }
+    ]
+  },
+  en: {
+    data: [
+      { icon:'📂', name:'Data', tagline:'Load datasets and configure columns', portsIn:[], portsOut:['Analysis','Plots','Preprocessing','Linear Regression','NLP Training','Topic Model'],
+        desc:'Entry point for any pipeline. Select a built-in dataset (text or tabular) or upload your own CSV. Defines the target column and feature columns.',
+        example:{ nodes:['📂 Data','🔧 Preprocessing','📉 Lin. Reg.'], active:'📂 Data' }
+      },
+      { icon:'📂', name:'Load Model', tagline:'Load a saved .pkl model', portsIn:[], portsOut:['Evaluation'],
+        desc:'Loads a previously trained and saved .pkl model. Evaluates it with the saved test set or with new CSV data.',
+        example:{ nodes:['📂 Load Model','📋 Evaluation'], active:'📂 Load Model' }
+      }
+    ],
+    proc: [
+      { icon:'🔬', name:'Analysis', tagline:'Descriptive statistics of the dataset', portsIn:['Data'], portsOut:[],
+        desc:'Shows dataset info: rows, columns, types, missing values and basic statistics. Receives data only, does not pass it forward.',
+        example:{ nodes:['📂 Data','🔬 Analysis'], active:'🔬 Analysis' }
+      },
+      { icon:'📊', name:'Plots', tagline:'Exploratory visualisations', portsIn:['Data'], portsOut:['Preprocessing','Linear Regression'],
+        desc:'Generates exploratory plots: histogram, boxplot, scatter, correlation, bar chart, pie, line. Plot history for comparison. Options adapt to problem type.',
+        example:{ nodes:['📂 Data','📊 Plots','🔧 Preprocessing'], active:'📊 Plots' }
+      },
+      { icon:'🔧', name:'Preprocessing', tagline:'Data cleaning and transformation', portsIn:['Data','Plots'], portsOut:['Linear Regression','NLP Training'],
+        desc:'Imputation (mean, median, mode, constant), normalisation (MinMax, Standard, Robust), encoding (OneHot, Label), train/test split, feature selection and class imbalance handling.',
+        example:{ nodes:['📂 Data','🔧 Preprocessing','📉 Lin. Reg.'], active:'🔧 Preprocessing' }
+      }
+    ],
+    models: [
+      { icon:'📉', name:'Linear Regression', tagline:'OLS, Ridge and LASSO — tabular', portsIn:['Data','Plots','Preprocessing'], portsOut:['Evaluation','Save'],
+        desc:'Trains a linear model on tabular data. Auto-detects numeric (regression) vs categorical (classification) target. Supports OLS, Ridge (L2) and LASSO (L1) with CV grid search for lambda or C.',
+        example:{ nodes:['🔧 Preprocessing','📉 Lin. Reg.','📋 Evaluation'], active:'📉 Lin. Reg.' }
+      },
+      { icon:'📋', name:'Evaluation', tagline:'Metrics and model visualisations', portsIn:['Linear Regression','Load Model'], portsOut:['Save'],
+        desc:'Classification: accuracy, F1, precision, recall, confusion matrix, ROC curve, decision boundary. Regression: RMSE, MAE, R², model assumptions. CV tab with grid search results.',
+        example:{ nodes:['📉 Lin. Reg.','📋 Evaluation','💾 Save'], active:'📋 Evaluation' }
+      },
+      { icon:'💾', name:'Save', tagline:'Export model, metrics and plots', portsIn:['Linear Regression','Evaluation'], portsOut:[],
+        desc:'Exports: model as .pkl (includes X_test, y_test and column names), metrics as .json or .csv, plots as .png.',
+        example:{ nodes:['📋 Evaluation','💾 Save'], active:'💾 Save' }
+      }
+    ],
+    nlp: [
+      { icon:'🧠', name:'NLP Training', tagline:'TF-IDF + classifier on text', portsIn:['Data','Preprocessing'], portsOut:['Classify NLP'],
+        desc:'Full text pipeline: tokenisation, TF-IDF and classifier. Works with Movie Reviews, Spam vs Ham and Twitter Sentiment.',
+        example:{ nodes:['📂 Data','🧠 Training','🎯 Classify'], active:'🧠 Training' }
+      },
+      { icon:'🗂️', name:'Topic Model', tagline:'LDA — topic discovery', portsIn:['Data'], portsOut:[],
+        desc:'Applies LDA on a text corpus to discover latent topics. Shows most representative terms per topic.',
+        example:{ nodes:['📂 Data','🗂️ Topic Model'], active:'🗂️ Topic Model' }
+      },
+      { icon:'🎯', name:'Classify NLP', tagline:'Classify new text samples', portsIn:['NLP Training'], portsOut:[],
+        desc:'Receives new text (typed or CSV) and classifies it using the trained NLP model from the previous block.',
+        example:{ nodes:['🧠 Training','🎯 Classify NLP'], active:'🎯 Classify NLP' }
+      }
+    ]
+  }
+};
+
+var L = {
+  es:{ inLabel:'Acepta desde', outLabel:'Conecta hacia', none:'ninguno' },
+  en:{ inLabel:'Accepts from',  outLabel:'Connects to',  none:'none' }
+};
+
+function buildBlock(b, lang) {
+  var lb = L[lang];
+  var inHtml  = b.portsIn.length  ? b.portsIn.map(function(p){return'<span class="conn-chip">'+p+'</span>';}).join('') : '<span class="conn-chip none">'+lb.none+'</span>';
+  var outHtml = b.portsOut.length ? b.portsOut.map(function(p){return'<span class="conn-chip">'+p+'</span>';}).join('') : '<span class="conn-chip none">'+lb.none+'</span>';
+  var pinLabel  = b.portsIn.length  ? (lang==='es'?'← entrada':'← input')  : (lang==='es'?'sin entrada':'no input');
+  var poutLabel = b.portsOut.length ? (lang==='es'?'salida →':'output →')  : (lang==='es'?'sin salida':'no output');
+  var pinCls  = b.portsIn.length  ? 'port-in'  : 'port-none';
+  var poutCls = b.portsOut.length ? 'port-out' : 'port-none';
+  var exNodes = b.example.nodes.map(function(n){
+    return '<div class="mock-node'+(n===b.example.active?' active':'')+'">'+n+'</div>';
+  }).join('<div class="mock-arrow">→</div>');
+  return '<div class="block-item">'
+    +'<div class="block-header" onclick="toggleBlock(this)">'
+    +'<span class="block-icon">'+b.icon+'</span>'
+    +'<div class="block-meta"><div class="block-name">'+b.name+'</div><div class="block-tagline">'+b.tagline+'</div></div>'
+    +'<div class="block-ports-row"><span class="port-badge '+pinCls+'">'+pinLabel+'</span><span class="port-badge '+poutCls+'">'+poutLabel+'</span></div>'
+    +'<span class="block-chevron">▼</span>'
+    +'</div>'
+    +'<div class="block-body">'
+    +'<p>'+b.desc+'</p>'
+    +'<div class="conn-row">'
+    +'<div class="conn-group"><div class="conn-group-label">'+lb.inLabel+'</div><div class="conn-chips">'+inHtml+'</div></div>'
+    +'<div class="conn-group"><div class="conn-group-label">'+lb.outLabel+'</div><div class="conn-chips">'+outHtml+'</div></div>'
+    +'</div>'
+    +'<div class="block-example"><div class="mock-pipeline">'+exNodes+'</div></div>'
+    +'</div>'
+    +'</div>';
+}
+
+function renderBlocks(lang) {
+  ['data','proc','models','nlp'].forEach(function(cat){
+    var el = document.getElementById(lang+'-blocks-'+cat);
+    if(el) el.innerHTML = BLOCKS[lang][cat].map(function(b){return buildBlock(b,lang);}).join('');
+  });
+}
+
+function toggleBlock(header) {
+  header.parentElement.classList.toggle('open');
+}
+
+function setLang(lang) {
+  var scrollY = window.scrollY;
+  document.getElementById('content-es').classList.toggle('visible', lang==='es');
+  document.getElementById('content-en').classList.toggle('visible', lang==='en');
+  document.querySelectorAll('.lang-btn').forEach(function(b,i){
+    b.classList.toggle('active',(i===0&&lang==='es')||(i===1&&lang==='en'));
+  });
+  document.documentElement.lang = lang;
+  // Mantener posición de scroll
+  requestAnimationFrame(function(){ window.scrollTo(0, scrollY); });
+}
+
+renderBlocks('es');
+renderBlocks('en');
+</script>
+</body>
+</html>
