@@ -128,7 +128,7 @@ var edges = [];
 var nodeIdCounter = 0;
 var classifyHistory = [];
 var vp = { x: 60, y: 60, scale: 1 };
-var connectState = { active: false, fromNid: null, mx: 0, my: 0, hoverNid: null };
+var connectState = { active: false, fromNid: null, fromDir: "out", mx: 0, my: 0, hoverNid: null };
 var pollTimer = null;
 var currentNode = null;
 var dragPaletteType = null; // type being dragged from sidebar
@@ -180,8 +180,8 @@ function restoreSnapshot(snap) {
         '<span class="node-badge" id="nb-' + n.id + '"></span>' +
       '</div>' +
       '<div class="node-sub" id="ns-' + n.id + '">—</div>';
-    if (sn.type !== "data")     html += '<div class="port port-in"  data-nid="' + n.id + '" data-dir="in" title="Arrastrar para conectar"></div>';
-    if (sn.type !== "classify") html += '<div class="port port-out" data-nid="' + n.id + '" data-dir="out" title="Arrastrar para conectar"></div>';
+    if (_nodeHasIn(sn.type))  html += '<div class="port port-in"  data-nid="' + n.id + '" data-dir="in" title="Arrastrar para conectar"></div>';
+    if (_nodeHasOut(sn.type)) html += '<div class="port port-out" data-nid="' + n.id + '" data-dir="out" title="Arrastrar para conectar"></div>';
     el.innerHTML = html;
     n.el = el;
     cworld.appendChild(el);
@@ -664,6 +664,8 @@ function setCanvasMode(mode) {
   document.getElementById("ctool-pan").classList.toggle("active", mode === "pan");
   document.getElementById("ctool-select").classList.toggle("active", mode === "select");
   wrap.style.cursor = mode === "pan" ? "grab" : "default";
+  // Clear selection when switching back to pan mode
+  if (mode === "pan") selectNode(null, false);
 }
 
 document.getElementById("ctool-pan").addEventListener("click", function() { setCanvasMode("pan"); });
@@ -823,23 +825,123 @@ function portCenter(nid, dir) {
 
 var hoveredEdgeIdx = -1;
 
+// ── Edge obstacle avoidance ───────────────────────────────────────────────────
+// Returns screen-space rects for all nodes except fromId and toId
+function _obstacleRects(fromId, toId) {
+  var wr = wrap.getBoundingClientRect();
+  var rects = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var nd = nodes[i];
+    if (nd.id === fromId || nd.id === toId) continue;
+    var r = nd.el.getBoundingClientRect();
+    rects.push({
+      x: r.left - wr.left, y: r.top - wr.top,
+      w: r.width,          h: r.height
+    });
+  }
+  return rects;
+}
+
+// Axis-aligned bounding box of a cubic bezier (sampled)
+function _bezierAABB(a, b) {
+  var dx = Math.abs(b.x - a.x);
+  var cp = Math.max(40, dx * 0.55);
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var t = 0; t <= 1; t += 0.05) {
+    var mt = 1 - t;
+    var x = mt*mt*mt*a.x + 3*mt*mt*t*(a.x+cp) + 3*mt*t*t*(b.x-cp) + t*t*t*b.x;
+    var y = mt*mt*mt*a.y + 3*mt*mt*t*a.y       + 3*mt*t*t*b.y       + t*t*t*b.y;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+// Does rect R overlap rect Q?
+function _rectsOverlap(r, q, pad) {
+  pad = pad || 0;
+  return r.x < q.x + q.w + pad && r.x + r.w > q.x - pad &&
+         r.y < q.y + q.h + pad && r.y + r.h > q.y - pad;
+}
+
+// Find the worst-colliding intermediate node for a direct bezier a→b
+// Returns the node rect or null
+function _worstObstacle(a, b, fromId, toId) {
+  var rects = _obstacleRects(fromId, toId);
+  var aabb  = _bezierAABB(a, b);
+  var PAD = 6;
+  var worst = null, worstOverlap = 0;
+  for (var i = 0; i < rects.length; i++) {
+    var r = rects[i];
+    if (!_rectsOverlap(aabb, r, PAD)) continue;
+    // Rough overlap area as priority
+    var ox = Math.min(aabb.x + aabb.w, r.x + r.w + PAD) - Math.max(aabb.x, r.x - PAD);
+    var oy = Math.min(aabb.y + aabb.h, r.y + r.h + PAD) - Math.max(aabb.y, r.y - PAD);
+    var area = Math.max(0, ox) * Math.max(0, oy);
+    if (area > worstOverlap) { worstOverlap = area; worst = r; }
+  }
+  return worst;
+}
+
+// Build a routed path: a → (optional waypoint) → b
+// If no collision, returns null (draw direct bezier).
+// If collision, returns a waypoint {x, y} that routes around the obstacle.
+function _routeEdge(a, b, fromId, toId) {
+  var obs = _worstObstacle(a, b, fromId, toId);
+  if (!obs) return null;
+
+  var MARGIN = 22; // clearance above/below obstacle
+
+  // Space above and below the obstacle
+  var spaceAbove = obs.y - MARGIN - a.y;          // how far we can go upward
+  var spaceBelow = (a.y) - (obs.y + obs.h + MARGIN); // negative = below is further down
+
+  // Mid-x of the path at the obstacle's horizontal centre
+  var midX = obs.x + obs.w / 2;
+
+  var wy;
+  if (obs.y - MARGIN > Math.min(a.y, b.y) - 10) {
+    // More room above — go above
+    wy = obs.y - MARGIN;
+  } else {
+    // More room below — go below
+    wy = obs.y + obs.h + MARGIN;
+  }
+
+  // Pick the better side: whichever keeps the waypoint closer to the a→b midpoint Y
+  var directMidY = (a.y + b.y) / 2;
+  var aboveY = obs.y - MARGIN;
+  var belowY = obs.y + obs.h + MARGIN;
+  wy = (Math.abs(aboveY - directMidY) < Math.abs(belowY - directMidY)) ? aboveY : belowY;
+
+  return { x: midX, y: wy };
+}
+
 function redrawEdges() {
   ectx.clearRect(0, 0, ec.width, ec.height);
-  // committed edges
   for (var i = 0; i < edges.length; i++) {
-    var a = portCenter(edges[i].from, "out");
-    var b = portCenter(edges[i].to, "in");
+    var fromId = edges[i].from, toId = edges[i].to;
+    var a = portCenter(fromId, "out");
+    var b = portCenter(toId, "in");
     if (!a || !b) continue;
     var isHovered = (i === hoveredEdgeIdx);
-    bezier(a, b,
-      isHovered ? "rgba(239,68,68,0.85)" : "rgba(18,18,18,0.28)",
-      isHovered ? 3 : 2.2, false);
-    // Draw small arrow at destination
-    drawArrow(b, a, isHovered ? "rgba(239,68,68,0.85)" : "rgba(18,18,18,0.28)");
+    var color = isHovered ? "rgba(239,68,68,0.85)" : "rgba(18,18,18,0.28)";
+    var w = isHovered ? 3 : 2.2;
+
+    var wp = _routeEdge(a, b, fromId, toId);
+    if (wp) {
+      // Two-segment bezier through the waypoint
+      bezier(a, wp, color, w, false);
+      bezier(wp, b, color, w, false);
+      drawArrow(b, wp, color);
+    } else {
+      bezier(a, b, color, w, false);
+      drawArrow(b, a, color);
+    }
   }
-  // draft edge while connecting
   if (connectState.active) {
-    var a2 = portCenter(connectState.fromNid, "out");
+    var fromDir = connectState.fromDir || "out";
+    var a2 = portCenter(connectState.fromNid, fromDir === "in" ? "in" : "out");
     if (a2) bezier(a2, { x: connectState.mx, y: connectState.my }, "#19e68c", 2.5, true);
   }
 }
@@ -849,11 +951,14 @@ function bezier(a, b, color, w, dashed) {
   ectx.strokeStyle = color; ectx.lineWidth = w;
   ectx.lineCap = "round";
   if (dashed) ectx.setLineDash([6, 4]);
+  else ectx.setLineDash([]);
+  var dx = Math.abs(b.x - a.x);
+  var cpOffset = Math.max(40, dx * 0.55);
   ectx.beginPath();
-  var cx = (a.x + b.x) / 2;
   ectx.moveTo(a.x, a.y);
-  ectx.bezierCurveTo(cx, a.y, cx, b.y, b.x, b.y);
-  ectx.stroke(); ectx.restore();
+  ectx.bezierCurveTo(a.x + cpOffset, a.y, b.x - cpOffset, b.y, b.x, b.y);
+  ectx.stroke();
+  ectx.restore();
 }
 
 function drawArrow(tip, from, color) {
@@ -945,10 +1050,36 @@ function setNB(id, txt, cls) {
 }
 function setOK(id, ok) { var n = nodeById(id); if (n && n.el) n.el.classList.toggle("ok", ok); }
 
+// Port config per node type: which connection bubbles to show
+// no_in  = no input port  (pipeline source nodes)
+// no_out = no output port (pipeline sink nodes)
+var NODE_PORT_CFG = {
+  data:       { no_in: true,  no_out: false },  // source
+  load_model: { no_in: true,  no_out: false },  // source
+  inspect:    { no_in: false, no_out: true  },  // sink
+  save_model: { no_in: false, no_out: true  },  // sink
+};
+function _nodeHasIn(type)  { return !(NODE_PORT_CFG[type] && NODE_PORT_CFG[type].no_in);  }
+function _nodeHasOut(type) { return !(NODE_PORT_CFG[type] && NODE_PORT_CFG[type].no_out); }
+
+var _suppressHistory = false; // set true during batch operations (paste, restore)
+
 function addNode(type) {
-  var c = screenToWorld(wrap.clientWidth / 2, wrap.clientHeight / 2);
-  var off = (nodes.length % 5) * 22;
-  var n = { id: ++nodeIdCounter, type: type, x: c.x - 88 + off, y: c.y - 38 + off, data: {} };
+  // Place new node to the right of the last node, or near centre if canvas is empty
+  var nx, ny;
+  if (nodes.length === 0) {
+    var c0 = screenToWorld(wrap.clientWidth * 0.25, wrap.clientHeight * 0.35);
+    nx = c0.x; ny = c0.y;
+  } else {
+    var last = nodes[nodes.length - 1];
+    nx = last.x + 250; ny = last.y;
+    // Wrap to a new row every 4 nodes to avoid going off-screen
+    if ((nodes.length % 4) === 0) {
+      var first = nodes[Math.max(0, nodes.length - 4)];
+      nx = first.x; ny = first.y + 130;
+    }
+  }
+  var n = { id: ++nodeIdCounter, type: type, x: nx, y: ny, data: {} };
   nodes.push(n);
   var m = META[type];
   var el = document.createElement("div");
@@ -961,8 +1092,8 @@ function addNode(type) {
       '<span class="node-badge" id="nb-' + n.id + '"></span>' +
     '</div>' +
     '<div class="node-sub" id="ns-' + n.id + '">Haz doble clic para abrir</div>';
-  if (type !== "data")     html += '<div class="port port-in"  data-nid="' + n.id + '" data-dir="in" title="Arrastrar para conectar"></div>';
-  if (type !== "classify") html += '<div class="port port-out" data-nid="' + n.id + '" data-dir="out" title="Arrastrar para conectar"></div>';
+  if (_nodeHasIn(type))  html += '<div class="port port-in"  data-nid="' + n.id + '" data-dir="in" title="Arrastrar para conectar"></div>';
+  if (_nodeHasOut(type)) html += '<div class="port port-out" data-nid="' + n.id + '" data-dir="out" title="Arrastrar para conectar"></div>';
   el.innerHTML = html;
   n.el = el;
   cworld.appendChild(el);
@@ -979,7 +1110,7 @@ function addNode(type) {
     if (e.target.classList.contains("port") || connectState.active) return;
     openModal(n);
   });
-  pushHistory();
+  if (!_suppressHistory) pushHistory();
   redrawEdges();
   return n;
 }
@@ -1123,23 +1254,58 @@ document.getElementById("btn-clear").addEventListener("click", function() {
 // ═══════════════════════════════════════════
 function setupDrag(node) {
   var hdr = node.el.querySelector(".node-hdr");
-  var down = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  var down = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  // Track offsets for all selected nodes when dragging a group
+  var groupOffsets = [];
   hdr.addEventListener("mousedown", function(e) {
     if (e.target.classList.contains("port") || connectState.active) return;
-    down = true; sx = e.clientX; sy = e.clientY; ox = node.x; oy = node.y;
+    var isMac = navigator.platform && navigator.platform.indexOf("Mac") !== -1;
+    var holdingModifier = isMac ? e.metaKey : e.ctrlKey;
+    if (canvasMode === "select") {
+      // Cmd/Ctrl+click toggles node in/out of selection
+      // Plain click: select only this node (unless already part of a group — then keep group to allow group drag)
+      if (holdingModifier) {
+        selectNode(node, true);
+      } else if (!selectedNodes.has(node.id)) {
+        selectNode(node, false); // replace selection with just this node
+      }
+      // Always allow drag in select mode (moves the selected group or this node)
+    }
+    down = true; moved = false;
+    sx = e.clientX; sy = e.clientY; ox = node.x; oy = node.y;
+    // If this node is part of a multi-selection, record offsets for all selected
+    if (selectedNodes.has(node.id) && selectedNodes.size > 1) {
+      groupOffsets = [];
+      selectedNodes.forEach(function(id) {
+        var nd = nodeById(id);
+        if (nd) groupOffsets.push({ nd: nd, ox: nd.x, oy: nd.y });
+      });
+    } else {
+      groupOffsets = [];
+    }
     node.el.style.zIndex = 200;
     e.stopPropagation(); e.preventDefault();
   });
   window.addEventListener("mousemove", function(e) {
     if (!down) return;
-    node.x = ox + (e.clientX - sx) / vp.scale;
-    node.y = oy + (e.clientY - sy) / vp.scale;
-    node.el.style.left = node.x + "px";
-    node.el.style.top  = node.y + "px";
+    moved = true;
+    var dx = (e.clientX - sx) / vp.scale;
+    var dy = (e.clientY - sy) / vp.scale;
+    if (groupOffsets.length > 1) {
+      groupOffsets.forEach(function(g) {
+        g.nd.x = g.ox + dx; g.nd.y = g.oy + dy;
+        g.nd.el.style.left = g.nd.x + "px";
+        g.nd.el.style.top  = g.nd.y + "px";
+      });
+    } else {
+      node.x = ox + dx; node.y = oy + dy;
+      node.el.style.left = node.x + "px";
+      node.el.style.top  = node.y + "px";
+    }
     redrawEdges();
   });
   window.addEventListener("mouseup", function() {
-    if (down) { down = false; node.el.style.zIndex = ""; }
+    if (down) { down = false; node.el.style.zIndex = ""; if (moved) pushHistory(); }
   });
 }
 
@@ -1172,11 +1338,12 @@ function isNodeEdgeClick(e, nodeEl) {
 }
 
 wrap.addEventListener("mousedown", function(e) {
-  // 1. Explicit port click (classic behaviour)
+  // 1. Explicit port click (out OR in — both start a connection)
   var port = e.target.closest && e.target.closest(".port");
-  if (port && port.dataset.dir === "out") {
-    connectState.active = true;
+  if (port && (port.dataset.dir === "out" || port.dataset.dir === "in")) {
+    connectState.active  = true;
     connectState.fromNid = parseInt(port.dataset.nid, 10);
+    connectState.fromDir = port.dataset.dir; // remember which end we grabbed
     var r0 = wrap.getBoundingClientRect();
     connectState.mx = e.clientX - r0.left;
     connectState.my = e.clientY - r0.top;
@@ -1228,11 +1395,13 @@ window.addEventListener("mousemove", function(e) {
     connectState.hoverNid = newHover;
     // Set new highlight if it's a valid target
     if (newHover !== null && newHover !== connectState.fromNid) {
-      var fromN2 = nodeById(connectState.fromNid);
-      var toN2   = nodeById(newHover);
-      if (fromN2 && toN2) {
-        var canConnect = (ALLOWED[fromN2.type] || []).indexOf(toN2.type) !== -1;
-        if (canConnect && toN2.el) toN2.el.classList.add("connect-target");
+      var grabbed2 = nodeById(connectState.fromNid);
+      var hovered2 = nodeById(newHover);
+      if (grabbed2 && hovered2) {
+        var realF2 = connectState.fromDir === "in" ? hovered2 : grabbed2;
+        var realT2 = connectState.fromDir === "in" ? grabbed2 : hovered2;
+        var canConnect = (ALLOWED[realF2.type] || []).indexOf(realT2.type) !== -1;
+        if (canConnect && hovered2.el) hovered2.el.classList.add("connect-target");
       }
     }
   }
@@ -1247,11 +1416,11 @@ window.addEventListener("mouseup", function(e) {
   var toId = null;
 
   // Check explicit port first
-  var port = target && target.closest && target.closest(".port");
-  if (port && port.dataset.dir === "in") {
-    toId = parseInt(port.dataset.nid, 10);
+  var dropPort = target && target.closest && target.closest(".port");
+  var dropPortDir = dropPort ? dropPort.dataset.dir : null;
+  if (dropPort) {
+    toId = parseInt(dropPort.dataset.nid, 10);
   } else {
-    // Check if dropped onto any node (any part)
     var nodeEl = target && nodeElOf(target);
     if (nodeEl) toId = parseInt(nodeEl.dataset.id, 10);
   }
@@ -1264,28 +1433,37 @@ window.addEventListener("mouseup", function(e) {
   }
 
   if (toId !== null) {
-    var fromN = nodeById(connectState.fromNid);
-    var toN   = nodeById(toId);
-    if (fromN && toN && toId !== connectState.fromNid) {
-      var ok = (ALLOWED[fromN.type] || []).indexOf(toN.type) !== -1;
+    var grabbed = nodeById(connectState.fromNid);
+    var dropped = nodeById(toId);
+    if (grabbed && dropped && toId !== connectState.fromNid) {
+      // Resolve actual from/to direction:
+      // If we grabbed an in-port and dropped on an out-port (or any node) → reverse
+      var realFrom, realTo;
+      if (connectState.fromDir === "in") {
+        // grabbed the in-port of grabbed node → the source must be dropped node
+        realFrom = dropped; realTo = grabbed;
+      } else {
+        realFrom = grabbed; realTo = dropped;
+      }
+      var ok = (ALLOWED[realFrom.type] || []).indexOf(realTo.type) !== -1;
       if (ok) {
-        // If reconnecting a plots node to a different data/preprocess source, clear its history
-        if (toN.type === "plots") {
-          var prevEdge = edges.find(function(ed) { return ed.to === toId; });
-          if (prevEdge && String(prevEdge.from) !== String(connectState.fromNid)) {
-            if (toN.data) toN.data.plotHistory = [];
+        if (realTo.type === "plots") {
+          var prevEdge = edges.find(function(ed) { return ed.to === realTo.id; });
+          if (prevEdge && String(prevEdge.from) !== String(realFrom.id)) {
+            if (realTo.data) realTo.data.plotHistory = [];
           }
         }
-        edges = edges.filter(function(ed) { return ed.to !== toId; });
-        edges.push({ from: connectState.fromNid, to: toId });
+        edges = edges.filter(function(ed) { return ed.to !== realTo.id; });
+        edges.push({ from: realFrom.id, to: realTo.id });
         markPorts();
         pushHistory();
       } else {
-        toast(T("incompatible") + ": " + META[fromN.type].name + " → " + META[toN.type].name);
+        toast(T("incompatible") + ": " + META[realFrom.type].name + " → " + META[realTo.type].name);
       }
     }
   }
   connectState.active = false;
+  connectState.fromDir = "out";
   document.body.classList.remove("connecting");
   redrawEdges();
 });
@@ -1320,13 +1498,116 @@ window.addEventListener("keydown", function(e) {
   if (ctrl && e.key === "z" && !e.shiftKey && !inInput) { e.preventDefault(); undo(); return; }
   // Ctrl+Shift+Z or Ctrl+Y — redo
   if (ctrl && ((e.key === "z" && e.shiftKey) || e.key === "y") && !inInput) { e.preventDefault(); redo(); return; }
+
+  // Ctrl+A — select all nodes (in select mode)
+  if (ctrl && e.key === "a" && !inInput && !modalOpen && canvasMode === "select") {
+    e.preventDefault();
+    nodes.forEach(function(nd) { nd.el.classList.add("selected"); selectedNodes.add(nd.id); });
+    return;
+  }
+
+  // Ctrl+C — copy selected nodes + edges between them
+  if (ctrl && e.key === "c" && !inInput && !modalOpen && selectedNodes.size) {
+    e.preventDefault();
+    var selIds = Array.from(selectedNodes);
+    clipboard = { nodes: [], edges: [] };
+    // Store nodes with their original id so we can reconstruct edges
+    selIds.forEach(function(id) {
+      var nd = nodeById(id);
+      if (nd) clipboard.nodes.push({ origId: nd.id, type: nd.type, x: nd.x, y: nd.y, data: JSON.parse(JSON.stringify(nd.data)) });
+    });
+    // Store edges where both endpoints are in the selection
+    edges.forEach(function(ed) {
+      if (selectedNodes.has(ed.from) && selectedNodes.has(ed.to)) {
+        clipboard.edges.push({ from: ed.from, to: ed.to });
+      }
+    });
+    toast("📋 " + clipboard.nodes.length + " bloque" + (clipboard.nodes.length > 1 ? "s" : "") + " copiado" + (clipboard.nodes.length > 1 ? "s" : ""));
+    return;
+  }
+
+  // Ctrl+V — paste copied nodes + restore internal edges (single undo step)
+  if (ctrl && e.key === "v" && !inInput && !modalOpen && clipboard && clipboard.nodes.length) {
+    e.preventDefault();
+    selectNode(null, false);
+    var offset = 28;
+    var idMap = {};
+    _suppressHistory = true;
+    clipboard.nodes.forEach(function(cn) {
+      var nd = addNode(cn.type);
+      nd.x = cn.x + offset; nd.y = cn.y + offset;
+      nd.data = JSON.parse(JSON.stringify(cn.data));
+      nd.el.style.left = nd.x + "px"; nd.el.style.top = nd.y + "px";
+      nd.el.classList.add("selected"); selectedNodes.add(nd.id);
+      idMap[cn.origId] = nd.id;
+    });
+    _suppressHistory = false;
+    // Restore edges between pasted nodes
+    clipboard.edges.forEach(function(ed) {
+      var newFrom = idMap[ed.from], newTo = idMap[ed.to];
+      if (newFrom && newTo) edges.push({ from: newFrom, to: newTo });
+    });
+    markPorts();
+    pushHistory(); // single snapshot for the whole paste
+    redrawEdges();
+    toast("📋 " + T("pasted"));
+    return;
+  }
 });
 
-// Click on canvas background = deselect (in select mode, always deselect on bg click)
+// Click on canvas background = deselect; in select mode = rubber-band lasso
+var rubberBand = null, rbStart = null;
 wrap.addEventListener("mousedown", function(e) {
   var isCanvasBg = e.target === wrap || e.target === cworld ||
                    e.target.classList.contains("canvas-bg") || e.target === ec;
-  if (isCanvasBg) selectNode(null, false);
+  if (!isCanvasBg) return;
+  if (canvasMode !== "select") { selectNode(null, false); return; }
+  // Start rubber-band
+  var isMac = navigator.platform && navigator.platform.indexOf("Mac") !== -1;
+  var multi = isMac ? e.metaKey : e.ctrlKey;
+  if (!multi) selectNode(null, false);
+  var r = wrap.getBoundingClientRect();
+  rbStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+  rubberBand = document.createElement("div");
+  rubberBand.style.cssText = "position:absolute;border:1.5px dashed var(--accent);background:rgba(25,230,140,0.07);pointer-events:none;z-index:500;";
+  rubberBand.style.left   = rbStart.x + "px";
+  rubberBand.style.top    = rbStart.y + "px";
+  rubberBand.style.width  = "0px";
+  rubberBand.style.height = "0px";
+  wrap.appendChild(rubberBand);
+  e.preventDefault();
+});
+window.addEventListener("mousemove", function(e) {
+  if (!rubberBand || !rbStart) return;
+  var r = wrap.getBoundingClientRect();
+  var cx = e.clientX - r.left, cy = e.clientY - r.top;
+  var x = Math.min(cx, rbStart.x), y = Math.min(cy, rbStart.y);
+  var w = Math.abs(cx - rbStart.x), h = Math.abs(cy - rbStart.y);
+  rubberBand.style.left = x + "px"; rubberBand.style.top = y + "px";
+  rubberBand.style.width = w + "px"; rubberBand.style.height = h + "px";
+});
+window.addEventListener("mouseup", function(e) {
+  if (!rubberBand || !rbStart) return;
+  var r = wrap.getBoundingClientRect();
+  var cx = e.clientX - r.left, cy = e.clientY - r.top;
+  // Convert rubber-band rect to world coords
+  var wx1 = (Math.min(cx, rbStart.x) - vp.x) / vp.scale;
+  var wy1 = (Math.min(cy, rbStart.y) - vp.y) / vp.scale;
+  var wx2 = (Math.max(cx, rbStart.x) - vp.x) / vp.scale;
+  var wy2 = (Math.max(cy, rbStart.y) - vp.y) / vp.scale;
+  // Select nodes whose centre falls inside the rect
+  nodes.forEach(function(nd) {
+    var nr = nd.el.getBoundingClientRect();
+    var ncx = (nr.left + nr.right) / 2 - r.left;
+    var ncy = (nr.top  + nr.bottom) / 2 - r.top;
+    var nwx = (ncx - vp.x) / vp.scale;
+    var nwy = (ncy - vp.y) / vp.scale;
+    if (nwx >= wx1 && nwx <= wx2 && nwy >= wy1 && nwy <= wy2) {
+      nd.el.classList.add("selected");
+      selectedNodes.add(nd.id);
+    }
+  });
+  rubberBand.remove(); rubberBand = null; rbStart = null;
 });
 
 // ═══════════════════════════════════════════
@@ -1448,32 +1729,44 @@ var mFoot   = document.getElementById("m-foot");
 moEl.addEventListener("click", function(e) { if (e.target === moEl) closeModal(); });
 document.getElementById("m-close").addEventListener("click", closeModal);
 
-// ── Modal height animation helper ──────────────────────────────────────────────
-// Call BEFORE inserting new content (records current height),
-// then call the returned function AFTER inserting (animates to new height).
+// ── Modal height animation ──────────────────────────────────────────────────
+// Call prepareModalResize() BEFORE changing content — captures current height.
+// The returned function animateToHeight() should be called AFTER the new
+// content is in the DOM and laid out (use img.onload or double-rAF for images).
+// This is the same pattern Plots uses: capture → insert → wait for layout → animate.
+var _modalAnimTimer = null;
+
 function prepareModalResize() {
   var modalEl = document.getElementById("modal");
   if (!modalEl) return function(){};
+  // Cancel any in-progress animation
+  if (_modalAnimTimer) { clearTimeout(_modalAnimTimer); _modalAnimTimer = null; }
+  // Snapshot the current rendered height
   var fromH = modalEl.getBoundingClientRect().height;
-  // Pin the current height so the transition has a start point
+  // Pin it so the browser has a concrete start point
   modalEl.style.transition = "none";
   modalEl.style.height = fromH + "px";
-  return function animateTo() {
-    // Measure the natural height the new content would produce
+
+  return function animateToHeight() {
+    // Release to auto to measure the natural target height
     modalEl.style.height = "auto";
-    var toH = Math.min(modalEl.getBoundingClientRect().height,
-                       window.innerHeight - 48);
-    // Go back to fromH, then animate to toH
-    modalEl.style.height = fromH + "px";
-    // Force reflow so the browser registers the fromH before transitioning
-    modalEl.getBoundingClientRect();
-    modalEl.style.transition = "height 420ms cubic-bezier(.4,0,.2,1)";
-    modalEl.style.height = toH + "px";
-    // After animation completes, release to auto so future resizes work
-    setTimeout(function() {
+    var toH = Math.min(modalEl.getBoundingClientRect().height, window.innerHeight - 48);
+    if (Math.abs(toH - fromH) < 2) {
+      // No meaningful change — just release
       modalEl.style.transition = "";
       modalEl.style.height = "";
-    }, 440);
+      return;
+    }
+    // Snap back to fromH, force reflow, then animate
+    modalEl.style.height = fromH + "px";
+    modalEl.getBoundingClientRect(); // force reflow
+    modalEl.style.transition = "height 580ms cubic-bezier(.22,1,.36,1)";
+    modalEl.style.height = toH + "px";
+    _modalAnimTimer = setTimeout(function() {
+      modalEl.style.transition = "";
+      modalEl.style.height = "";
+      _modalAnimTimer = null;
+    }, 600);
   };
 }
 
@@ -2594,10 +2887,11 @@ async function renderTabClassify(node) {
 // LINREG MODAL — Bloque Modelo: Regresión Lineal
 // ═══════════════════════════════════════════════════════════════════
 async function renderLinreg(node) {
+  var _animLinreg = prepareModalResize();
   var info = await _getTabInfo(node);
   if (info.error) {
     mBody.innerHTML = '<div style="padding:20px;color:#ff6b6b">' + info.error + '. Carga primero un dataset tabular.</div>';
-    return;
+    _animLinreg(); return;
   }
 
   // ── Resolve upstream context ──────────────────────────────────────────────
@@ -2828,6 +3122,8 @@ async function renderLinreg(node) {
 
     '</div>' + // right column
     '</div>';
+
+  _animLinreg();
 
   // ── Algo card click ───────────────────────────────────────────────────────
   document.querySelectorAll(".lr-algo-card").forEach(function(card) {
@@ -3261,6 +3557,7 @@ function _setCardActive(card, active) {
 var _EVAL_MODEL_TYPES = ["linreg", "load_model"];
 
 async function renderModelEval(node) {
+  var _animEval = prepareModalResize();
   // Busca cualquier nodo upstream que sea un modelo conocido o un Cargar Modelo
   var modelNode = null;
   for (var i = 0; i < edges.length; i++) {
@@ -3359,6 +3656,8 @@ async function renderModelEval(node) {
       }
     };
   });
+  _animEval();
+
   // Activate first tab visually and render if we have cached evalData
   var firstTab = document.querySelector(".me-tab");
   if (firstTab) { firstTab.style.borderBottom="2px solid var(--accent)"; firstTab.style.color="var(--ink)"; firstTab.style.fontWeight="700"; }
@@ -4366,6 +4665,7 @@ window.pltHistDel = function(idx) {
 };
 
 async function renderData(node) {
+  var _animData = prepareModalResize();
   mBody.innerHTML =
     '<div class="col2">' +
     '<div class="col-left">' +
@@ -4407,6 +4707,8 @@ async function renderData(node) {
     '<optgroup label="📊 Datos tabulares">' +
       tabList.map(function(d){ return '<option value="tab::'+d.id+'">'+d.name+'</option>'; }).join("") +
     '</optgroup>';
+
+  _animData();
 
   document.getElementById("btn-ds").onclick = async function() {
     var val = dsSel.value; if (!val) { toast("Select a dataset first"); return; }
@@ -4520,22 +4822,24 @@ function showDsInfo(data, node) {
       '</div>';
   }
 
-  // Animate modal height then fade in
+  // Capture height BEFORE inserting new content, animate AFTER layout settles
   var _animateTo = prepareModalResize();
   el.style.opacity = "0";
   el.innerHTML = summaryHtml;
   el.style.transition = "opacity 200ms ease";
-  _animateTo();
-  if (colLeft) {
-    setTimeout(function() {
-      colLeft.style.opacity = "1";
-      el.style.opacity = "1";
-    }, 170);
-  } else {
+  // Double rAF: first frame lets the browser parse + lay out the new HTML,
+  // second frame measures the real settled height and fires the animation
+  requestAnimationFrame(function() {
     requestAnimationFrame(function() {
-      requestAnimationFrame(function() { el.style.opacity = "1"; });
+      _animateTo();
+      if (colLeft) {
+        colLeft.style.opacity = "1";
+        el.style.opacity = "1";
+      } else {
+        el.style.opacity = "1";
+      }
     });
-  }
+  });
   // ── Column / target config (tabular only) ────────────────────────────────
   var allCols = (isTab && data.columns && data.columns.length)
     ? (Array.isArray(data.columns)
@@ -6133,6 +6437,7 @@ var HP_DEFS = {
 // • Plots        → ZIP con los plots generados por el usuario
 // ══════════════════════════════════════════════════════════════════════════════
 async function renderSaveModel(node) {
+  var _animSave = prepareModalResize();
   showModalLoading("Comprobando qué hay disponible…");
 
   // ── 1. Nodo upstream directo ──────────────────────────────────────────────
@@ -6296,6 +6601,8 @@ async function renderSaveModel(node) {
         : '') +
       '<div id="sv-status" style="font-size:12px;color:var(--sec);text-align:center;margin-top:8px"></div>' +
     '</div>';
+
+  _animSave();
 
   if (!hasAnything) return;
 
@@ -6555,6 +6862,7 @@ function _triggerDownload(blob, filename) {
 // 📂 CARGAR MODELO
 // ══════════════════════════════════════════════════════════════════════════════
 async function renderLoadModel(node) {
+  var _animLoad = prepareModalResize();
   var mode = node.data.loadMode || "saved"; // "saved" | "new"
   var loaded = node.data.loadedMeta || null;
 
@@ -6745,6 +7053,7 @@ async function renderLoadModel(node) {
   }
 
   buildUI();
+  _animLoad();
 }
 
 async function renderTrain(node) {
