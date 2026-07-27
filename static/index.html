@@ -3134,7 +3134,8 @@ async function renderLinreg(node) {
     var secMetric  = isReg ? "RMSE" : "F1";
     var secVal     = isReg
       ? (cvd.test_metrics && cvd.test_metrics.RMSE != null ? cvd.test_metrics.RMSE : "—")
-      : (cvd.test_metrics && cvd.test_metrics.f1_macro != null ? cvd.test_metrics.f1_macro : "—");
+      : (cvd.test_metrics && (cvd.test_metrics.f1 != null ? cvd.test_metrics.f1 : cvd.test_metrics.f1_macro) != null
+          ? (cvd.test_metrics.f1 != null ? cvd.test_metrics.f1 : cvd.test_metrics.f1_macro) : "—");
 
     // Best model summary card — show lambda if available, regardless of current method selector
     var paramLineLabel = (cfg && cfg.label) || cvd.param_label || 'λ';
@@ -3205,7 +3206,7 @@ async function renderLinreg(node) {
             '<div style="font-size:10px;color:var(--sec);grid-column:1/-1;font-weight:700;margin-bottom:2px">🔵 Clasificación</div>' +
             '<div style="font-size:10px;font-weight:700;color:var(--sec);grid-column:1/-1">'+method.toUpperCase()+' · '+bestNormLbl+(bestPvDisp?' · C='+bestPvDisp:'')+' · '+cvd.n_train+' train / '+cvd.n_test+' test</div>' +
             _mCell((tm.accuracy*100).toFixed(1), "Accuracy","%") +
-            _mCell(tm.f1_macro,  "F1 macro") +
+            _mCell(tm.f1 != null ? tm.f1 : tm.f1_macro, "F1 macro") +
             _mCell(tm.precision, "Precisión") +
             _mCell(tm.recall,    "Recall");
         }
@@ -3383,12 +3384,32 @@ async function renderModelEval(node) {
     // Persist evalData on the node so plots/metrics survive popup close
     node.data.evalResult = evalData;
 
-    // Find active tab — fallback to metrics
-    var activeTabEl = null;
-    document.querySelectorAll(".me-tab").forEach(function(b) {
-      if (b.style.borderBottom && b.style.borderBottom.indexOf("transparent") === -1 && b.style.borderBottom !== "") activeTabEl = b;
-    });
-    _renderEvalTab(activeTabEl ? activeTabEl.dataset.tab : "metrics", evalData, modelNode);
+    // Rebuild tab bar now that we know problem_type
+    var _tabsEl = document.getElementById("eval-tabs");
+    if (_tabsEl) {
+      var _isCls2 = evalData.problem_type === "classification";
+      var _hasCv  = !!(evalData.cv_summary);
+      _tabsEl.innerHTML =
+        _evalTab("metrics", T("tab-metrics"), true) +
+        _evalTab("plots",   T("tab-plots"),   false) +
+        _evalTab("coef",    T("tab-coef"),    false) +
+        (_isCls2 ? _evalTab("roc",      T("tab-roc"),      false) : "") +
+        (_isCls2 ? _evalTab("boundary", T("tab-boundary"), false) : "") +
+        (!_isCls2 ? _evalTab("assump",  T("tab-assump"),   false) : "") +
+        (_hasCv   ? _evalTab("cv",      T("tab-cv"),       false) : "");
+      // Re-attach click handlers for new tabs
+      _tabsEl.querySelectorAll(".me-tab").forEach(function(btn) {
+        btn.onclick = function() {
+          _tabsEl.querySelectorAll(".me-tab").forEach(function(b) {
+            b.style.borderBottom="2px solid transparent"; b.style.color="var(--sec)"; b.style.fontWeight="400";
+          });
+          this.style.borderBottom="2px solid var(--accent)"; this.style.color="var(--ink)"; this.style.fontWeight="700";
+          _renderEvalTab(this.dataset.tab, evalData, modelNode);
+        };
+      });
+    }
+
+    _renderEvalTab("metrics", evalData, modelNode);
     var _em = evalData.test_metrics || {};
     var _isCls = evalData.problem_type === "classification";
     setNS(node.id, _isCls
@@ -3563,15 +3584,19 @@ function _renderEvalTab(tab, d, modelNode) {
       ? cvd.best_pv_display
       : (pVal != null
           ? (pVal < 0.01 ? Number(pVal).toExponential(2) : parseFloat(Number(pVal).toFixed(4)))
-          : '—');
+          : null);
+    // Only show the param card if there is actually a hyperparameter (Ridge/LASSO/Logistic/kNN)
+    var paramCard = (bestFmt != null)
+      ? '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+T("cv-best-param")+pLabel+'</div>' +
+          '<div style="font-size:26px;font-weight:800;color:var(--accent)">'+bestFmt+'</div>' +
+        '</div>'
+      : '';
 
     bodyEl.innerHTML = headerHtml +
       '<div style="display:flex;flex-direction:column;gap:14px">' +
         '<div style="display:flex;gap:12px">' +
-          '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
-            '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+T("cv-best-param")+pLabel+'</div>' +
-            '<div style="font-size:26px;font-weight:800;color:var(--accent)">'+bestFmt+'</div>' +
-          '</div>' +
+          paramCard +
           '<div style="flex:1;padding:14px;background:var(--bg);border-radius:8px;text-align:center">' +
             '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">'+(cvd.metric_label||(lang==="es"?'Métrica':'Metric'))+' '+T("cv-optimal")+'</div>' +
             '<div style="font-size:26px;font-weight:800;color:var(--ink)">'+(best.score_mean||'—')+'</div>' +

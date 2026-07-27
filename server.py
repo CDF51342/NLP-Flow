@@ -1618,17 +1618,19 @@ def model_cv():
         return jsonify({"error": result_xy[1]}), 400
     X, y_raw, feat_names = result_xy
 
-    # ── Detect problem type ───────────────────────────────────────────────
+    # ── Detect problem type — always driven by the target, regardless of method ──
     tgt_vals = [r.get(target_col,"") for r in rows if not _is_missing(r.get(target_col,""))]
     tgt_type = _col_type(tgt_vals)
-    _reg_methods = {"ridge", "lasso", "linreg"}
-    _cls_methods = {"logistic", "knn"}
-    if method in _reg_methods:
-        is_cls = False
-    elif method in _cls_methods:
+    _unique_tgt = set(str(v).strip() for v in tgt_vals)
+    # Categorical string → always classification
+    # Numeric but ≤10 unique values → classification (e.g. 0/1, risk_label)
+    # Numeric with >10 unique values → regression
+    if not _is_numeric_type(tgt_type):
+        is_cls = True
+    elif len(_unique_tgt) <= 10:
         is_cls = True
     else:
-        is_cls = not _is_numeric_type(tgt_type) or len(set(str(v).strip() for v in tgt_vals)) <= 10
+        is_cls = False
 
     # ── Encode y ──────────────────────────────────────────────────────────
     if is_cls:
@@ -1681,12 +1683,20 @@ def model_cv():
 
     def _make_estimator(pv):
         pv = float(pv)
+        # If the target is classification, map regression methods to their cls equivalents
+        if is_cls:
+            if method in ("ridge", "lasso", "linreg"):
+                return LogisticRegression(C=1.0/max(pv, 1e-6), max_iter=5000, random_state=42, solver="saga")
+            if method == "logistic": return LogisticRegression(C=pv, max_iter=5000, random_state=42, solver="saga")
+            if method == "knn":
+                from sklearn.neighbors import KNeighborsClassifier
+                return KNeighborsClassifier(n_neighbors=int(pv))
         if method == "ridge":    return Ridge(alpha=pv)
         if method == "lasso":    return Lasso(alpha=pv, max_iter=10000)
-        if method == "logistic": return LogisticRegression(C=pv, max_iter=2000, random_state=42, solver="saga")
+        if method == "logistic": return LogisticRegression(C=pv, max_iter=5000, random_state=42, solver="saga")
         if method == "knn":
-            from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-            return KNeighborsClassifier(n_neighbors=int(pv)) if is_cls else KNeighborsRegressor(n_neighbors=int(pv))
+            from sklearn.neighbors import KNeighborsRegressor
+            return KNeighborsRegressor(n_neighbors=int(pv))
         return LinearRegression()
 
     def _cv_score(est, scaler_step):
@@ -1766,19 +1776,32 @@ def model_cv():
         test_m  = _reg_metrics(y_te, y_te_pred)
     else:
         from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-        train_m = {"accuracy": round(float(accuracy_score(y_tr, y_tr_pred)), 4)}
-        test_m  = {
-            "accuracy":  round(float(accuracy_score(y_te, y_te_pred)), 4),
-            "f1_macro":  round(float(f1_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
-            "precision": round(float(precision_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
-            "recall":    round(float(recall_score(y_te, y_te_pred, average="macro", zero_division=0)), 4),
-        }
+        _avg = "binary" if len(classes) == 2 else "macro"
+        def _cls_m(yt, yp):
+            return {
+                "accuracy":  round(float(accuracy_score(yt, yp)), 4),
+                "f1":        round(float(f1_score(yt, yp, average=_avg, zero_division=0)), 4),
+                "precision": round(float(precision_score(yt, yp, average=_avg, zero_division=0)), 4),
+                "recall":    round(float(recall_score(yt, yp, average=_avg, zero_division=0)), 4),
+            }
+        train_m = _cls_m(y_tr, y_tr_pred)
+        test_m  = _cls_m(y_te, y_te_pred)
 
     coefs = []
     if hasattr(final_est, "coef_"):
-        coefs = list(zip(feat_names, [round(float(c), 6) for c in final_est.coef_]))
+        coef_arr = final_est.coef_
+        # Multiclass logistic → coef_ is (n_classes, n_features); use mean abs importance
+        if hasattr(coef_arr, "ndim") and coef_arr.ndim == 2:
+            coef_arr = np.mean(np.abs(coef_arr), axis=0)
+        else:
+            coef_arr = np.asarray(coef_arr).ravel()
+        coefs = list(zip(feat_names, [round(float(c), 6) for c in coef_arr]))
         coefs = sorted(coefs, key=lambda x: abs(x[1]), reverse=True)
-    intercept = round(float(final_est.intercept_), 6) if hasattr(final_est, "intercept_") else 0.0
+    if hasattr(final_est, "intercept_"):
+        _intercept_raw = final_est.intercept_
+        intercept = round(float(np.mean(_intercept_raw)), 6)
+    else:
+        intercept = 0.0
 
     # Store in _MODEL_STORE so model_eval can read it
     if node_id:
@@ -1787,6 +1810,7 @@ def model_cv():
             "normalize":     best_norm,
             "alpha":         best_pv,
             "problem_type":  "classification" if is_cls else "regression",
+            "classes":       classes if is_cls else [],
             "feat_names":    feat_names,
             "coefficients":  coefs,
             "intercept":     intercept,
@@ -1874,27 +1898,38 @@ def model_cv():
     cv_img = fig_b64(fig)
 
     # Format best param for display
-    if best_pv is not None:
+    # When ridge/lasso/linreg is mapped to classification, the sweep is over alpha
+    # but the real model parameter is C = 1/alpha — convert before displaying
+    _display_pv = best_pv
+    _display_label = cfg["label"]
+    if is_cls and method in ("ridge", "lasso", "linreg") and best_pv is not None:
+        _display_pv = round(1.0 / max(float(best_pv), 1e-6), 6)
+        _display_label = "C (inv. reg.)"
+
+    if _display_pv is not None:
         if cfg.get("isInt"):
-            best_pv_display = str(int(round(best_pv)))
-        elif best_pv < 0.01:
-            best_pv_display = f"{best_pv:.2e}"
+            best_pv_display = str(int(round(_display_pv)))
+        elif _display_pv < 0.01:
+            best_pv_display = f"{_display_pv:.2e}"
         else:
-            best_pv_display = str(round(best_pv, 4))
+            best_pv_display = str(round(_display_pv, 4))
     else:
         best_pv_display = None
 
+    print(f"[model_cv/display] method={method!r} is_cls={is_cls} best_pv={best_pv} _display_pv={_display_pv} best_pv_display={best_pv_display!r} param_label={_display_label!r}")
+
     # Backfill cv_img + best_pv_display into _MODEL_STORE now that they're available
     if node_id and node_id in _MODEL_STORE:
-        _MODEL_STORE[node_id]["cv_img"] = cv_img
+        _MODEL_STORE[node_id]["cv_img"]          = cv_img
         _MODEL_STORE[node_id]["best_pv_display"] = best_pv_display
+        _MODEL_STORE[node_id]["param_label"]     = _display_label
 
     return jsonify({
         "results_by_norm": results_by_norm,
         "best":            best_combo,
         "best_pv_display": best_pv_display,
         "method":          method,
-        "param_label":     cfg["label"],
+        "param_label":     _display_label,
         "metric_label":    metric_label,
         "k_folds":         k_folds,
         "problem_type":    "classification" if is_cls else "regression",
@@ -1934,14 +1969,14 @@ def _build_classifier(name, hp):
     n = hp.get("n_estimators", 100)
     d = hp.get("max_depth", None) if hp.get("max_depth", 0) != 0 else None
     if name == "logistic":
-        return LogisticRegression(C=float(c), max_iter=2000, random_state=42, solver="saga")
+        return LogisticRegression(C=float(c), max_iter=5000, random_state=42, solver="saga")
     if name == "knn":
         return KNeighborsClassifier(n_neighbors=int(k))
     if name == "random_forest":
         return RandomForestClassifier(n_estimators=int(n), max_depth=d, random_state=42, n_jobs=-1)
     if name == "svm":
         return LinearSVC(C=float(c), max_iter=3000, random_state=42)
-    return LogisticRegression(max_iter=2000, random_state=42)
+    return LogisticRegression(max_iter=5000, random_state=42)
 
 def _smote_oversample(X, y):
     """Simple manual SMOTE-lite: duplicate minority class with small jitter."""
@@ -2939,7 +2974,7 @@ def train():
 
     def mk_clf():
         if model_name=="naive_bayes":   return MultinomialNB(alpha=nb_alpha)
-        if model_name=="logistic":      return LogisticRegression(C=lr_c,penalty=lr_penalty,max_iter=2000,random_state=42,solver="saga")
+        if model_name=="logistic":      return LogisticRegression(C=lr_c,penalty=lr_penalty,max_iter=5000,random_state=42,solver="saga")
         if model_name=="svm":           return LinearSVC(C=svm_c,max_iter=3000,random_state=42)
         if model_name=="knn":           return KNeighborsClassifier(n_neighbors=knn_k,metric=knn_metric)
         if model_name=="random_forest": return RandomForestClassifier(n_estimators=rf_trees,max_depth=rf_depth,random_state=42,n_jobs=-1)
@@ -4748,32 +4783,57 @@ def decision_boundary():
 
     # Resolve payload
     payload = _LOADED_TAB_MODELS.get(node_id)
+    print(f"[decision_boundary] node_id={node_id!r} feat_x={feat_x!r} feat_y={feat_y!r}")
+    print(f"[decision_boundary] _LOADED_TAB_MODELS keys: {list(_LOADED_TAB_MODELS.keys())}")
+    print(f"[decision_boundary] _MODEL_STORE keys:       {list(_MODEL_STORE.keys())}")
+    print(f"[decision_boundary] _NODE_MODELS keys:       {list(_NODE_MODELS.keys())}")
     if not payload:
         ms  = _MODEL_STORE.get(node_id) or _MODEL_STORE.get(int(node_id) if node_id.isdigit() else None)
         mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+        print(f"[decision_boundary] ms found: {ms is not None}, mdl in _NODE_MODELS: {mdl is not None}")
         if ms:
+            print(f"[decision_boundary] ms keys: {list(ms.keys())}")
+            print(f"[decision_boundary] problem_type={ms.get('problem_type')!r}, model_obj present: {ms.get('model_obj') is not None}")
             payload = dict(ms)
-            if mdl: payload["sklearn_model"] = mdl
+            if mdl:
+                payload["sklearn_model"] = mdl
+            elif ms.get("model_obj"):
+                payload["sklearn_model"] = ms["model_obj"]
     if not payload:
         return jsonify({"error": "No hay modelo cargado."}), 400
 
+    # Ensure _NODE_MODELS is populated for downstream reuse
+    if node_id and node_id not in _NODE_MODELS:
+        _mdl = payload.get("sklearn_model") or payload.get("model_obj")
+        if _mdl is not None:
+            _NODE_MODELS[node_id] = _mdl
+
     problem_type = payload.get("problem_type", "regression")
+    print(f"[decision_boundary] problem_type={problem_type!r}, sklearn_model present: {payload.get('sklearn_model') is not None}")
     if problem_type == "regression":
         return jsonify({"error": "La frontera de decisión solo está disponible para clasificación."}), 400
 
-    mdl      = payload.get("sklearn_model")
-    if mdl is None:
-        mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+    mdl = (
+        payload.get("sklearn_model")
+        or payload.get("model_obj")
+        or _NODE_MODELS.get(node_id)
+        or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+    )
+    print(f"[decision_boundary] mdl resolved: {mdl is not None} ({type(mdl).__name__ if mdl is not None else 'None'})")
     if mdl is None or not hasattr(mdl, "predict"):
         return jsonify({"error": "Modelo no disponible. Reentrena el modelo."}), 400
 
-    features = payload.get("features", [])
+    features = payload.get("features") or payload.get("feat_names", [])
     classes  = payload.get("classes", [])
-    X_test   = np.array(payload.get("X_test", []))
-    y_test   = np.array(payload.get("y_test", []))
+    # X_test / y_test may be stored under different key names depending on source
+    _xte_raw = payload.get("X_test") or payload.get("X_te") or payload.get("_Xte", [])
+    _yte_raw = payload.get("y_test") or payload.get("y_te") or payload.get("_yte", [])
+    X_test   = np.array(_xte_raw)
+    y_test   = np.array(_yte_raw)
 
+    print(f"[decision_boundary] features={features}, feat_x={feat_x!r}, feat_y={feat_y!r}, X_test shape={X_test.shape}")
     if feat_x not in features or feat_y not in features:
-        return jsonify({"error": f"Features '{feat_x}' o '{feat_y}' no encontradas en el modelo."}), 400
+        return jsonify({"error": f"Features '{feat_x}' o '{feat_y}' no encontradas. Disponibles: {features}"}), 400
     if len(X_test) == 0:
         return jsonify({"error": "No hay datos de test guardados en el modelo."}), 400
 
@@ -6177,20 +6237,15 @@ def model_train():
     if target_col and snap_cols and target_col not in snap_cols:
         target_col = snap_cols[-1]
 
-    # Detect problem type — method takes priority over data heuristics
+    # Detect problem type — always driven by the target, regardless of method
     _tgt_vals = [r.get(target_col, "") for r in snap_rows if not _is_missing(r.get(target_col, ""))]
     _tgt_type = _col_type(_tgt_vals)
-    _reg_methods = {"ridge", "lasso", "linreg"}
-    if model_type in _reg_methods:
-        # Explicit regression model → always regression
-        _is_classification = False
-    else:
-        # Auto-detect: categorical dtype or very few unique numeric values (≤10)
-        _is_classification = not _is_numeric_type(_tgt_type)
-        if _is_numeric_type(_tgt_type):
-            _unique_tgt = set(str(v).strip() for v in _tgt_vals)
-            if len(_unique_tgt) <= 10:
-                _is_classification = True
+    # Auto-detect: categorical dtype or very few unique numeric values (≤10)
+    _is_classification = not _is_numeric_type(_tgt_type)
+    if _is_numeric_type(_tgt_type):
+        _unique_tgt = set(str(v).strip() for v in _tgt_vals)
+        if len(_unique_tgt) <= 10:
+            _is_classification = True
 
     # Snapshot all params for the thread (avoid closure over mutable request state)
     _nid   = node_id
@@ -6255,9 +6310,9 @@ def model_train():
                 time.sleep(0.05)
                 # Map linreg/ridge/lasso → classification equivalents
                 if _mtype in ("ridge", "lasso", "linreg"):
-                    mdl = LogisticRegression(C=1.0/max(_alpha,1e-6), max_iter=2000, random_state=42, solver="saga")
+                    mdl = LogisticRegression(C=1.0/max(_alpha,1e-6), max_iter=5000, random_state=42, solver="saga")
                 else:
-                    mdl = LogisticRegression(max_iter=2000, random_state=42)
+                    mdl = LogisticRegression(max_iter=5000, random_state=42)
                 mdl.fit(Xtr, ytr)
 
                 _push(75, "Calculando métricas de clasificación…")
@@ -6431,12 +6486,11 @@ def model_result():
     if "n_test" not in safe:
         safe["n_test"] = result.get("n_test")
 
-    # Move sklearn objects from _MODEL_STORE into _NODE_MODELS for save_tab_model
-    for sk_key in _SKIP_KEYS:
-        obj = result.get(sk_key)
-        if obj is not None and node_id:
-            _NODE_MODELS[node_id] = obj
-            break
+    # Move the classifier/regressor into _NODE_MODELS — never the scaler
+    if node_id:
+        _mdl = result.get("model_obj") or result.get("sklearn_model")
+        if _mdl is not None:
+            _NODE_MODELS[node_id] = _mdl
 
     return jsonify(safe)
 
@@ -6458,6 +6512,12 @@ def model_evaluate():
         result = _mtrain_result
     if not result:
         return jsonify({"error": "No hay modelo entrenado. Entrena primero desde el bloque Modelo."}), 404
+
+    # Ensure the classifier/regressor (never the scaler) is in _NODE_MODELS
+    if node_id:
+        _mdl_obj = result.get("model_obj") or result.get("sklearn_model")
+        if _mdl_obj is not None:
+            _NODE_MODELS[node_id] = _mdl_obj
 
     problem_type = result.get("problem_type", "regression")
 
@@ -6578,10 +6638,11 @@ def model_evaluate():
             return jsonify({"error": "No hay datos de test disponibles. Reentrena el modelo."}), 400
         yte      = np.array(_yte)
         yte_pred = np.array(_yte_pred)
-        classes  = result.get("classes", [])
+        classes  = result.get("classes") or sorted(set(str(v) for v in np.unique(np.concatenate([yte, yte_pred])).tolist()))
         avg = "binary" if len(classes) == 2 else "macro"
+        labels_idx = list(range(len(classes))) if classes else None
 
-        cm = confusion_matrix(yte, yte_pred, labels=list(range(len(classes)))).tolist()
+        cm = confusion_matrix(yte, yte_pred, labels=labels_idx).tolist()
 
         fig, ax = plt.subplots(figsize=(max(4, len(classes)*1.2), max(3.5, len(classes)*1.0)))
         fig.patch.set_facecolor(BG)
@@ -6628,9 +6689,14 @@ def model_evaluate():
                 "method":         _model_type,
                 "problem_type":   "classification",
             }
-        # ROC curve
+        # ROC curve — look in _NODE_MODELS first, then fall back to model_obj in _MODEL_STORE
         roc_img_cls = None
-        live_mdl = _NODE_MODELS.get(node_id) or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+        live_mdl = (
+            _NODE_MODELS.get(node_id)
+            or _NODE_MODELS.get(int(node_id) if node_id.isdigit() else None)
+            or result.get("model_obj")
+        )
+        print(f"[model_evaluate/ROC] node_id={node_id!r} _NODE_MODELS keys={list(_NODE_MODELS.keys())} live_mdl={type(live_mdl).__name__ if live_mdl else None} _Xte={'yes' if _Xte else 'None'}")
         if live_mdl is not None and hasattr(live_mdl, "predict_proba") and _Xte is not None:
             try:
                 y_score_cls = live_mdl.predict_proba(np.array(_Xte))
