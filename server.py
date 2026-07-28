@@ -69,8 +69,20 @@ def PL():
     """Return the current plot-label dict for the active UI language."""
     return _PLOT_LABELS.get(_UI_LANG, _PLOT_LABELS["es"])
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, send_file
-import re, io, base64, csv, json, time, threading, zipfile, os, pickle, tempfile, shutil
+import re, io, base64, csv, json, time, threading, zipfile, os, pickle, tempfile, shutil, sys
+
+# Load .env if present (HF_TOKEN, HF_LLM_MODEL, etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed — env vars must be set manually
 from collections import Counter
+
+import pandas as pd
+
+# Raise CSV field-size limit as fallback for any legacy code path still using csv.DictReader
+csv.field_size_limit(min(2147483647, sys.maxsize))
 
 import numpy as np
 import matplotlib
@@ -135,6 +147,24 @@ S = dict(
 # Each entry mirrors the tabular fields of S that are data-specific.
 # NLP fields (texts, labels, model…) stay in S (single pipeline for now).
 _NODE_DATA: dict = {}   # { node_id_str : { columns, raw_rows, dataset_name, task, csv_source } }
+
+# ── Pandas DataFrame store (new layer — parallel to _NODE_DATA) ───────────────
+# Keyed by node_id_str. New endpoints read from here; legacy endpoints keep
+# using raw_rows for now. Both are kept in sync on every upload/load.
+_DF_STORE: dict = {}    # { node_id_str: pd.DataFrame }
+_DF_GLOBAL: list = [None]  # single-element list so it's mutable from closures; [0] = global DataFrame
+
+def _store_df(node_id: str | None, df: "pd.DataFrame") -> None:
+    """Persist a DataFrame for a node (and always update the global slot)."""
+    _DF_GLOBAL[0] = df
+    if node_id:
+        _DF_STORE[node_id] = df
+
+def _get_df(node_id: str | None) -> "pd.DataFrame | None":
+    """Return the DataFrame for a node, falling back to the global one."""
+    if node_id and node_id in _DF_STORE:
+        return _DF_STORE[node_id]
+    return _DF_GLOBAL[0]
 
 def _node_slot(node_id: str) -> dict:
     """Return (creating if needed) the per-node data slot."""
@@ -580,28 +610,50 @@ def upload_csv():
     label_col = request.form.get("label_col","")
     task      = request.form.get("task","classification")
     node_id   = request.form.get("node_id","")
-    content   = f.read().decode("utf-8", errors="replace")
-    rows      = list(csv.DictReader(io.StringIO(content)))
-    if not rows: return jsonify({"error":"Empty CSV"}), 400
-    cols = list(rows[0].keys())
+
+    # ── Read with pandas — no field_size_limit issues, handles encoding cleanly ──
+    try:
+        content = f.read()
+        df = pd.read_csv(
+            io.BytesIO(content),
+            dtype=str,          # keep everything as strings initially
+            keep_default_na=False,
+        )
+    except Exception as e:
+        return jsonify({"error": f"Error leyendo CSV: {e}"}), 400
+
+    if df.empty: return jsonify({"error": "Empty CSV"}), 400
+    df = df.fillna("")
+
+    cols = list(df.columns)
     if text_col not in cols:
         return jsonify({"error": f"Column '{text_col}' not found. Available: {cols}"}), 400
-    texts  = [r[text_col].strip() for r in rows if r.get(text_col,"").strip()]
-    raw_rows = [{c: r.get(c,"") for c in cols} for r in rows if r.get(text_col,"").strip()]
+
+    # Build raw_rows from DataFrame (list[dict] — keeps legacy endpoints working)
+    raw_rows = df.to_dict(orient="records")
+    texts    = [str(r.get(text_col,"")).strip() for r in raw_rows if str(r.get(text_col,"")).strip()]
+    raw_rows = [r for r in raw_rows if str(r.get(text_col,"")).strip()]
+
     labels, label_names = [], []
     if label_col and label_col in cols and task=="classification":
-        raw_lbl = [r[label_col].strip() for r in rows if r.get(text_col,"").strip()]
+        raw_lbl = [str(r.get(label_col,"")).strip() for r in raw_rows]
         uniq    = sorted(set(raw_lbl))
-        m       = {v:i for i,v in enumerate(uniq)}
+        m       = {v: i for i, v in enumerate(uniq)}
         labels, label_names = [m[l] for l in raw_lbl], uniq
+
     S.update(texts=texts, labels=labels, label_names=label_names, task=task,
              dataset_name=f.filename, processed_texts=list(texts),
              results={}, model=None, vectorizer=None, columns=cols, raw_rows=raw_rows,
              csv_source="external")
+
+    # ── Store DataFrame (new layer) ──────────────────────────────────────────
+    _store_df(node_id if node_id else None, df)
+
     if node_id:
         slot = _node_slot(node_id)
         slot.update(columns=cols, raw_rows=raw_rows, dataset_name=f.filename,
                     task=task, csv_source="external")
+
     return jsonify({**_dataset_summary(), "columns": cols, "node_id": node_id})
 
 @app.route("/api/dataset_info")
@@ -679,6 +731,8 @@ def load_tab_dataset():
         slot = _node_slot(node_id)
         slot.update(columns=cols, raw_rows=rows, dataset_name=ds["name"],
                     task=ds["task"], csv_source="demo")
+    # ── Store DataFrame (new layer) ──────────────────────────────────────────
+    _store_df(node_id if node_id else None, pd.DataFrame(rows).fillna(""))
     _TAB["target_col"] = ds["target"]
     return jsonify({**_dataset_summary(), "columns": cols,
                     "target": ds["target"], "task": ds["task"], "node_id": node_id})
@@ -5599,11 +5653,30 @@ def pick_export_path():
                 content_bytes = _json2.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
                 file_types = ("JSON File (*.json)", "All files (*.*)")
 
+        elif endpoint == "/api/rag_export_html":
+            extra = body.get("extra", {})
+            with app.test_client() as _tc:
+                import json as _js2
+                _r = _tc.post(
+                    "/api/rag_export_html",
+                    data=_js2.dumps(extra),
+                    content_type="application/json"
+                )
+                if _r.status_code != 200:
+                    return jsonify({"error": "Error generando informe RAG"}), 500
+                content_bytes = _r.data
+            _en2         = extra.get("lang", "es") == "en"
+            default_name = "rag_report.html" if _en2 else "informe_rag.html"
+            file_types   = ("HTML File (*.html)", "All files (*.*)")
+
         else:
             return jsonify({"error": "Unknown endpoint"}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    # Recalculate ext in case default_name was overwritten inside an elif branch
+    ext = os.path.splitext(default_name)[1] or ext
 
     # Open native dialog (pywebview → tkinter fallback)
     tk_types = [(ft.split("(")[0].strip(), "*." + ext.lstrip(".")) for ft in [file_types[0]]]
@@ -6754,3 +6827,680 @@ def model_evaluate():
         })
 
     return jsonify({"error": f"Tipo de problema '{problem_type}' no reconocido"}), 400
+
+
+# ── RAG Pipeline: state ───────────────────────────────────────────────────────
+# Keyed by node_id of the embed block so multiple embed nodes can coexist.
+_RAG: dict = {}   # { embed_node_id: { chunks, embeddings, meta, source_node_id, chunk_cfg, embed_cfg } }
+
+_EMBED_MODEL      = "sentence-transformers/all-MiniLM-L6-v2"
+_EMBED_BATCH      = 64    # increased from 32 — HF handles up to 64 per request fine
+_EMBED_MAX_CHUNKS = 5000  # default cap to avoid runaway embed jobs
+
+_rag_thread  = None   # single background thread for embedding
+
+def _rag_slot(node_id: str) -> dict:
+    if node_id not in _RAG:
+        _RAG[node_id] = {}
+    return _RAG[node_id]
+
+
+# ── RAG helpers ───────────────────────────────────────────────────────────────
+
+def _cosine_matrix(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    """Return cosine similarity of query_vec (dim,) against every row in matrix (N x dim)."""
+    q = query_vec / (np.linalg.norm(query_vec) + 1e-9)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-9
+    normed = matrix / norms
+    return (normed @ q).astype(float)
+
+
+def _split_into_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Naive character-level recursive splitter (mirrors RecursiveCharacterTextSplitter logic)."""
+    if len(text) <= chunk_size:
+        return [text] if text.strip() else []
+    chunks = []
+    start  = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunk = text[start:end]
+        if chunk.strip():
+            chunks.append(chunk)
+        if end >= len(text):
+            break
+        start += chunk_size - overlap
+    return chunks
+
+
+# ── /api/rag_chunk ────────────────────────────────────────────────────────────
+@app.route("/api/rag_chunk", methods=["POST"])
+def rag_chunk():
+    """
+    Split the text column (or processed_texts) into chunks.
+    Body: { node_id, source_node_id, text_col, chunk_size, overlap, use_processed }
+    use_processed=true → use S["processed_texts"] instead of raw_rows column.
+    Returns: { n_chunks, n_docs, avg_chunk_len, examples, text_col, use_processed }
+    """
+    body          = request.get_json(force=True, silent=True) or {}
+    node_id       = str(body.get("node_id", ""))
+    src_id        = str(body.get("source_node_id", ""))
+    text_col      = body.get("text_col", "")
+    chunk_size    = int(body.get("chunk_size", 500))
+    overlap       = int(body.get("overlap", 0))
+    use_processed = bool(body.get("use_processed", False))
+    chunk_mode    = body.get("chunk_mode", "auto")   # "auto" | "one_per_doc"
+
+    if chunk_mode == "auto" and overlap >= chunk_size:
+        return jsonify({"error": "El solapamiento debe ser menor que el tamaño del chunk."}), 400
+
+    # ── Resolve texts ────────────────────────────────────────────────────────
+    if use_processed and S.get("processed_texts"):
+        # Use preprocessed NLP texts — these are already cleaned/tokenized
+        texts_list   = [t for t in S["processed_texts"] if t and t.strip()]
+        text_col_out = "(preprocesado NLP)"
+    else:
+        slot = _get_data(src_id) if src_id else S
+        rows = slot.get("raw_rows", [])
+        if not rows:
+            return jsonify({"error": "No hay datos cargados en el bloque origen."}), 400
+        if not text_col or text_col not in rows[0]:
+            return jsonify({"error": f"Columna '{text_col}' no encontrada."}), 400
+        texts_list   = [str(row.get(text_col, "") or "").strip() for row in rows]
+        text_col_out = text_col
+
+    if not texts_list:
+        return jsonify({"error": "No hay textos para dividir en chunks."}), 400
+
+    # ── Chunk ────────────────────────────────────────────────────────────────
+    all_chunks: list = []
+    for doc_idx, text in enumerate(texts_list):
+        if chunk_mode == "one_per_doc":
+            # Each document becomes exactly one chunk
+            if text.strip():
+                all_chunks.append({"doc_idx": doc_idx, "chunk_idx": 0, "text": text})
+        else:
+            for ci, piece in enumerate(_split_into_chunks(text, chunk_size, overlap)):
+                all_chunks.append({"doc_idx": doc_idx, "chunk_idx": ci, "text": piece})
+
+    if not all_chunks:
+        return jsonify({"error": "El chunking no produjo ningún fragmento."}), 400
+
+    avg_len = sum(len(c["text"]) for c in all_chunks) / len(all_chunks)
+
+    # ── Persist ──────────────────────────────────────────────────────────────
+    slot_rag = _rag_slot(node_id)
+    slot_rag["chunks"]        = all_chunks
+    slot_rag["chunk_cfg"]     = {"chunk_size": chunk_size, "overlap": overlap,
+                                  "text_col": text_col_out, "use_processed": use_processed,
+                                  "chunk_mode": chunk_mode}
+    slot_rag["source_node"]   = src_id
+    slot_rag["embeddings"]    = None   # reset embeddings when chunks change
+
+    examples = all_chunks[:3] + ([all_chunks[-1]] if len(all_chunks) > 3 else [])
+
+    return jsonify({
+        "n_chunks":      len(all_chunks),
+        "n_docs":        len(texts_list),
+        "avg_chunk_len": round(avg_len),
+        "examples":      examples,
+        "text_col":      text_col_out,
+        "use_processed": use_processed,
+    })
+
+
+# ── /api/rag_embed  (background + SSE) ───────────────────────────────────────
+_rag_progress: list  = []
+_rag_embed_thread    = None
+_rag_cancel_flag: list = [False]   # [0] = True means "stop after current batch"
+
+def _push_rag(pct, msg):
+    _rag_progress.append({"pct": pct, "msg": msg})
+
+@app.route("/api/rag_embed", methods=["POST"])
+def rag_embed():
+    """
+    Generate embeddings for chunks using HF InferenceClient.
+    Body: { node_id, max_chunks? }
+    max_chunks caps the number of chunks to embed (default _EMBED_MAX_CHUNKS).
+    Starts a background thread; progress polled via /api/rag_embed_poll.
+    """
+    global _rag_embed_thread
+    body       = request.get_json(force=True, silent=True) or {}
+    node_id    = str(body.get("node_id", ""))
+    max_chunks = int(body.get("max_chunks", _EMBED_MAX_CHUNKS))
+
+    slot = _rag_slot(node_id)
+    chunks = slot.get("chunks")
+    if not chunks:
+        return jsonify({"error": "Ejecuta primero el bloque Chunking."}), 400
+
+    if _rag_embed_thread and _rag_embed_thread.is_alive():
+        return jsonify({"error": "Embeddings ya en curso."}), 429
+
+    # Cap chunks — sample evenly across the corpus to keep representativeness
+    if len(chunks) > max_chunks:
+        step = len(chunks) / max_chunks
+        chunks_to_embed = [chunks[int(i * step)] for i in range(max_chunks)]
+    else:
+        chunks_to_embed = chunks
+
+    _rag_progress.clear()
+    _rag_cancel_flag[0] = False
+
+    def _worker():
+        try:
+            if not _HF_AVAILABLE:
+                _push_rag(0, "huggingface_hub no está instalado.")
+                _push_rag(-1, "ERROR")
+                return
+
+            from huggingface_hub import InferenceClient
+            client = InferenceClient()
+
+            texts = [c["text"] for c in chunks_to_embed]
+            total = len(texts)
+            all_embs = []
+            processed = 0
+            _push_rag(1, f"Iniciando — {total} chunks…")
+
+            for i in range(0, total, _EMBED_BATCH):
+                if _rag_cancel_flag[0]:
+                    _push_rag(-2, f"Cancelado tras {processed}/{total} chunks")
+                    return
+                batch = texts[i: i + _EMBED_BATCH]
+                emb   = client.feature_extraction(batch, model=_EMBED_MODEL)
+                all_embs.append(np.asarray(emb, dtype=np.float32))
+                processed += len(batch)
+                pct = int(processed / total * 95) + 2
+                _push_rag(pct, f"Batch {i // _EMBED_BATCH + 1} — {processed}/{total} chunks")
+
+            matrix = np.vstack(all_embs)
+            slot["embeddings"]      = matrix
+            slot["embedded_chunks"] = chunks_to_embed
+            slot["embed_cfg"]       = {
+                "model": _EMBED_MODEL, "dim": matrix.shape[1],
+                "n": matrix.shape[0], "capped": len(chunks) > max_chunks,
+                "total_chunks": len(chunks),
+            }
+            _push_rag(100, f"Listo — {matrix.shape[0]} embeddings de dim {matrix.shape[1]} ✓")
+
+        except Exception as e:
+            _push_rag(-1, f"ERROR: {e}")
+
+    _rag_embed_thread = threading.Thread(target=_worker, daemon=True)
+    _rag_embed_thread.start()
+    return jsonify({"ok": True, "started": True})
+
+
+@app.route("/api/rag_embed_progress")
+def rag_embed_progress():
+    """SSE stream of { pct, msg } events."""
+    def gen():
+        sent = 0
+        while True:
+            while sent < len(_rag_progress):
+                ev = _rag_progress[sent]
+                yield f"data: {json.dumps(ev)}\n\n"
+                sent += 1
+                if ev.get("pct") in (100, -1):
+                    return
+            time.sleep(0.4)
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/rag_embed_poll")
+def rag_embed_poll():
+    """Polling fallback — returns all progress events and running status."""
+    running = _rag_embed_thread is not None and _rag_embed_thread.is_alive()
+    return jsonify({"events": list(_rag_progress), "running": running})
+
+@app.route("/api/rag_embed_cancel", methods=["POST"])
+def rag_embed_cancel():
+    """Signal the embed worker to stop after the current batch."""
+    _rag_cancel_flag[0] = True
+    return jsonify({"ok": True, "cancelled": True})
+
+
+# ── /api/rag_status ───────────────────────────────────────────────────────────
+@app.route("/api/rag_status")
+def rag_status():
+    """Return summary of what's been computed for a node."""
+    node_id = request.args.get("node_id", "")
+    slot    = _RAG.get(node_id, {})
+    chunks  = slot.get("chunks")
+    embs    = slot.get("embeddings")
+    return jsonify({
+        "has_chunks":    chunks is not None,
+        "n_chunks":      len(chunks) if chunks else 0,
+        "has_embeddings": embs is not None,
+        "n_embeddings":  int(embs.shape[0]) if embs is not None else 0,
+        "embed_cfg":     slot.get("embed_cfg", {}),
+        "chunk_cfg":     slot.get("chunk_cfg", {}),
+    })
+
+
+# ── /api/rag_retrieve ─────────────────────────────────────────────────────────
+@app.route("/api/rag_retrieve", methods=["POST"])
+def rag_retrieve():
+    """
+    Given a query string, embed it and return the top-k most similar chunks.
+    Body: { node_id, query, top_k }
+    Returns: { results: [{rank, score, doc_idx, chunk_idx, text}], query_embedding_dim }
+    """
+    body    = request.get_json(force=True, silent=True) or {}
+    node_id = str(body.get("node_id", ""))
+    query   = str(body.get("query", "")).strip()
+    top_k   = int(body.get("top_k", 5))
+
+    slot  = _RAG.get(node_id, {})
+    embs   = slot.get("embeddings")
+    # Use embedded_chunks if available (may be a capped subset of all chunks)
+    chunks = slot.get("embedded_chunks") or slot.get("chunks")
+
+    if embs is None or chunks is None:
+        return jsonify({"error": "Genera los embeddings primero."}), 400
+    if not query:
+        return jsonify({"error": "Escribe una consulta."}), 400
+
+    try:
+        from huggingface_hub import InferenceClient
+        client = InferenceClient()
+        q_emb  = np.asarray(
+            client.feature_extraction([query], model=_EMBED_MODEL),
+            dtype=np.float32
+        )
+        # feature_extraction returns (1, dim) or (dim,) depending on version
+        if q_emb.ndim == 2:
+            q_emb = q_emb[0]
+    except Exception as e:
+        return jsonify({"error": f"Error al embeber la consulta: {e}"}), 500
+
+    scores = _cosine_matrix(q_emb, embs)
+    top_idx = np.argsort(scores)[::-1][:top_k]
+
+    results = []
+    for rank, idx in enumerate(top_idx):
+        c = chunks[int(idx)]
+        results.append({
+            "rank":      rank + 1,
+            "score":     round(float(scores[idx]), 4),
+            "doc_idx":   c["doc_idx"],
+            "chunk_idx": c["chunk_idx"],
+            "text":      c["text"],
+        })
+
+    return jsonify({"results": results, "query": query})
+
+
+# ── /api/rag_columns ──────────────────────────────────────────────────────────
+@app.route("/api/rag_generate", methods=["POST"])
+def rag_generate():
+    """
+    Generate LLM responses for a query, with and without RAG context.
+
+    Body: { query, context_chunks: [{text, score}], max_new_tokens, system_prompt }
+
+    Returns: { response_no_rag, response_with_rag, model, error? }
+
+    Future: set HF_TOKEN env var (or load from .env) to use authenticated HF endpoints
+    and unlock larger / rate-limit-free models.
+    """
+    import os, concurrent.futures
+
+    body          = request.get_json(force=True, silent=True) or {}
+    query         = (body.get("query") or "").strip()
+    ctx_chunks    = body.get("context_chunks") or []
+    max_tokens    = int(body.get("max_new_tokens") or 256)
+    system_prompt = (body.get("system_prompt") or
+                     "Eres un asistente útil. Responde en el mismo idioma que la pregunta. "
+                     "Sé conciso y directo.")
+
+    if not query:
+        return jsonify({"error": "Falta la pregunta (query)."}), 400
+
+    # ── LLM selection ────────────────────────────────────────────────────────
+    # Model priority:
+    #   1. HF_TOKEN set → use Mistral-7B-Instruct-v0.3 (better quality, authenticated)
+    #   2. No token     → use HuggingFaceH4/zephyr-7b-beta (public, no key needed)
+    # To switch later: set HF_TOKEN in .env and restart the server.
+    hf_token   = os.environ.get("HF_TOKEN", "").strip()
+    # Qwen2.5-7B-Instruct works via chat_completion with a HF token (auto provider).
+    # If no token is set, same model is tried — may fail without a valid token.
+    # To use a different model: set HF_LLM_MODEL in .env
+    llm_model  = os.environ.get("HF_LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
+    if not _HF_AVAILABLE:
+        return jsonify({"error": "huggingface_hub no está instalado. Ejecuta: pip install huggingface_hub"}), 500
+
+    # ── Context budget ────────────────────────────────────────────────────────
+    # Qwen2.5-7B-Instruct context window: 32768 tokens (≈ 4 chars/token approx)
+    # Reserve ~1000 tokens for system + question + response → ~31768 for context
+    # Using 4 chars/token estimate: 31768 * 4 = ~127072 chars budget for context
+    MAX_CTX_CHARS = 12000   # conservative: ~3000 tokens, leaves plenty of headroom
+
+    def _truncate_chunks(chunks: list, max_chars: int) -> list:
+        """Keep as many chunks as fit within max_chars, truncating the last one if needed."""
+        result = []
+        used = 0
+        for c in chunks:
+            text = c.get("text", "")
+            if used + len(text) <= max_chars:
+                result.append(c)
+                used += len(text)
+            else:
+                remaining = max_chars - used
+                if remaining > 200:   # only include if meaningful amount left
+                    truncated = dict(c)
+                    truncated["text"] = text[:remaining] + "…"
+                    result.append(truncated)
+                break
+        return result
+
+    ctx_chunks_safe = _truncate_chunks(ctx_chunks, MAX_CTX_CHARS)
+    print(f"[rag_generate] chunks originales={len(ctx_chunks)} → tras truncar={len(ctx_chunks_safe)} ({sum(len(c['text']) for c in ctx_chunks_safe)} chars)", flush=True)
+
+    # ── Build prompts ─────────────────────────────────────────────────────────
+    def _fmt_prompt(with_context: bool) -> list:
+        messages = [{"role": "system", "content": system_prompt}]
+        if with_context and ctx_chunks_safe:
+            context_text = "\n\n---\n\n".join(
+                "[Fragmento {i}]\n{t}".format(i=idx+1, t=c["text"])
+                for idx, c in enumerate(ctx_chunks_safe)
+            )
+            user_content = (
+                "Usa los siguientes fragmentos como contexto para responder.\n\n"
+                "=== CONTEXTO ===\n{ctx}\n=== FIN ===\n\n"
+                "Pregunta: {q}"
+            ).format(ctx=context_text, q=query)
+        else:
+            user_content = "Pregunta: " + query
+        messages.append({"role": "user", "content": user_content})
+        return messages
+
+    # ── Call HF in parallel (no-RAG and with-RAG simultaneously) ─────────────
+    import traceback
+
+    def _call_hf(messages, label=""):
+        max_retries = 4
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"[rag_generate] {label} intento {attempt} — modelo={llm_model}", flush=True)
+                client = _HFClient(model=llm_model, token=hf_token if hf_token else None)
+                resp   = client.chat_completion(
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                )
+                print(f"[rag_generate] {label} OK — {str(resp)[:120]}", flush=True)
+                return resp.choices[0].message.content.strip()
+            except Exception as e:
+                err_str = str(e)
+                tb = traceback.format_exc()
+                print(f"[rag_generate] {label} ERROR intento {attempt}:\n{tb}", flush=True)
+                # Cold start: HF returns "Model ... is currently loading" with estimated_time
+                if "loading" in err_str.lower() or "estimated_time" in err_str.lower():
+                    wait = min(20 * attempt, 60)
+                    print(f"[rag_generate] {label} modelo cargando — esperando {wait}s…", flush=True)
+                    time.sleep(wait)
+                    continue
+                # Rate limit or server error — short retry
+                if "503" in err_str or "429" in err_str or "502" in err_str:
+                    wait = 10 * attempt
+                    print(f"[rag_generate] {label} {err_str[:60]} — reintentando en {wait}s…", flush=True)
+                    time.sleep(wait)
+                    continue
+                # Any other error — fail immediately
+                return "__ERROR__:" + err_str
+        return "__ERROR__:El modelo tardó demasiado en cargar. Inténtalo de nuevo en unos segundos."
+
+    msgs_no_rag   = _fmt_prompt(with_context=False)
+    msgs_with_rag = _fmt_prompt(with_context=True)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        fut_no  = ex.submit(_call_hf, msgs_no_rag,   "sin-RAG")
+        fut_yes = ex.submit(_call_hf, msgs_with_rag, "con-RAG")
+        resp_no  = fut_no.result(timeout=90)
+        resp_yes = fut_yes.result(timeout=90)
+
+    error = None
+    if resp_no.startswith("__ERROR__:") and resp_yes.startswith("__ERROR__:"):
+        error = resp_no[len("__ERROR__:"):]
+
+    print(f"[rag_generate] resultado final — no_rag={resp_no[:80] if resp_no else None} | with_rag={resp_yes[:80] if resp_yes else None}", flush=True)
+
+    return jsonify({
+        "response_no_rag":   resp_no  if not resp_no.startswith("__ERROR__:")  else None,
+        "response_with_rag": resp_yes if not resp_yes.startswith("__ERROR__:") else None,
+        "model":    llm_model,
+        "n_chunks": len(ctx_chunks),
+        "error":    error,
+    })
+
+
+@app.route("/api/rag_export_html", methods=["POST"])
+def rag_export_html():
+    """Generate a self-contained HTML report of the RAG pipeline results."""
+    import html as _html
+    from datetime import datetime
+
+    body             = request.get_json(force=True, silent=True) or {}
+    query            = body.get("query", "")
+    resp_no_rag      = body.get("response_no_rag", "")
+    resp_with_rag    = body.get("response_with_rag", "")
+    llm_model        = body.get("llm_model", "")
+    llm_time         = body.get("llm_time", "")
+    system_prompt    = body.get("system_prompt", "")
+    ctx_chunks       = body.get("context_chunks", [])
+    chunk_cfg        = body.get("chunk_cfg", {})
+    corpus_name      = body.get("corpus_name", "")
+    n_docs           = body.get("n_docs", 0)
+    n_embeddings     = body.get("n_embeddings", 0)
+    report_lang      = body.get("lang", "es")
+    now              = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # ── i18n strings ─────────────────────────────────────────────────────────
+    _en = report_lang == "en"
+    _t  = {
+        "title":          "RAG Results Report"            if _en else "Informe de Resultados RAG",
+        "generated":      "Generated on"                  if _en else "Generado el",
+        "pipeline_cfg":   "Pipeline Configuration"        if _en else "Configuración de la pipeline",
+        "corpus":         "Corpus"                        if _en else "Corpus",
+        "documents":      "documents"                     if _en else "documentos",
+        "embeddings":     "embeddings",
+        "chunking":       "Chunking",
+        "model":          "Model"                         if _en else "Modelo",
+        "sec1":           "1 — Query and Retrieval"       if _en else "1 — Consulta y recuperación",
+        "query_lbl":      "Query"                         if _en else "Consulta",
+        "frags_lbl":      "Retrieved fragments"           if _en else "Fragmentos recuperados",
+        "no_frags":       "No fragments retrieved."       if _en else "No hay fragmentos recuperados.",
+        "sec2":           "2 — Response without RAG"      if _en else "2 — Respuesta sin RAG",
+        "sec3":           "3 — Response with RAG"         if _en else "3 — Respuesta con RAG",
+        "prompt_lbl":     "Prompt sent to the LLM"        if _en else "Prompt enviado al LLM",
+        "resp_lbl":       "Response"                      if _en else "Respuesta",
+        "no_resp":        "No response generated."        if _en else "Sin respuesta generada.",
+        "rag_note":       ("💡 <strong>RAG in one sentence:</strong> the difference between the two responses "
+                           "comes from the LLM receiving the retrieved corpus fragments as context in its prompt. "
+                           "It is not magic — it is literally more text in the input.")
+                          if _en else
+                          ("💡 <strong>RAG en una frase:</strong> la diferencia entre las dos respuestas se debe únicamente "
+                           "a que el LLM recibe los fragmentos del corpus como contexto en el prompt. "
+                           "No es magia — es literalmente más texto en el input."),
+        "footer":         "Generated with NLP Flow"       if _en else "Generado con NLP Flow",
+        "one_per_doc":    "1 chunk per document"          if _en else "1 chunk por documento",
+        "chunk_sz":       "chars, overlap"                if _en else "chars, solapamiento",
+        "hash_lbl":       "#",
+        "score_lbl":      "Score",
+        "frag_lbl":       "Fragment"                      if _en else "Fragmento",
+    }
+
+    def _e(t): return _html.escape(str(t or ""))
+    def _md(t):
+        """Very minimal markdown to HTML for the report."""
+        import re
+        s = _e(t)
+        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        s = re.sub(r'\*(.+?)\*',     r'<em>\1</em>', s)
+        s = re.sub(r'^### (.+)$', r'<h3>\1</h3>', s, flags=re.MULTILINE)
+        s = re.sub(r'^## (.+)$',  r'<h2>\1</h2>', s, flags=re.MULTILINE)
+        s = re.sub(r'^# (.+)$',   r'<h1>\1</h1>', s, flags=re.MULTILINE)
+        s = re.sub(r'^\s*[-*] (.+)$', r'<li>\1</li>', s, flags=re.MULTILINE)
+        s = s.replace('\n', '<br>')
+        return s
+
+    # ── Fragments table ───────────────────────────────────────────────────────
+    frags_rows = ""
+    for i, c in enumerate(ctx_chunks):
+        score  = c.get("score", 0)
+        text   = (c.get("text") or "")[:500] + ("…" if len(c.get("text","")) > 500 else "")
+        frags_rows += (
+            f'<tr><td style="width:36px;text-align:center;color:#888">{i+1}</td>'
+            f'<td style="width:70px;text-align:center"><span class="score">{score:.4f}</span></td>'
+            f'<td style="font-size:12px;line-height:1.5">{_e(text)}</td></tr>'
+        )
+
+    chunk_mode_lbl = _t["one_per_doc"] if chunk_cfg.get("chunk_mode") == "one_per_doc" else \
+                     f"{chunk_cfg.get('chunk_size','?')} {_t['chunk_sz']} {chunk_cfg.get('overlap',0)}"
+
+    html_lang = "en" if _en else "es"
+    html_out = f"""<!DOCTYPE html>
+<html lang="{html_lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_t["title"]} — NLP Flow</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: #fff; color: #111; padding: 32px 40px; max-width: 900px;
+          margin: 0 auto; font-size: 14px; line-height: 1.6; }}
+  @media print {{ body {{ padding: 16px; }} .no-print {{ display: none; }} }}
+  h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 4px; }}
+  h2 {{ font-size: 15px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .06em; color: #555; margin: 28px 0 10px;
+        padding-bottom: 4px; border-bottom: 1px solid #e0e0e0; }}
+  h3 {{ font-size: 13px; font-weight: 600; color: #333; margin: 10px 0 4px; }}
+  .meta {{ font-size: 12px; color: #666; margin-top: 4px; }}
+  .pill {{ display:inline-block; background:#f3f3f3; border:1px solid #ddd;
+           border-radius:20px; padding:2px 10px; font-size:11px; margin:2px; }}
+  .query-box {{ background:#f0f8ff; border:1px solid #b3d9ff; border-radius:8px;
+               padding:12px 16px; font-size:14px; font-weight:600; color:#1a4a7a; margin-bottom:4px; }}
+  table {{ width:100%; border-collapse:collapse; margin-top:6px; }}
+  th {{ background:#f7f7f7; font-size:11px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.05em; color:#555; padding:6px 10px; text-align:left;
+        border-bottom:2px solid #e0e0e0; }}
+  td {{ padding:8px 10px; border-bottom:1px solid #f0f0f0; vertical-align:top; }}
+  tr:last-child td {{ border-bottom:none; }}
+  .score {{ background:#e8f5e9; color:#2e7d32; border-radius:4px;
+            padding:1px 6px; font-size:12px; font-family:monospace; font-weight:600; }}
+  .resp-box {{ background:#f9f9f9; border:1px solid #e0e0e0; border-radius:8px;
+               padding:14px 16px; font-size:13px; line-height:1.7; margin-top:6px; }}
+  .resp-box.rag {{ background:#f0fff4; border-color:#b2f5c8; }}
+  .prompt-box {{ background:#f5f5f5; border:1px solid #ddd; border-radius:6px;
+                 padding:10px 12px; font-size:11px; font-family:monospace;
+                 white-space:pre-wrap; word-break:break-word; color:#444; margin-top:6px; }}
+  .label {{ font-size:11px; font-weight:700; text-transform:uppercase;
+            letter-spacing:.06em; color:#888; margin-bottom:4px; }}
+  .note {{ font-size:12px; color:#666; margin-top:8px; font-style:italic; }}
+  footer {{ margin-top:40px; padding-top:14px; border-top:1px solid #eee;
+            font-size:11px; color:#aaa; text-align:center; }}
+</style>
+</head>
+<body>
+
+<h1>{_t["title"]}</h1>
+<div class="meta">{_t["generated"]} {_e(now)} · NLP Flow</div>
+
+<h2>{_t["pipeline_cfg"]}</h2>
+<div>
+  <span class="pill">📂 {_t["corpus"]}: {_e(corpus_name) or "—"}</span>
+  <span class="pill">📄 {_e(str(n_docs))} {_t["documents"]}</span>
+  <span class="pill">🧬 {_e(str(n_embeddings))} {_t["embeddings"]}</span>
+  <span class="pill">✂️ {_t["chunking"]}: {_e(chunk_mode_lbl)}</span>
+  <span class="pill">🤖 {_t["model"]}: {_e(llm_model)}</span>
+  {"<span class='pill'>⏱ " + _e(llm_time) + "</span>" if llm_time else ""}
+</div>
+
+<h2>{_t["sec1"]}</h2>
+<div class="label">{_t["query_lbl"]}</div>
+<div class="query-box">{_e(query)}</div>
+
+{"<div class='label' style='margin-top:14px'>" + _t["frags_lbl"] + " (" + str(len(ctx_chunks)) + ")</div><table><thead><tr><th>" + _t["hash_lbl"] + "</th><th>" + _t["score_lbl"] + "</th><th>" + _t["frag_lbl"] + "</th></tr></thead><tbody>" + frags_rows + "</tbody></table>" if ctx_chunks else "<div class='note'>" + _t["no_frags"] + "</div>"}
+
+<h2>{_t["sec2"]}</h2>
+<div class="label">{_t["prompt_lbl"]}</div>
+<div class="prompt-box">{_e("Question: " + query) if _en else _e("Pregunta: " + query)}</div>
+<div class="label" style="margin-top:10px">{_t["resp_lbl"]}</div>
+<div class="resp-box">{_md(resp_no_rag) if resp_no_rag else "<em style='color:#aaa'>" + _t["no_resp"] + "</em>"}</div>
+
+<h2>{_t["sec3"]}</h2>
+<div class="label">{_t["prompt_lbl"]}</div>
+<div class="prompt-box">{_e("=== CONTEXT ===" if _en else "=== CONTEXTO ===") + chr(10) + _e(chr(10).join(("[Fragment " if _en else "[Fragmento ") + str(i+1) + "] " + (c.get("text","")[:200]) for i,c in enumerate(ctx_chunks[:3]))) + (chr(10) + _e("[…]") if len(ctx_chunks) > 3 else "") + chr(10) + chr(10) + _e(("Question: " if _en else "Pregunta: ") + query)}</div>
+<div class="label" style="margin-top:10px">{_t["resp_lbl"]}</div>
+<div class="resp-box rag">{_md(resp_with_rag) if resp_with_rag else "<em style='color:#aaa'>" + _t["no_resp"] + "</em>"}</div>
+
+<div class="note" style="margin-top:16px">{_t["rag_note"]}</div>
+
+<footer>{_t["footer"]} · {_e(now)}</footer>
+
+</body>
+</html>"""
+
+    from flask import Response as _Resp
+    fname = "rag_report.html" if _en else "informe_rag.html"
+    return _Resp(
+        html_out.encode("utf-8"),
+        mimetype="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
+@app.route("/api/rag_columns")
+def rag_columns():
+    """Return column names and whether preprocessed NLP texts are available."""
+    node_id        = request.args.get("node_id", "")
+    slot           = _get_data(node_id) if node_id else S
+    rows           = slot.get("raw_rows", [])
+    has_processed  = bool(S.get("processed_texts"))
+    nlp_text_col   = ""
+
+    # Try to detect which column was used as the NLP text column
+    # (upload_csv stores it in S; best proxy is the column whose values match S["texts"])
+    if has_processed and S.get("texts") and rows:
+        first_text = S["texts"][0][:50] if S["texts"] else ""
+        for col in (rows[0].keys() if rows else []):
+            sample_val = str(rows[0].get(col, ""))[:50]
+            if sample_val == first_text:
+                nlp_text_col = col
+                break
+
+    if not rows:
+        return jsonify({"columns": [], "text_cols": [], "has_processed": has_processed,
+                        "nlp_text_col": nlp_text_col, "avg_text_len": 0, "n_docs": 0})
+
+    text_like = []
+    for col in rows[0].keys():
+        sample = [str(r.get(col, "") or "") for r in rows[:20]]
+        avg    = sum(len(v) for v in sample) / max(len(sample), 1)
+        if avg > 30:
+            text_like.append(col)
+
+    # Avg length of the primary text column (use processed if available)
+    if has_processed and S.get("processed_texts"):
+        sample_texts = S["processed_texts"][:50]
+    elif text_like:
+        sample_texts = [str(r.get(text_like[0], "")) for r in rows[:50]]
+    else:
+        sample_texts = []
+    avg_text_len = int(sum(len(t) for t in sample_texts) / max(len(sample_texts), 1))
+    max_text_len = int(max((len(t) for t in sample_texts), default=0))
+
+    return jsonify({
+        "columns":      list(rows[0].keys()),
+        "text_cols":    text_like,
+        "has_processed": has_processed,
+        "nlp_text_col": nlp_text_col,
+        "avg_text_len": avg_text_len,
+        "max_text_len": max_text_len,
+        "n_docs":       len(rows),
+    })

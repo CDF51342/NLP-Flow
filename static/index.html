@@ -63,6 +63,11 @@
       <div class="palette-item" data-type="training" draggable="true">🧠 Entrenamiento NLP</div>
       <div class="palette-item" data-type="topicmodel" draggable="true">🗂️ Topic Model</div>
       <div class="palette-item" data-type="classify" draggable="true">🎯 Clasificar NLP</div>
+      <div class="sb-group-label" data-i18n="group-rag">🔍 RAG</div>
+      <div class="palette-item" data-type="rag_chunk" draggable="true">✂️ Chunking</div>
+      <div class="palette-item" data-type="rag_embed" draggable="true">🧬 Embeddings</div>
+      <div class="palette-item" data-type="rag_retrieve" draggable="true">🔎 Retriever</div>
+      <div class="palette-item" data-type="rag_llm" draggable="true">🤖 LLM (RAG)</div>
     </div>
     <div class="sb-section">
       <div class="sb-label" data-i18n="canvas">Canvas</div>
@@ -79,6 +84,7 @@
     <div id="canvas-toolbar">
       <button class="ctool-btn active" id="ctool-pan" title="Mover canvas (M)">✋ Mover</button>
       <button class="ctool-btn" id="ctool-select" title="Seleccionar bloques (S)">⬚ Seleccionar</button>
+
       <div class="ctool-sep"></div>
       <button class="ctool-btn" id="ctool-zoomin" title="Zoom +">＋</button>
       <button class="ctool-btn" id="ctool-zoomout" title="Zoom −">－</button>
@@ -89,7 +95,7 @@
         <span id="pipeline-msg">Ejecutando…</span>
         <span class="pipeline-pct" id="pipeline-pct">0%</span>
       </span>
-      <button class="ctool-btn" id="btn-run-pipeline" title="Ejecutar pipeline completa">▶ Ejecutar pipeline</button>
+      <button class="ctool-btn" id="btn-run-pipeline" title="Ejecutar pipeline completa" data-i18n="run-pipeline">▶ Ejecutar pipeline</button>
     </div>
     <main id="canvasWrap">
       <div class="canvas-bg"></div>
@@ -408,7 +414,37 @@ var I18N = {
     "plot-chance":"Azar","plot-predicted":"Predicho","plot-actual":"Real",
     "plot-residuals-label":"Residuos","plot-fitted":"Ajustados",
     "plot-missing":"Valores ausentes",
-    "plot-frequency":"Frecuencia"
+    "plot-frequency":"Frecuencia",
+    // RAG pipeline
+    "group-rag":"🔍 RAG",
+    "rag-chunk-name":"Chunking","rag-embed-name":"Embeddings",
+    "rag-retrieve-name":"Retriever","rag-llm-name":"LLM (RAG)",
+    "ctool-pan":"Mover","ctool-select":"Seleccionar",
+    "run-pipeline":"▶ Ejecutar pipeline",
+    "canvas-empty":"Haz clic en un bloque del panel izquierdo para añadirlo",
+    "canvas-hint-full":"Rueda = zoom · Arrastra fondo = mover\nArrastra cabecera = mover bloque\nClic = seleccionar · Ctrl/⌘+clic = multi\nSupr/⌫ = eliminar · Doble clic = abrir\nCtrl+Z/Y = deshacer/rehacer",
+    // RAG block messages
+    "rag-connect-chunk":"Conecta este bloque a un bloque Chunking, Datos o Preprocesado.",
+    "rag-connect-embed":"Conecta este bloque a un bloque Embeddings.",
+    "rag-connect-retrieve":"Conecta este bloque a un bloque Retriever.",
+    "rag-run-retriever-first":"Ejecuta primero el Retriever.",
+    "rag-retriever-no-results":"⚠️ El Retriever aún no tiene resultados. Ejecuta una búsqueda en el bloque Retriever primero.",
+    "rag-generate-btn":"⚡ Generar respuestas",
+    "rag-generating":"Generando…",
+    "rag-run-retriever-disabled":"Ejecuta primero el Retriever",
+    "rag-no-context":"(ejecuta el Retriever primero para ver el contexto)",
+    "rag-tab-norag":"Sin RAG","rag-tab-rag":"Con RAG","rag-tab-prompts":"Prompts",
+    "rag-system-prompt-lbl":"System prompt",
+    "rag-response-label":"Respuesta","rag-prompt-label":"Prompt enviado",
+    "rag-embed-ready":"✅ Embeddings listos","rag-embed-run-chunk":"⚠ Ejecuta primero el bloque Chunking",
+    "rag-embed-cancel":"⛔ Cancelar","rag-embed-run":"▶ Generar embeddings",
+    "rag-embed-progress":"Generando embeddings…",
+    "rag-save-section":"Resultados RAG",
+    "rag-save-item":"📄 Informe RAG (.html)",
+    "rag-save-item-sub":"Consulta · fragmentos recuperados · respuestas sin RAG y con RAG",
+    "rag-save-run-llm":"Genera primero las respuestas en el bloque LLM (RAG).",
+    "rag-save-complete-pipeline":"Completa la pipeline RAG: Retriever → LLM → pulsa «Generar respuestas».",
+    "save-connect-rag":"🫙 Conecta este bloque a Preprocesado, Modelo, Evaluación, Plots o LLM (RAG)."
   },
   en: {
     // Canvas / shell
@@ -593,7 +629,37 @@ var I18N = {
     "plot-chance":"Random","plot-predicted":"Predicted","plot-actual":"Actual",
     "plot-residuals-label":"Residuals","plot-fitted":"Fitted",
     "plot-missing":"Missing values",
-    "plot-frequency":"Frequency"
+    "plot-frequency":"Frequency",
+    // RAG pipeline
+    "group-rag":"🔍 RAG",
+    "rag-chunk-name":"Chunking","rag-embed-name":"Embeddings",
+    "rag-retrieve-name":"Retriever","rag-llm-name":"LLM (RAG)",
+    "ctool-pan":"Move","ctool-select":"Select",
+    "run-pipeline":"▶ Run pipeline",
+    "canvas-empty":"Click a block in the left panel to add it",
+    "canvas-hint-full":"Scroll = zoom · Drag bg = pan\nDrag header = move block\nClick = select · Ctrl/⌘+click = multi\nDel/⌫ = delete · Dbl-click = open\nCtrl+Z/Y = undo/redo",
+    // RAG block messages
+    "rag-connect-chunk":"Connect this block to a Chunking, Data or Preprocessing block.",
+    "rag-connect-embed":"Connect this block to an Embeddings block.",
+    "rag-connect-retrieve":"Connect this block to a Retriever block.",
+    "rag-run-retriever-first":"Run the Retriever first.",
+    "rag-retriever-no-results":"⚠️ The Retriever has no results yet. Run a search in the Retriever block first.",
+    "rag-generate-btn":"⚡ Generate responses",
+    "rag-generating":"Generating…",
+    "rag-run-retriever-disabled":"Run the Retriever first",
+    "rag-no-context":"(run the Retriever first to see the context)",
+    "rag-tab-norag":"Without RAG","rag-tab-rag":"With RAG","rag-tab-prompts":"Prompts",
+    "rag-system-prompt-lbl":"System prompt",
+    "rag-response-label":"Response","rag-prompt-label":"Prompt sent",
+    "rag-embed-ready":"✅ Embeddings ready","rag-embed-run-chunk":"⚠ Run the Chunking block first",
+    "rag-embed-cancel":"⛔ Cancel","rag-embed-run":"▶ Generate embeddings",
+    "rag-embed-progress":"Generating embeddings…",
+    "rag-save-section":"RAG Results",
+    "rag-save-item":"📄 RAG Report (.html)",
+    "rag-save-item-sub":"Query · retrieved fragments · responses without and with RAG",
+    "rag-save-run-llm":"Generate the responses in the LLM (RAG) block first.",
+    "rag-save-complete-pipeline":"Complete the RAG pipeline: Retriever → LLM → click «Generate responses».",
+    "save-connect-rag":"🫙 Connect this block to Preprocessing, Model, Evaluation, Plots or LLM (RAG)."
   }
 };
 
@@ -624,6 +690,20 @@ function applyLang() {
   META.load_model.name  = lang === "es" ? "Cargar Modelo"    : "Load Model";
   META.training.name    = lang === "es" ? "Entrenamiento NLP": "NLP Training";
   META.classify.name    = lang === "es" ? "Clasificar NLP"   : "Classify NLP";
+  META.rag_chunk.name   = T("rag-chunk-name");
+  META.rag_embed.name   = T("rag-embed-name");
+  META.rag_retrieve.name= T("rag-retrieve-name");
+  META.rag_llm.name     = T("rag-llm-name");
+  // Hardcoded toolbar buttons
+  var panBtn = document.getElementById("ctool-pan");
+  var selBtn = document.getElementById("ctool-select");
+  var runBtn = document.getElementById("btn-run-pipeline");
+  if (panBtn) panBtn.innerHTML = "✋ " + T("ctool-pan");
+  if (selBtn) selBtn.innerHTML = "⬚ " + T("ctool-select");
+  if (runBtn) runBtn.textContent = T("run-pipeline");
+  // Canvas empty hint
+  var emptyEl = document.querySelector("[data-i18n='canvas-empty']");
+  if (emptyEl) emptyEl.textContent = T("canvas-empty");
   // Update headers of existing nodes on the canvas
   nodes.forEach(function(n) {
     var m = META[n.type];
@@ -825,96 +905,198 @@ function portCenter(nid, dir) {
 
 var hoveredEdgeIdx = -1;
 
-// ── Edge obstacle avoidance ───────────────────────────────────────────────────
-// Returns screen-space rects for all nodes except fromId and toId
+// ── Edge routing ─────────────────────────────────────────────────────────────
+
+// Screen-space rects for all nodes except the two endpoints
+// All node rects including source and target — used for bypass clearance
+function _allNodeRects() {
+  var wr = wrap.getBoundingClientRect();
+  var out = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var r = nodes[i].el.getBoundingClientRect();
+    out.push({ id: nodes[i].id, x: r.left - wr.left, y: r.top - wr.top, w: r.width, h: r.height });
+  }
+  return out;
+}
+
+// Intermediate obstacle rects (excludes source and target) — used for collision detection
 function _obstacleRects(fromId, toId) {
   var wr = wrap.getBoundingClientRect();
-  var rects = [];
+  var out = [];
   for (var i = 0; i < nodes.length; i++) {
     var nd = nodes[i];
     if (nd.id === fromId || nd.id === toId) continue;
     var r = nd.el.getBoundingClientRect();
-    rects.push({
-      x: r.left - wr.left, y: r.top - wr.top,
-      w: r.width,          h: r.height
-    });
+    out.push({ id: nd.id, x: r.left - wr.left, y: r.top - wr.top, w: r.width, h: r.height });
   }
-  return rects;
+  return out;
 }
 
-// Axis-aligned bounding box of a cubic bezier (sampled)
-function _bezierAABB(a, b) {
-  var dx = Math.abs(b.x - a.x);
-  var cp = Math.max(40, dx * 0.55);
-  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (var t = 0; t <= 1; t += 0.05) {
-    var mt = 1 - t;
-    var x = mt*mt*mt*a.x + 3*mt*mt*t*(a.x+cp) + 3*mt*t*t*(b.x-cp) + t*t*t*b.x;
-    var y = mt*mt*mt*a.y + 3*mt*mt*t*a.y       + 3*mt*t*t*b.y       + t*t*t*b.y;
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
+// Control-point offset for a bezier a→b.
+// Scales gently with horizontal distance; caps out so lines don't over-curve.
+function _cp(a, b) {
+  var dx = b.x - a.x;
+  var dy = b.y - a.y;
+  var dist = Math.sqrt(dx*dx + dy*dy);
+  // Forward connection: use horizontal pull proportional to dx
+  // Backward / vertical connection: use a fraction of total distance
+  var pull = Math.abs(dx) > 20
+    ? Math.max(30, Math.min(Math.abs(dx) * 0.42, 200))
+    : Math.max(30, Math.min(dist * 0.35, 160));
+  return pull;
+}
+
+// Sample a cubic bezier and check if any point lands inside rect r (with pad)
+function _bezierHitsRect(a, cp1, cp2, b, r, pad) {
+  var rx = r.x - pad, ry = r.y - pad, rw = r.w + pad*2, rh = r.h + pad*2;
+  for (var i = 0; i <= 40; i++) {
+    var t = i / 40, mt = 1 - t;
+    var x = mt*mt*mt*a.x + 3*mt*mt*t*cp1.x + 3*mt*t*t*cp2.x + t*t*t*b.x;
+    var y = mt*mt*mt*a.y + 3*mt*mt*t*cp1.y + 3*mt*t*t*cp2.y + t*t*t*b.y;
+    if (x >= rx && x <= rx+rw && y >= ry && y <= ry+rh) return true;
   }
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  return false;
 }
 
-// Does rect R overlap rect Q?
-function _rectsOverlap(r, q, pad) {
-  pad = pad || 0;
-  return r.x < q.x + q.w + pad && r.x + r.w > q.x - pad &&
-         r.y < q.y + q.h + pad && r.y + r.h > q.y - pad;
-}
-
-// Find the worst-colliding intermediate node for a direct bezier a→b
-// Returns the node rect or null
-function _worstObstacle(a, b, fromId, toId) {
+// Return all obstacle rects that the direct bezier a→b would hit
+function _collidingObs(a, b, fromId, toId) {
   var rects = _obstacleRects(fromId, toId);
-  var aabb  = _bezierAABB(a, b);
-  var PAD = 6;
-  var worst = null, worstOverlap = 0;
+  var pull  = _cp(a, b);
+  var cp1   = { x: a.x + pull, y: a.y };
+  var cp2   = { x: b.x - pull, y: b.y };
+  var hits  = [];
   for (var i = 0; i < rects.length; i++) {
-    var r = rects[i];
-    if (!_rectsOverlap(aabb, r, PAD)) continue;
-    // Rough overlap area as priority
-    var ox = Math.min(aabb.x + aabb.w, r.x + r.w + PAD) - Math.max(aabb.x, r.x - PAD);
-    var oy = Math.min(aabb.y + aabb.h, r.y + r.h + PAD) - Math.max(aabb.y, r.y - PAD);
-    var area = Math.max(0, ox) * Math.max(0, oy);
-    if (area > worstOverlap) { worstOverlap = area; worst = r; }
+    if (_bezierHitsRect(a, cp1, cp2, b, rects[i], 10)) hits.push(rects[i]);
   }
-  return worst;
+  return hits;
 }
 
-// Build a routed path: a → (optional waypoint) → b
-// If no collision, returns null (draw direct bezier).
-// If collision, returns a waypoint {x, y} that routes around the obstacle.
-function _routeEdge(a, b, fromId, toId) {
-  var obs = _worstObstacle(a, b, fromId, toId);
-  if (!obs) return null;
+// ── Orthogonal edge routing with rounded corners ──────────────────────────────
+// Always exits right from source port, enters left into target port.
+// Pattern:  a →H(stub)→ elbowX →V→ b.y →H→ b
+// When obstacles block the direct elbowX path, routes around them.
 
-  var MARGIN = 22; // clearance above/below obstacle
+var EDGE_R   = 10;   // corner radius px
+var EDGE_STUB = 36;  // minimum horizontal stub leaving the port
 
-  // Space above and below the obstacle
-  var spaceAbove = obs.y - MARGIN - a.y;          // how far we can go upward
-  var spaceBelow = (a.y) - (obs.y + obs.h + MARGIN); // negative = below is further down
+// Build the orthogonal waypoints for edge a→b.
+// Always exits right from a, enters left into b.
+// Bypass Y always clears ALL nodes (source, target, and any in-between).
+function _orthoWaypoints(a, b, fromId, toId) {
+  var MARGIN = 32;
+  var PAD    = 10;
 
-  // Mid-x of the path at the obstacle's horizontal centre
-  var midX = obs.x + obs.w / 2;
+  // Exit stub X: EDGE_STUB to the right of the output port
+  var elbowX = a.x + EDGE_STUB;
+  // Entry stub X: EDGE_STUB to the left of the input port
+  var bStubX = b.x - EDGE_STUB;
 
-  var wy;
-  if (obs.y - MARGIN > Math.min(a.y, b.y) - 10) {
-    // More room above — go above
-    wy = obs.y - MARGIN;
-  } else {
-    // More room below — go below
-    wy = obs.y + obs.h + MARGIN;
+  // Same row — straight horizontal
+  if (Math.abs(a.y - b.y) < 3) return [{ x: bStubX, y: b.y }];
+
+  // ── Always compute bypass using ALL nodes in the canvas ──────────────────
+  // This covers source, target, and any intermediate blocks uniformly.
+  var allRects = _allNodeRects();
+
+  // Corridor: the full horizontal span of the route plus margin
+  var xLeft  = Math.min(a.x, b.x) - MARGIN;
+  var xRight = Math.max(a.x, b.x) + MARGIN * 2;
+  var minY = Infinity, maxY = -Infinity;
+  for (var j = 0; j < allRects.length; j++) {
+    var nr = allRects[j];
+    if (nr.x + nr.w + PAD >= xLeft && nr.x - PAD <= xRight) {
+      if (nr.y        < minY) minY = nr.y;
+      if (nr.y + nr.h > maxY) maxY = nr.y + nr.h;
+    }
   }
 
-  // Pick the better side: whichever keeps the waypoint closer to the a→b midpoint Y
-  var directMidY = (a.y + b.y) / 2;
-  var aboveY = obs.y - MARGIN;
-  var belowY = obs.y + obs.h + MARGIN;
-  wy = (Math.abs(aboveY - directMidY) < Math.abs(belowY - directMidY)) ? aboveY : belowY;
+  var aboveY  = minY - MARGIN;
+  var belowY  = maxY + MARGIN;
+  // Use the target block's Y position as reference:
+  // if b.y is closer to belowY → target is below the group → route below
+  // if b.y is closer to aboveY → target is above the group → route above
+  var bypassY = Math.abs(b.y - belowY) <= Math.abs(b.y - aboveY) ? belowY : aboveY;
 
-  return { x: midX, y: wy };
+  // Now check: does the horizontal run at bypassY actually need to detour,
+  // or can we route directly at a.y without hitting anything?
+  // Test the three segments of the simple route:
+  //   H: a.y from elbowX to bStubX
+  //   V: bStubX from a.y to b.y
+  var needsBypass = false;
+  var interRects  = _obstacleRects(fromId, toId);
+  for (var i = 0; i < interRects.length; i++) {
+    var r = interRects[i];
+    // Does horizontal segment at a.y (from elbowX to bStubX) hit this rect?
+    var hY  = a.y;
+    var hX0 = Math.min(elbowX, bStubX), hX1 = Math.max(elbowX, bStubX);
+    var hHit = hY >= r.y - PAD && hY <= r.y + r.h + PAD &&
+               hX1 >= r.x - PAD && hX0 <= r.x + r.w + PAD;
+    // Does vertical segment at bStubX (from a.y to b.y) hit this rect?
+    var vX  = bStubX;
+    var vY0 = Math.min(a.y, b.y), vY1 = Math.max(a.y, b.y);
+    var vHit = vX >= r.x - PAD && vX <= r.x + r.w + PAD &&
+               vY1 >= r.y - PAD && vY0 <= r.y + r.h + PAD;
+    if (hHit || vHit) { needsBypass = true; break; }
+  }
+
+  if (!needsBypass) {
+    // Clean route: exit stub →H→ bStubX →V→ b.y →H(stub)→ b
+    return [
+      { x: elbowX,  y: a.y },
+      { x: bStubX,  y: a.y },
+      { x: bStubX,  y: b.y },
+    ];
+  }
+
+  // Bypass route: exit →V→ bypassY →H→ bStubX →V→ b.y →H(stub)→ b
+  return [
+    { x: elbowX,  y: a.y      },
+    { x: elbowX,  y: bypassY  },
+    { x: bStubX,  y: bypassY  },
+    { x: bStubX,  y: b.y      },
+  ];
+}
+
+// Draw an orthogonal polyline a → [waypoints] → b with rounded corners.
+function _drawOrthoEdge(a, wps, b, color, w, dashed) {
+  var pts = [a].concat(wps).concat([b]);
+  var R   = EDGE_R;
+
+  ectx.save();
+  ectx.strokeStyle = color; ectx.lineWidth = w;
+  ectx.lineCap = "round"; ectx.lineJoin = "round";
+  ectx.setLineDash(dashed ? [6, 4] : []);
+  ectx.beginPath();
+  ectx.moveTo(pts[0].x, pts[0].y);
+
+  for (var i = 1; i < pts.length - 1; i++) {
+    var prev = pts[i - 1];
+    var cur  = pts[i];
+    var next = pts[i + 1];
+
+    // Vector from prev→cur and cur→next
+    var d1x = cur.x - prev.x, d1y = cur.y - prev.y;
+    var d2x = next.x - cur.x, d2y = next.y - cur.y;
+    var len1 = Math.sqrt(d1x*d1x + d1y*d1y);
+    var len2 = Math.sqrt(d2x*d2x + d2y*d2y);
+
+    if (len1 < 0.5 || len2 < 0.5) { ectx.lineTo(cur.x, cur.y); continue; }
+
+    var r = Math.min(R, len1 / 2, len2 / 2);
+    // Point on incoming segment, r before the corner
+    var t1x = cur.x - (d1x / len1) * r;
+    var t1y = cur.y - (d1y / len1) * r;
+    // Point on outgoing segment, r after the corner
+    var t2x = cur.x + (d2x / len2) * r;
+    var t2y = cur.y + (d2y / len2) * r;
+
+    ectx.lineTo(t1x, t1y);
+    ectx.arcTo(cur.x, cur.y, t2x, t2y, r);
+  }
+
+  ectx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  ectx.stroke();
+  ectx.restore();
 }
 
 function redrawEdges() {
@@ -928,37 +1110,22 @@ function redrawEdges() {
     var color = isHovered ? "rgba(239,68,68,0.85)" : "rgba(18,18,18,0.28)";
     var w = isHovered ? 3 : 2.2;
 
-    var wp = _routeEdge(a, b, fromId, toId);
-    if (wp) {
-      // Two-segment bezier through the waypoint
-      bezier(a, wp, color, w, false);
-      bezier(wp, b, color, w, false);
-      drawArrow(b, wp, color);
-    } else {
-      bezier(a, b, color, w, false);
-      drawArrow(b, a, color);
-    }
+    var wps = _orthoWaypoints(a, b, fromId, toId);
+    _drawOrthoEdge(a, wps, b, color, w, false);
+    // Arrow direction: from last point before b
+    var arrowFrom = wps.length ? wps[wps.length - 1] : a;
+    drawArrow(b, arrowFrom, color);
   }
   if (connectState.active) {
     var fromDir = connectState.fromDir || "out";
     var a2 = portCenter(connectState.fromNid, fromDir === "in" ? "in" : "out");
-    if (a2) bezier(a2, { x: connectState.mx, y: connectState.my }, "#19e68c", 2.5, true);
+    if (a2) _drawOrthoEdge(a2, [], { x: connectState.mx, y: connectState.my }, "#19e68c", 2.5, true);
   }
 }
 
+// Keep bezier as alias so any other callers don't break
 function bezier(a, b, color, w, dashed) {
-  ectx.save();
-  ectx.strokeStyle = color; ectx.lineWidth = w;
-  ectx.lineCap = "round";
-  if (dashed) ectx.setLineDash([6, 4]);
-  else ectx.setLineDash([]);
-  var dx = Math.abs(b.x - a.x);
-  var cpOffset = Math.max(40, dx * 0.55);
-  ectx.beginPath();
-  ectx.moveTo(a.x, a.y);
-  ectx.bezierCurveTo(a.x + cpOffset, a.y, b.x - cpOffset, b.y, b.x, b.y);
-  ectx.stroke();
-  ectx.restore();
+  _drawOrthoEdge(a, [], b, color, w, dashed);
 }
 
 function drawArrow(tip, from, color) {
@@ -1018,15 +1185,19 @@ var META = {
   load_model:   { icon: "📂",  bg: "#f0faff", name: "Cargar Modelo",   nameEn: "Load Model" },
   training:     { icon: "🧠",  bg: "#f5f0ff", name: "Entrenamiento NLP",nameEn: "NLP Training" },
   topicmodel:   { icon: "🗂️", bg: "#f0f4ff", name: "Topic Model",     nameEn: "Topic Model" },
-  classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP",  nameEn: "Classify NLP" }
+  classify:     { icon: "🎯",  bg: "#fff8f0", name: "Clasificar NLP",  nameEn: "Classify NLP" },
+  rag_chunk:    { icon: "✂️",  bg: "#f0fbff", name: "Chunking",        nameEn: "Chunking" },
+  rag_embed:    { icon: "🧬",  bg: "#f5f0ff", name: "Embeddings",      nameEn: "Embeddings" },
+  rag_retrieve: { icon: "🔎",  bg: "#f0fff0", name: "Retriever",       nameEn: "Retriever" },
+  rag_llm:      { icon: "🤖",  bg: "#fff8ee", name: "LLM (RAG)",       nameEn: "LLM (RAG)" }
 };
 var ALLOWED = {
   // Exploración de datos — cualquier bloque de exploración puede recibir desde datos o desde preprocesado
-  data:         ["inspect","plots","preprocess","linreg"],
+  data:         ["inspect","plots","preprocess","linreg","rag_chunk","rag_embed"],
   inspect:      [],
   plots:        ["save_model"],
   // Preprocesado → exploración (para ver datos transformados) O → modelos O → guardar
-  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model"],
+  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model","rag_chunk","rag_embed"],
   // Modelos
   linreg:       ["model_eval","save_model"],
   model_eval:   ["save_model"],
@@ -1036,7 +1207,12 @@ var ALLOWED = {
   // NLP
   training:     ["classify"],
   topicmodel:   [],
-  classify:     []
+  classify:     [],
+  // RAG
+  rag_chunk:    ["rag_embed"],
+  rag_embed:    ["rag_retrieve"],
+  rag_retrieve: ["rag_llm"],
+  rag_llm:      ["save_model"]
 };
 
 function nodeById(id) {
@@ -1725,6 +1901,12 @@ function startProgress(onDone, barEl, lblEl, logEl) {
 var moEl    = document.getElementById("mo");
 var mBody   = document.getElementById("m-body");
 var mFoot   = document.getElementById("m-foot");
+// RAG embed job tracking
+var _embedPollInterval  = null;
+var _embedActiveNodeId  = null;  // chunkNodeId of the running job (null when idle)
+var _embedCanvasNodeId  = null;  // canvas node.id of the embed block (for badge updates)
+var _embedStartTime     = null;  // Date.now() when job started
+var _embedBgTimer       = null;  // interval for badge updates when modal is closed
 
 moEl.addEventListener("click", function(e) { if (e.target === moEl) closeModal(); });
 document.getElementById("m-close").addEventListener("click", closeModal);
@@ -1795,9 +1977,20 @@ function openModal(node) {
   else if (node.type === "training")     renderTrain(node);
   else if (node.type === "topicmodel")   renderTopicModel(node);
   else if (node.type === "classify")     renderClassify(node);
+  else if (node.type === "rag_chunk")    renderRagChunk(node);
+  else if (node.type === "rag_embed")    renderRagEmbed(node);
+  else if (node.type === "rag_retrieve") renderRagRetrieve(node);
+  else if (node.type === "rag_llm")      renderRagLlm(node);
 
 }
 function closeModal() {
+  // Stop the modal poll but let the embed job keep running in the background
+  if (_embedPollInterval) {
+    clearInterval(_embedPollInterval);
+    _embedPollInterval = null;
+    // Start background badge updater so the node shows progress while modal is closed
+    if (_embedActiveNodeId) _startEmbedBgBadge(_embedActiveNodeId);
+  }
   // plotHistory is intentionally NOT cleared here — it persists until data changes
   // Release any pinned modal height
   var modalEl = document.getElementById("modal");
@@ -5339,6 +5532,10 @@ async function renderPre(node) {
       var label = steps.length
         ? steps.map(function(s){ var sd=STEPS_DEF.find(function(x){return x.id===s;}); return sd?sd.label:s; }).join(", ").slice(0,40)+"…"
         : "Sin pasos";
+      // Mark as applied so downstream RAG blocks detect processed NLP text
+      node.data.applied      = true;
+      node.data.nlp_applied  = true;   // explicit flag for rag_chunk detection
+      node.data.steps        = steps;
       setNS(node.id, label); setOK(node.id, true);
       var btnWf = document.getElementById("btn-wf"); if (btnWf) btnWf.click();
     }, null, stat, null);
@@ -6449,7 +6646,8 @@ async function renderSaveModel(node) {
   var upType = upNode ? upNode.type : null;
 
   // ── 3. Constantes de UI ───────────────────────────────────────────────────
-  var MODEL_TYPES = ["linreg", "load_model", "knn"];  // ampliar con nuevos modelos
+  var MODEL_TYPES = ["linreg", "load_model", "knn"];
+  var RAG_TYPES   = ["rag_llm"];
   var _sHdr = function(t) {
     return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin:14px 0 6px">' + T(t) + '</div>';
   };
@@ -6582,10 +6780,32 @@ async function renderSaveModel(node) {
     }
     ctx.plotsNode = upNode;
 
-  // ── 8. Sin conexión o tipo desconocido ────────────────────────────────────
+  // ── 8. RAG pipeline ───────────────────────────────────────────────────────
+  } else if (RAG_TYPES.indexOf(upType) !== -1) {
+    var llmData      = upNode.data || {};
+    var hasResponses = !!(llmData.response_no_rag && llmData.response_with_rag);
+    var hasRetriever = !!(llmData.last_query);
+    if (hasResponses) {
+      sectionsHtml += _sHdr(T("rag-save-section"));
+      sectionsHtml += _chkRow(
+        "rag__html__" + upNode.id,
+        T("rag-save-item"),
+        T("rag-save-item-sub"),
+        true
+      );
+      ctx.ragNode = upNode;
+    } else if (hasRetriever) {
+      sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+        T("rag-save-run-llm") + '</div>';
+    } else {
+      sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+        T("rag-save-complete-pipeline") + '</div>';
+    }
+
+  // ── 9. Sin conexión o tipo desconocido ────────────────────────────────────
   } else {
     sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
-      T("save-connect") + '</div>';
+      T("save-connect-rag") + '</div>';
   }
 
   var hasAnything = sectionsHtml.indexOf("sv-chk") !== -1 || sectionsHtml.indexOf("sv-radio") !== -1;
@@ -6816,6 +7036,67 @@ async function renderSaveModel(node) {
         saved++;
 
       // ── Plots: ZIP de todos (vía servidor para diálogo nativo) ────────────
+      // ── RAG: informe HTML ─────────────────────────────────────────────────
+      } else if (id.startsWith("rag__html__")) {
+        var ragN  = ctx.ragNode;
+        if (!ragN) { errors.push("rag_informe.html: sin datos"); continue; }
+        statEl.textContent = "Generando informe RAG…";
+
+        // Walk pipeline to collect metadata from all RAG nodes
+        function _walkRagNodes(llmNode) {
+          var result = { llm: llmNode, retrieve: null, embed: null, chunk: null, data: null };
+          var visited = {}; var queue = [llmNode.id];
+          while (queue.length) {
+            var cur = queue.shift();
+            if (visited[cur]) continue; visited[cur] = true;
+            for (var ei = 0; ei < edges.length; ei++) {
+              if (String(edges[ei].to) !== String(cur)) continue;
+              var fn = nodeById(edges[ei].from); if (!fn) continue;
+              if (fn.type === "rag_retrieve" && !result.retrieve) result.retrieve = fn;
+              if (fn.type === "rag_embed"    && !result.embed)    result.embed    = fn;
+              if (fn.type === "rag_chunk"    && !result.chunk)    result.chunk    = fn;
+              if (fn.type === "data"         && !result.data)     result.data     = fn;
+              queue.push(fn.id);
+            }
+          }
+          return result;
+        }
+        var ragNodes = _walkRagNodes(ragN);
+
+        var ragFname = lang === "en" ? "rag_report.html" : "informe_rag.html";
+        var payload = {
+          query:            ragN.data.last_query         || "",
+          response_no_rag:  ragN.data.response_no_rag    || "",
+          response_with_rag: ragN.data.response_with_rag || "",
+          llm_model:        ragN.data.llm_model          || "",
+          llm_time:         ragN.data.llm_time           || "",
+          system_prompt:    ragN.data.system_prompt      || "",
+          context_chunks:   (ragNodes.retrieve && ragNodes.retrieve.data && ragNodes.retrieve.data.last_results) || [],
+          chunk_cfg:        (ragNodes.chunk    && ragNodes.chunk.data)    || {},
+          corpus_name:      (ragNodes.data     && ragNodes.data.data && ragNodes.data.data.filename) || "",
+          n_docs:           (ragNodes.data     && ragNodes.data.data && ragNodes.data.data.rows)     || 0,
+          n_embeddings:     (ragNodes.embed    && ragNodes.embed.data && ragNodes.embed.data.n_embeddings) || 0,
+          lang:             lang,
+        };
+
+        statEl.textContent = lang === "en" ? "Building RAG report…" : "Generando informe RAG…";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "/api/rag_export_html", default_name: ragFname, extra: payload })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          try {
+            var resp = await fetch("/api/rag_export_html", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            if (!resp.ok) throw new Error("HTTP " + resp.status);
+            _triggerDownload(await resp.blob(), ragFname);
+            saved++;
+          } catch(e) { errors.push(ragFname + ": " + (e.message || "error")); }
+        } else { saved++; }
+
       } else if (id.startsWith("plots__zip__")) {
         var pNid  = id.replace("plots__zip__", "");
         var pNode = nodeById(parseInt(pNid));
@@ -8043,6 +8324,1033 @@ checkStatus();
 // Init: apply language and push initial empty history snapshot
 applyLang();
 pushHistory();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RAG PIPELINE — Chunking · Embeddings · Retriever · LLM (prototype)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Return the single node directly connected INTO nid (first edge found) ──
+function directUpstream(nid) {
+  for (var i = 0; i < edges.length; i++) {
+    if (edges[i].to === nid) return nodeById(edges[i].from);
+  }
+  return null;
+}
+
+// ── Helper: walk upstream until we find a rag_chunk node ──────────────────
+function upstreamRagChunk(nid) {
+  var visited = {};
+  var queue   = [nid];
+  while (queue.length) {
+    var cur = queue.shift();
+    if (visited[cur]) continue;
+    visited[cur] = true;
+    for (var i = 0; i < edges.length; i++) {
+      if (edges[i].to === cur) {
+        var fromN = nodeById(edges[i].from);
+        if (!fromN) continue;
+        if (fromN.type === "rag_chunk") return fromN;
+        queue.push(fromN.id);
+      }
+    }
+  }
+  return null;
+}
+
+// Walk upstream until rag_embed
+function upstreamRagEmbed(nid) {
+  var visited = {};
+  var queue   = [nid];
+  while (queue.length) {
+    var cur = queue.shift();
+    if (visited[cur]) continue;
+    visited[cur] = true;
+    for (var i = 0; i < edges.length; i++) {
+      if (edges[i].to === cur) {
+        var fromN = nodeById(edges[i].from);
+        if (!fromN) continue;
+        if (fromN.type === "rag_embed") return fromN;
+        queue.push(fromN.id);
+      }
+    }
+  }
+  return null;
+}
+
+// ── CHUNKING ─────────────────────────────────────────────────────────────────
+async function renderRagChunk(node) {
+  showModalLoading("Detectando columnas…");
+
+  // directUpstream: the node directly wired into this one (data OR preprocess)
+  var immediateNode = directUpstream(node.id);
+  if (!immediateNode) { showNotConnected("Conecta este bloque a un bloque Datos o Preprocesado."); return; }
+
+  // isFromPreprocess: directly connected preprocess node that has run NLP preprocessing
+  var isFromPreprocess = (
+    immediateNode.type === "preprocess" &&
+    immediateNode.data &&
+    (immediateNode.data.applied || immediateNode.data.nlp_applied)
+  );
+
+  // Walk up to find the data node for the column list
+  var dataNode = upstreamDataNode(node.id);
+  var srcId    = dataNode ? String(dataNode.id) : String(immediateNode.id);
+
+  var colRes       = await fetch("/api/rag_columns?node_id=" + srcId).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+  var allCols      = colRes.columns      || [];
+  var textCols     = colRes.text_cols    || allCols;
+  var hasProcessed = !!colRes.has_processed;
+  var nlpTextCol   = colRes.nlp_text_col || "";
+  var avgTextLen   = colRes.avg_text_len || 0;
+  var maxTextLen   = colRes.max_text_len || 0;
+  var nDocs        = colRes.n_docs       || 0;
+
+  // Force processed mode when directly connected to an applied NLP preprocess AND server has processed_texts
+  var useProcessed = isFromPreprocess && hasProcessed;
+
+  var saved        = node.data || {};
+  var defSize      = avgTextLen > 3000 ? 1000 : avgTextLen > 1000 ? 600 : 300;
+  var chunkSize    = saved.chunk_size  || defSize;
+  var overlap      = saved.overlap     || 0;
+  var independent  = saved.independent !== undefined ? saved.independent : true;
+  var chunkMode    = saved.chunk_mode  || "auto";   // "auto" | "one_per_doc"
+  var selCol       = saved.text_col    || nlpTextCol || (textCols[0] || allCols[0] || "");
+
+  function estimateChunks(sz, ov, mode) {
+    if (!nDocs) return "—";
+    if (mode === "one_per_doc") return nDocs.toLocaleString() + " chunks (1 por doc)";
+    // Use max length for a realistic worst-case estimate
+    var refLen = maxTextLen || avgTextLen;
+    var stride = Math.max(1, sz - ov);
+    var perDoc = Math.ceil(refLen / stride);
+    var total  = perDoc * nDocs;
+    var label  = "~" + total.toLocaleString() + " chunks (hasta " + perDoc + " por doc)";
+    // If chunk_size >= max doc length → guaranteed 1 per doc
+    if (sz >= refLen) label = nDocs.toLocaleString() + " chunks (1 por doc, chunk_size ≥ doc más largo)";
+    return label;
+  }
+
+  mBody.innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:14px">' +
+
+    // Source banner
+    '<div style="background:' + (useProcessed ? '#f0fff4' : 'var(--tinted)') + ';border:1px solid ' + (useProcessed ? '#b2f5c8' : 'var(--border)') + ';border-radius:8px;padding:10px 12px;font-size:12px">' +
+      (useProcessed ? '🔧 <b>Texto preprocesado (NLP)</b>' : '📂 <b>Datos en bruto</b>') +
+      ' — ' + nDocs + ' documentos · media <b>' + avgTextLen.toLocaleString() + '</b> chars · máx <b>' + maxTextLen.toLocaleString() + '</b> chars' +
+      (isFromPreprocess && !hasProcessed ? '<br><span style="color:#ff9066">⚠ Ejecuta primero el bloque Preprocesado</span>' : '') +
+    '</div>' +
+
+    // Column selector — only when NOT using preprocessed NLP
+    (!useProcessed
+      ? '<div>' +
+          '<div class="fl" style="margin-bottom:6px">Columna de texto</div>' +
+          '<select class="inp" id="rc-col" style="width:100%">' +
+            (textCols.length ? textCols : allCols).map(function(c){
+              return '<option value="'+c+'"'+(c===selCol?' selected':'')+'>'+c+'</option>';
+            }).join("") +
+          '</select>' +
+          (textCols.length < allCols.length ? '<div style="font-size:11px;color:var(--sec);margin-top:3px">Solo columnas con texto largo.</div>' : '') +
+        '</div>'
+      : '<input type="hidden" id="rc-col" value="' + selCol + '">') +
+
+    // RAG note
+    '<div style="background:#f0f8ff;border:1px solid #b3d9ff;border-radius:6px;padding:8px 12px;font-size:11px;color:#2a6496">' +
+      '💡 Para RAG usa texto <b>en bruto</b> — los modelos de embeddings fueron entrenados con texto natural, el preprocesado NLP degrada la calidad del vector.' +
+    '</div>' +
+
+    // ── Chunk mode selector ──────────────────────────────────────────────
+    '<div style="background:var(--tinted);border-radius:8px;padding:10px 12px">' +
+      '<div style="font-size:12px;font-weight:600;margin-bottom:8px">Modo de chunking</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm ' + (chunkMode==="auto"       ? "btn-black":"btn-ghost") + '" id="rc-mode-auto">✂️ Dividir por tamaño</button>' +
+        '<button class="btn btn-sm ' + (chunkMode==="one_per_doc"? "btn-black":"btn-ghost") + '" id="rc-mode-one">📄 1 chunk por documento</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--sec);margin-top:6px" id="rc-mode-desc">' +
+        (chunkMode === "one_per_doc"
+          ? 'Cada documento es un chunk. Ideal cuando los textos son cortos o quieres el caso más simple.'
+          : 'Divide cada documento en fragmentos del tamaño configurado.') +
+      '</div>' +
+    '</div>' +
+
+    // ── Auto mode controls (hidden when one_per_doc) ─────────────────────
+    '<div id="rc-auto-controls" style="display:' + (chunkMode==="one_per_doc" ? "none":"flex") + ';flex-direction:column;gap:14px">' +
+
+      // Chunk size slider
+      '<div>' +
+        '<div class="fl" style="margin-bottom:4px">Tamaño de chunk: <b id="rc-size-val">' + chunkSize + '</b> chars</div>' +
+        '<input type="range" id="rc-size" min="100" max="3000" step="50" value="' + chunkSize + '" style="width:100%">' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:2px">Cortos (200-500): más precisión. Largos (800-2000): más contexto por fragmento.</div>' +
+      '</div>' +
+
+      // Independent docs toggle
+      '<div style="background:var(--tinted);border-radius:8px;padding:10px 12px">' +
+        '<div style="font-size:12px;font-weight:600;margin-bottom:8px">¿Los documentos son independientes entre sí?</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-sm ' + (independent ? "btn-black":"btn-ghost") + '" id="rc-ind-yes">✅ Sí — artículos, tweets…</button>' +
+          '<button class="btn btn-sm ' + (!independent ? "btn-black":"btn-ghost") + '" id="rc-ind-no">📖 No — texto continuo</button>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:6px" id="rc-ind-desc">' +
+          (independent ? 'Solapamiento = 0. Cada documento es completo.' : 'Solapamiento activo para no perder contexto en los bordes.') +
+        '</div>' +
+      '</div>' +
+
+      // Overlap slider
+      '<div id="rc-ov-wrap" style="display:' + (independent ? "none":"block") + '">' +
+        '<div class="fl" style="margin-bottom:4px">Solapamiento: <b id="rc-ov-val">' + overlap + '</b> chars</div>' +
+        '<input type="range" id="rc-ov" min="0" max="500" step="10" value="' + overlap + '" style="width:100%">' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:2px">Chars repetidos entre chunks consecutivos.</div>' +
+      '</div>' +
+
+    '</div>' +  // end rc-auto-controls
+    '<input type="hidden" id="rc-ov-hidden" value="' + (independent ? 0 : overlap) + '">' +
+
+    // Live estimate
+    '<div style="background:var(--tinted);border-radius:6px;padding:8px 12px;font-size:12px">' +
+      '📊 <b id="rc-estimate">' + estimateChunks(chunkSize, overlap, chunkMode) + '</b>' +
+      ' &nbsp;<span style="color:var(--sec)" id="rc-embed-warn"></span>' +
+    '</div>' +
+
+    '<button class="btn btn-black" id="rc-run">✂️ Dividir en chunks</button>' +
+
+    '<div id="rc-result" style="display:none">' +
+      '<hr class="sep">' +
+      '<div id="rc-stats" style="font-size:13px;margin-bottom:12px"></div>' +
+      '<div class="fl" style="font-size:12px;margin-bottom:6px">Ejemplos de chunks</div>' +
+      '<div id="rc-examples"></div>' +
+    '</div>' +
+
+    '</div>';
+
+  // ── Estimate + warn ────────────────────────────────────────────────────────
+  function getEffectiveOv() {
+    var indNow = document.getElementById("rc-ind-yes") && document.getElementById("rc-ind-yes").classList.contains("btn-black");
+    return indNow ? 0 : parseInt((document.getElementById("rc-ov") || {value:"0"}).value || 0);
+  }
+
+  function updateEstimate() {
+    var modeNow = chunkMode;
+    var sz   = parseInt((document.getElementById("rc-size") || {value: chunkSize}).value);
+    var ov   = getEffectiveOv();
+    var sVal = document.getElementById("rc-size-val"); if (sVal) sVal.textContent = sz;
+    var oVal = document.getElementById("rc-ov-val");   if (oVal) oVal.textContent = ov;
+    document.getElementById("rc-ov-hidden").value = ov;
+    document.getElementById("rc-estimate").textContent = estimateChunks(sz, ov, modeNow);
+    var refLen = maxTextLen || avgTextLen;
+    var total  = modeNow === "one_per_doc" ? nDocs : Math.ceil(refLen / Math.max(1, sz - ov)) * nDocs;
+    var warnEl = document.getElementById("rc-embed-warn");
+    if (total > 50000)      warnEl.textContent = "⚠ embedding tardará varios minutos";
+    else if (total > 20000) warnEl.textContent = "ℹ ~1-2 min de embedding";
+    else                    warnEl.textContent = "";
+  }
+
+  // ── Chunk mode toggle ──────────────────────────────────────────────────────
+  function setChunkMode(mode) {
+    chunkMode = mode;
+    var btnAuto = document.getElementById("rc-mode-auto");
+    var btnOne  = document.getElementById("rc-mode-one");
+    var autoCtrl = document.getElementById("rc-auto-controls");
+    var descEl   = document.getElementById("rc-mode-desc");
+    if (btnAuto) btnAuto.className = "btn btn-sm " + (mode === "auto"        ? "btn-black" : "btn-ghost");
+    if (btnOne)  btnOne.className  = "btn btn-sm " + (mode === "one_per_doc" ? "btn-black" : "btn-ghost");
+    if (autoCtrl) autoCtrl.style.display = mode === "one_per_doc" ? "none" : "flex";
+    if (descEl) descEl.textContent = mode === "one_per_doc"
+      ? "Cada documento es un chunk. Ideal cuando los textos son cortos o quieres el caso más simple."
+      : "Divide cada documento en fragmentos del tamaño configurado.";
+    updateEstimate();
+  }
+
+  // ── Independent toggle ─────────────────────────────────────────────────────
+  function setIndependent(val) {
+    independent = val;
+    var yesBtn = document.getElementById("rc-ind-yes");
+    var noBtn  = document.getElementById("rc-ind-no");
+    var ovWrap = document.getElementById("rc-ov-wrap");
+    var descEl = document.getElementById("rc-ind-desc");
+    if (yesBtn) yesBtn.className = "btn btn-sm " + (val  ? "btn-black" : "btn-ghost");
+    if (noBtn)  noBtn.className  = "btn btn-sm " + (!val ? "btn-black" : "btn-ghost");
+    if (ovWrap) ovWrap.style.display = val ? "none" : "block";
+    if (descEl) descEl.textContent = val
+      ? "Solapamiento = 0. Cada documento es completo."
+      : "Solapamiento activo para no perder contexto en los bordes.";
+    updateEstimate();
+  }
+
+  document.getElementById("rc-mode-auto").addEventListener("click", function() { setChunkMode("auto"); });
+  document.getElementById("rc-mode-one").addEventListener("click",  function() { setChunkMode("one_per_doc"); });
+  document.getElementById("rc-ind-yes").addEventListener("click",   function() { setIndependent(true); });
+  document.getElementById("rc-ind-no").addEventListener("click",    function() { setIndependent(false); });
+  document.getElementById("rc-size").addEventListener("input", updateEstimate);
+  var ovSlider = document.getElementById("rc-ov");
+  if (ovSlider) ovSlider.addEventListener("input", updateEstimate);
+
+  // ── Run ──────────────────────────────────────────────────────────────────
+  document.getElementById("rc-run").addEventListener("click", async function() {
+    var col = document.getElementById("rc-col").value;
+    var sz  = parseInt(document.getElementById("rc-size").value);
+    var ov  = parseInt(document.getElementById("rc-ov-hidden").value || 0);
+    if (ov >= sz) { toast("El solapamiento debe ser menor que el tamaño del chunk."); return; }
+
+    this.disabled = true; this.textContent = "Dividiendo…";
+
+    var res = await fetch("/api/rag_chunk", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        node_id: String(node.id), source_node_id: srcId,
+        text_col: col, chunk_size: sz, overlap: ov,
+        use_processed: useProcessed, chunk_mode: chunkMode
+      })
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+
+    this.disabled = false; this.textContent = "✂️ Dividir en chunks";
+    if (res.error) { toast("Error: " + res.error); return; }
+
+    node.data = Object.assign(node.data || {}, {
+      text_col: col, chunk_size: sz, overlap: ov, independent: independent,
+      chunk_mode: chunkMode, n_chunks: res.n_chunks, applied: true, use_processed: useProcessed
+    });
+    setNS(node.id, res.n_chunks.toLocaleString() + " chunks");
+    setOK(node.id, true);
+
+    document.getElementById("rc-result").style.display = "block";
+    document.getElementById("rc-stats").innerHTML =
+      '<b>' + res.n_chunks.toLocaleString() + '</b> chunks totales de <b>' + res.n_docs + '</b> documentos' +
+      ' &nbsp;·&nbsp; <b>' + Math.round(res.n_chunks / res.n_docs) + '</b> chunks/doc' +
+      ' &nbsp;·&nbsp; longitud media: <b>' + res.avg_chunk_len + '</b> chars' +
+      (useProcessed ? ' &nbsp;·&nbsp; <span style="color:#19e68c">usando texto preprocesado</span>' : '');
+
+    document.getElementById("rc-examples").innerHTML = (res.examples || []).map(function(c) {
+      return '<div style="margin-bottom:10px;background:var(--tinted);border-radius:6px;padding:10px">' +
+        '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">Doc ' + c.doc_idx + ' · Chunk ' + c.chunk_idx + '</div>' +
+        '<div style="font-size:12px;font-family:monospace;white-space:pre-wrap;word-break:break-word">' +
+          c.text.substring(0, 300) + (c.text.length > 300 ? '…' : '') +
+        '</div>' +
+      '</div>';
+    }).join("");
+  });
+
+  // Restore previous result
+  if (saved.applied && saved.n_chunks) {
+    document.getElementById("rc-result").style.display = "block";
+    document.getElementById("rc-stats").innerHTML =
+      '<b>' + saved.n_chunks.toLocaleString() + '</b> chunks generados' +
+      (saved.use_processed ? ' &nbsp;·&nbsp; <span style="color:#19e68c">usando texto preprocesado</span>' : '');
+  }
+}
+
+// ── Embed time estimator ──────────────────────────────────────────────────────
+function _embedTimeEst(n) {
+  if (!n) return "";
+  var batches  = Math.ceil(n / 64);
+  var secs     = 40 + batches * 1.2;   // 40s cold start + ~1.2s/batch
+  var mins     = Math.ceil(secs / 60);
+  if (secs < 90) return "Tiempo estimado: ~" + Math.round(secs) + "s";
+  return "Tiempo estimado: ~" + mins + " min";
+}
+
+// ── EMBEDDINGS ───────────────────────────────────────────────────────────────
+async function renderRagEmbed(node) {
+  showModalLoading("Verificando estado…");
+
+  var chunkNode   = upstreamRagChunk(node.id);
+  var directSrc   = directUpstream(node.id);   // may be data/preprocess directly
+  var directMode  = !chunkNode && directSrc && (directSrc.type === "data" || directSrc.type === "preprocess");
+
+  if (!chunkNode && !directMode) {
+    showNotConnected(T("rag-connect-chunk"));
+    return;
+  }
+
+  // In direct mode: auto-run rag_chunk with one_per_doc to create the chunk slot,
+  // then use the embed node's own id as the chunk node id
+  var chunkNodeId;
+  if (directMode) {
+    chunkNodeId   = String(node.id) + "_direct";   // synthetic slot id
+    var dataSrc   = upstreamSourceNode(node.id) || directSrc;
+    var colRes    = await fetch("/api/rag_columns?node_id=" + String(dataSrc.id)).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+    var isNlpPre  = directSrc.type === "preprocess" && directSrc.data && (directSrc.data.applied || directSrc.data.nlp_applied);
+    var textCol   = colRes.nlp_text_col || (colRes.text_cols && colRes.text_cols[0]) || (colRes.columns && colRes.columns[0]) || "";
+
+    // Auto-chunk one_per_doc so the slot exists for embed
+    await fetch("/api/rag_chunk", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        node_id: chunkNodeId, source_node_id: String(dataSrc.id),
+        text_col: textCol, chunk_size: 99999, overlap: 0,
+        use_processed: isNlpPre, chunk_mode: "one_per_doc"
+      })
+    }).catch(function(){});
+  } else {
+    chunkNodeId = String(chunkNode.id);
+  }
+
+  // ── Banner to show when in direct mode ───────────────────────────────────
+  var directBanner = directMode
+    ? '<div style="background:#f0fff4;border:1px solid #b2f5c8;border-radius:6px;padding:8px 12px;font-size:12px">' +
+        '⚡ <b>Modo directo</b> — cada documento del corpus se embedde como un único vector (sin chunking previo).' +
+      '</div>'
+    : '';
+
+  // Check server status + whether a job is already running
+  var st  = await fetch("/api/rag_status?node_id=" + chunkNodeId).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+  var pr  = await fetch("/api/rag_embed_poll").then(function(r){ return r.json(); }).catch(function(){ return {events:[], running:false}; });
+  var jobRunning = !!pr.running;
+
+  // ── Build modal ────────────────────────────────────────────────────────
+  var totalChunks = st.n_chunks || 0;
+  var defMax  = totalChunks;   // default: all chunks
+  var maxMax  = totalChunks;
+  var elapsed0 = (jobRunning && _embedStartTime) ? Math.round((Date.now() - _embedStartTime) / 1000) : 0;
+
+  mBody.innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:14px">' +
+
+    directBanner +
+
+    // Model info
+    '<div style="background:var(--tinted);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6">' +
+      '<b>Modelo:</b> all-MiniLM-L6-v2 &nbsp;·&nbsp; <b>Dim:</b> 384 &nbsp;·&nbsp; <b>Tokens máx:</b> 256<br>' +
+      '<b>Proveedor:</b> Hugging Face (sin API key) &nbsp;·&nbsp; batches de 64 chunks<br>' +
+      '<span style="color:var(--sec)">Cold start: ~35-40s. Ritmo estable: ~1000 chunks/min.</span>' +
+    '</div>' +
+
+    // Persistent status card — always visible
+    '<div id="re-status-wrap" style="border-radius:8px;padding:10px 12px;font-size:13px;border:1px solid var(--border)">' +
+      _embedStatusHtml(st) +
+    '</div>' +
+
+    // Chunks selector — only when no job is running and no embeddings yet (or regenerating)
+    (!jobRunning
+      ? '<div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<span class="fl">Chunks a embeber:</span>' +
+            '<b id="re-maxc-val">' + (defMax === maxMax ? 'Todos (' + maxMax.toLocaleString() + ')' : defMax.toLocaleString()) + '</b>' +
+          '</div>' +
+          '<input type="range" id="re-maxc" min="' + (Math.min(500, maxMax)) + '" max="' + maxMax + '" step="' + (maxMax > 5000 ? 500 : 100) + '" value="' + defMax + '" style="width:100%">' +
+          '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--sec);margin-top:2px">' +
+            '<span id="re-time-est">' + _embedTimeEst(defMax) + '</span>' +
+            '<span style="cursor:pointer;color:var(--acc)" id="re-maxc-all">Todos</span>' +
+          '</div>' +
+        '</div>'
+      : '') +
+
+    // Info: process continues in background
+    (!st.has_embeddings || jobRunning
+      ? '<div style="background:#f0f8ff;border:1px solid #b3d9ff;border-radius:6px;padding:10px;font-size:12px;color:#2a6496">' +
+          'ℹ️ El proceso continúa aunque cierres esta ventana. El nodo mostrará el progreso en tiempo real.' +
+        '</div>'
+      : '') +
+
+    // Progress bar + timer — shown when running
+    '<div id="re-prog-wrap" style="display:' + (jobRunning ? 'block' : 'none') + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+        '<span style="font-size:12px;color:var(--sec)" id="re-prog-msg">' + (jobRunning ? 'En curso…' : '') + '</span>' +
+        '<span style="font-size:12px;color:var(--sec);font-weight:600" id="re-elapsed">' + (elapsed0 ? '⏱ ' + _fmtTime(elapsed0) : '') + '</span>' +
+      '</div>' +
+      '<div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">' +
+        '<div id="re-prog-bar" style="height:100%;background:#19e68c;width:0%;transition:width 0.3s"></div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--sec);margin-top:3px" id="re-prog-pct">0%</div>' +
+    '</div>' +
+
+    // Run + Cancel buttons row
+    '<div style="display:flex;gap:8px">' +
+      '<button class="btn btn-black" id="re-run" style="flex:1" ' + (!st.has_chunks && !jobRunning ? 'disabled' : '') + '>' +
+        (jobRunning ? '⏳ ' + T("rag-generating") : st.has_embeddings ? '🔄 ' + T("rag-embed-run") : T("rag-embed-run")) +
+      '</button>' +
+      '<button class="btn btn-ghost" id="re-cancel" style="display:' + (jobRunning ? 'inline-flex' : 'none') + '">' +
+        T("rag-embed-cancel") +
+      '</button>' +
+    '</div>' +
+
+    // Similarity demo — only when embeddings exist
+    '<div id="re-sim-wrap" style="display:' + (st.has_embeddings ? 'block' : 'none') + '">' +
+      '<hr class="sep">' +
+      '<div class="fl" style="margin-bottom:6px">Prueba de similitud</div>' +
+      '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">Escribe una frase — verás el fragmento del corpus más similar.</div>' +
+      '<input class="inp" id="re-frase1" placeholder="Ej: crisis económica en Europa…" style="margin-bottom:8px">' +
+      '<button class="btn btn-ghost btn-sm" id="re-sim-btn">Buscar en corpus</button>' +
+      '<div id="re-sim-result" style="margin-top:8px;font-size:12px"></div>' +
+    '</div>' +
+
+    '</div>';
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function updateStatusWrap(st2) {
+    var el = document.getElementById("re-status-wrap");
+    if (el) el.innerHTML = _embedStatusHtml(st2);
+  }
+
+  // ── Slider + "Todos" shortcut ────────────────────────────────────────────
+  var maxcSlider = document.getElementById("re-maxc");
+  if (maxcSlider) {
+    maxcSlider.addEventListener("input", function() {
+      var v  = parseInt(this.value);
+      var lbl = v >= maxMax ? 'Todos (' + maxMax.toLocaleString() + ')' : v.toLocaleString();
+      document.getElementById("re-maxc-val").textContent = lbl;
+      var estEl = document.getElementById("re-time-est");
+      if (estEl) estEl.textContent = _embedTimeEst(v >= maxMax ? maxMax : v);
+    });
+  }
+  var allBtn = document.getElementById("re-maxc-all");
+  if (allBtn) allBtn.addEventListener("click", function() {
+    if (maxcSlider) { maxcSlider.value = maxMax; maxcSlider.dispatchEvent(new Event("input")); }
+  });
+
+  // ── Track running job so bg badge works ─────────────────────────────────
+  _embedActiveNodeId = chunkNodeId;
+  _embedCanvasNodeId = node.id;   // canvas id of the embed block — used for setNB
+  if (jobRunning && _embedBgTimer) { clearInterval(_embedBgTimer); _embedBgTimer = null; }
+
+  // Resume polling into modal if job was already running
+  if (jobRunning) {
+    _startEmbedPoll(chunkNodeId, node, updateStatusWrap);
+  }
+
+  // ── Cancel button ─────────────────────────────────────────────────────────
+  var canBtn = document.getElementById("re-cancel");
+  if (canBtn) canBtn.addEventListener("click", async function() {
+    this.disabled = true; this.textContent = "Cancelando…";
+    await fetch("/api/rag_embed_cancel", { method: "POST" }).catch(function(){});
+  });
+
+  // ── Run button ────────────────────────────────────────────────────────────
+  var runBtn = document.getElementById("re-run");
+  if (runBtn) runBtn.addEventListener("click", async function() {
+    if (jobRunning) return;
+    this.disabled = true; this.textContent = "⏳ " + T("rag-generating");
+    var canBtnEl = document.getElementById("re-cancel");
+    if (canBtnEl) { canBtnEl.style.display = "inline-flex"; canBtnEl.disabled = false; canBtnEl.textContent = T("rag-embed-cancel"); }
+    document.getElementById("re-prog-wrap").style.display = "block";
+
+    var maxcEl    = document.getElementById("re-maxc");
+    var maxChunks = maxcEl ? parseInt(maxcEl.value) : maxMax;
+    _embedStartTime = Date.now();
+
+    var startRes = await fetch("/api/rag_embed", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ node_id: chunkNodeId, max_chunks: maxChunks })
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+
+    if (startRes.error) {
+      toast("Error: " + startRes.error);
+      this.disabled = false; this.textContent = T("rag-embed-run");
+      if (canBtnEl) canBtnEl.style.display = "none";
+      _embedStartTime = null;
+      return;
+    }
+    jobRunning = true;
+    _embedActiveNodeId = chunkNodeId;
+    _embedCanvasNodeId = node.id;
+    _startEmbedPoll(chunkNodeId, node, updateStatusWrap);
+  });
+
+  // ── Similarity demo ────────────────────────────────────────────────────────
+  var simBtn = document.getElementById("re-sim-btn");
+  if (simBtn) simBtn.addEventListener("click", async function() {
+    var f1 = (document.getElementById("re-frase1").value || "").trim();
+    if (!f1) { toast("Escribe una frase."); return; }
+    this.disabled = true; this.textContent = "Buscando…";
+    var res = await fetch("/api/rag_retrieve", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ node_id: chunkNodeId, query: f1, top_k: 3 })
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+    this.disabled = false; this.textContent = "Buscar en corpus";
+    var srEl = document.getElementById("re-sim-result");
+    if (res.error) { srEl.innerHTML = '<span style="color:#ff6b6b">' + res.error + '</span>'; return; }
+    srEl.innerHTML = (res.results || []).map(function(r) {
+      var col = r.score > 0.6 ? "#19e68c" : r.score > 0.35 ? "#ffd077" : "#ff9066";
+      return '<div style="margin-bottom:8px;background:var(--tinted);border-radius:6px;padding:8px 10px">' +
+        '<div style="font-size:11px;color:var(--sec);margin-bottom:3px">Similitud: <b style="color:' + col + '">' + r.score.toFixed(3) + '</b></div>' +
+        '<div style="font-size:12px;font-family:monospace">' + r.text.substring(0, 150) + (r.text.length > 150 ? '…' : '') + '</div>' +
+      '</div>';
+    }).join("") || '<span style="color:var(--sec)">Sin resultados</span>';
+  });
+}
+
+// ── Embed status HTML helper ──────────────────────────────────────────────────
+function _embedStatusHtml(st) {
+  if (st.has_embeddings) {
+    var cfg    = st.embed_cfg || {};
+    var capMsg = cfg.capped
+      ? ' <span style="color:#ffd077">(muestra ' + st.n_embeddings + '/' + cfg.total_chunks + ' chunks)</span>'
+      : '';
+    return '<span style="color:#19e68c">' + T("rag-embed-ready") + '</span> &nbsp;·&nbsp; ' +
+           st.n_embeddings + ' vectores · dim ' + (cfg.dim || 384) + capMsg;
+  }
+  if (st.has_chunks) {
+    return '<span style="color:var(--sec)">✂️ ' + st.n_chunks + ' chunks listos — embeddings pendientes</span>';
+  }
+  return '<span style="color:#ff9066">' + T("rag-embed-run-chunk") + '</span>';
+}
+
+// ── Polling loop (shared by run and resume) ───────────────────────────────────
+// ── Format seconds as MM:SS ───────────────────────────────────────────────────
+function _fmtTime(secs) {
+  var m = Math.floor(secs / 60);
+  var s = Math.floor(secs % 60);
+  return (m > 0 ? m + "m " : "") + s + "s";
+}
+
+// ── Background badge updater — shows ⏳ XX% on the embed node while modal closed ─
+function _startEmbedBgBadge(chunkNodeId) {
+  if (_embedBgTimer) { clearInterval(_embedBgTimer); _embedBgTimer = null; }
+  _embedBgTimer = setInterval(async function() {
+    var canvasId = _embedCanvasNodeId;
+    if (!canvasId) { clearInterval(_embedBgTimer); _embedBgTimer = null; return; }
+    var pr = await fetch("/api/rag_embed_poll").then(function(r){ return r.json(); }).catch(function(){ return {events:[], running:false}; });
+    var evs = pr.events || [];
+    if (!evs.length) return;
+    var last    = evs[evs.length - 1];
+    var elapsed = _embedStartTime ? Math.round((Date.now() - _embedStartTime) / 1000) : 0;
+    if (last.pct >= 0 && last.pct < 100) {
+      setNB(canvasId, "⏳ " + last.pct + "% · " + _fmtTime(elapsed), "badge-warn");
+    } else if (last.pct === 100) {
+      setNB(canvasId, "✅ Listo · " + _fmtTime(elapsed), "badge-ok");
+      setOK(canvasId, true);
+      clearInterval(_embedBgTimer); _embedBgTimer = null;
+      _embedActiveNodeId = null; _embedCanvasNodeId = null; _embedStartTime = null;
+      toast(T("rag-embed-ready") + " (" + _fmtTime(elapsed) + ")");
+    } else if (last.pct === -1 || last.pct === -2) {
+      setNB(canvasId, last.pct === -2 ? "⛔ Cancelado" : "❌ Error", "badge-err");
+      clearInterval(_embedBgTimer); _embedBgTimer = null;
+      _embedActiveNodeId = null; _embedCanvasNodeId = null; _embedStartTime = null;
+    }
+  }, 1500);
+}
+
+function _startEmbedPoll(chunkNodeId, node, updateStatusFn) {
+  if (_embedPollInterval) { clearInterval(_embedPollInterval); _embedPollInterval = null; }
+  if (!_embedStartTime)   _embedStartTime = Date.now();
+
+  _embedPollInterval = setInterval(async function() {
+    var pr  = await fetch("/api/rag_embed_poll").then(function(r){ return r.json(); }).catch(function(){ return {events:[], running:false}; });
+    var evs = pr.events || [];
+    if (!evs.length) return;
+
+    var last    = evs[evs.length - 1];
+    var pct     = Math.max(0, last.pct || 0);
+    var elapsed = _embedStartTime ? Math.round((Date.now() - _embedStartTime) / 1000) : 0;
+
+    var msgEl  = document.getElementById("re-prog-msg");
+    var barEl  = document.getElementById("re-prog-bar");
+    var pctEl  = document.getElementById("re-prog-pct");
+    var timeEl = document.getElementById("re-elapsed");
+    if (msgEl)  msgEl.textContent  = last.msg || "";
+    if (barEl)  barEl.style.width  = pct + "%";
+    if (pctEl)  pctEl.textContent  = pct + "%";
+    if (timeEl) timeEl.textContent = "⏱ " + _fmtTime(elapsed);
+
+    // Update badge on the canvas embed node (use canvas node id, NOT chunkNodeId)
+    var canvasId = _embedCanvasNodeId || node.id;
+    setNB(canvasId, "⏳ " + pct + "% · " + _fmtTime(elapsed), "badge-warn");
+
+    if (last.pct === 100 || last.pct === -1 || last.pct === -2) {
+      clearInterval(_embedPollInterval); _embedPollInterval = null;
+      if (_embedBgTimer) { clearInterval(_embedBgTimer); _embedBgTimer = null; }
+      var totalTime = _fmtTime(elapsed);
+      _embedStartTime   = null;
+      _embedActiveNodeId = null;
+
+      var runBtn  = document.getElementById("re-run");
+      var canBtn  = document.getElementById("re-cancel");
+      if (canBtn) canBtn.style.display = "none";
+
+      var canvasId = _embedCanvasNodeId || node.id;
+      if (last.pct === 100) {
+        if (runBtn) { runBtn.disabled = false; runBtn.textContent = "🔄 Regenerar embeddings"; }
+        node.data = Object.assign(node.data || {}, { applied: true, embed_time: totalTime });
+        setOK(canvasId, true);
+        var st2 = await fetch("/api/rag_status?node_id=" + chunkNodeId).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+        if (updateStatusFn) updateStatusFn(st2);
+        var simWrap = document.getElementById("re-sim-wrap");
+        if (simWrap) simWrap.style.display = "block";
+        setNS(canvasId, (st2.n_embeddings || "?") + " embeddings");
+        setNB(canvasId, "✅ " + (st2.n_embeddings || "?") + " · " + totalTime, "badge-ok");
+        if (timeEl) timeEl.textContent = "✅ Completado en " + totalTime;
+      } else if (last.pct === -2) {
+        if (runBtn) { runBtn.disabled = false; runBtn.textContent = T("rag-embed-run"); }
+        setNB(canvasId, "⛔ Cancelado", "badge-err");
+        if (timeEl) timeEl.textContent = "⛔ Cancelado tras " + totalTime;
+        toast("Proceso cancelado.");
+      } else {
+        if (runBtn) { runBtn.disabled = false; runBtn.textContent = "🧬 Reintentar"; }
+        setNB(canvasId, "❌ Error", "badge-err");
+        if (timeEl) timeEl.textContent = "❌ Error tras " + totalTime;
+        toast("Error: " + last.msg);
+      }
+    }
+  }, 700);
+}
+
+// ── RETRIEVER ─────────────────────────────────────────────────────────────────
+async function renderRagRetrieve(node) {
+  showModalLoading("Verificando embeddings…");
+
+  var embedNode = upstreamRagEmbed(node.id);
+  if (!embedNode) {
+    showNotConnected(T("rag-connect-embed"));
+    return;
+  }
+
+  // The embed node stores its data under the chunk node id (or its own id when in direct mode)
+  var chunkNode  = upstreamRagChunk(embedNode.id);
+  var dataNodeId = chunkNode ? String(chunkNode.id) : String(embedNode.id) + "_direct";
+
+  var st = await fetch("/api/rag_status?node_id=" + dataNodeId).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+
+  mBody.innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:14px">' +
+
+    // Status
+    (st.has_embeddings
+      ? '<div style="color:#19e68c;font-size:13px">✅ ' + st.n_embeddings + ' embeddings disponibles</div>'
+      : '<div style="color:#ff9066;font-size:13px">⚠ Genera primero los embeddings en el bloque anterior.</div>') +
+
+    // Search box
+    '<div>' +
+      '<div class="fl" style="margin-bottom:6px">Consulta</div>' +
+      '<textarea class="inp" id="rr-query" rows="3" placeholder="Escribe una pregunta o frase… el retriever devolverá los fragmentos más relevantes del corpus." style="font-size:13px;resize:vertical">' + (node.data.last_query || '') + '</textarea>' +
+    '</div>' +
+
+    // Top-k
+    '<div style="display:flex;align-items:center;gap:10px">' +
+      '<label style="font-size:12px;white-space:nowrap">Nº de resultados (k):</label>' +
+      '<input type="number" class="inp" id="rr-topk" min="1" max="20" value="' + (node.data.top_k || 5) + '" style="width:70px">' +
+    '</div>' +
+
+    (st.has_embeddings
+      ? '<button class="btn btn-black" id="rr-run">🔎 Recuperar fragmentos</button>'
+      : '<button class="btn btn-black" id="rr-run" disabled>🔎 Recuperar fragmentos</button>') +
+
+    // Results
+    '<div id="rr-results"></div>' +
+
+    '</div>';
+
+  var runBtn = document.getElementById("rr-run");
+  if (runBtn) runBtn.addEventListener("click", async function() {
+    var query = (document.getElementById("rr-query").value || "").trim();
+    var topk  = parseInt(document.getElementById("rr-topk").value) || 5;
+    if (!query) { toast("Escribe una consulta."); return; }
+
+    this.disabled = true; this.textContent = "Buscando…";
+
+    var res = await fetch("/api/rag_retrieve", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ node_id: dataNodeId, query: query, top_k: topk })
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+
+    this.disabled = false; this.textContent = "🔎 Recuperar fragmentos";
+
+    if (res.error) { toast("Error: " + res.error); return; }
+
+    node.data = Object.assign(node.data || {}, { last_query: query, top_k: topk, last_results: res.results, applied: true });
+    setOK(node.id, true);
+    setNS(node.id, topk + " resultados");
+
+    var rrEl = document.getElementById("rr-results");
+    if (!res.results || res.results.length === 0) {
+      rrEl.innerHTML = '<div style="color:var(--sec);font-size:13px">Sin resultados.</div>';
+      return;
+    }
+
+    rrEl.innerHTML =
+      '<hr class="sep">' +
+      '<div class="fl" style="font-size:12px;margin-bottom:8px">Top ' + res.results.length + ' fragmentos más similares a: <em>"' + query + '"</em></div>' +
+      res.results.map(function(r) {
+        var pct = Math.round(r.score * 100);
+        var barColor = r.score > 0.6 ? "#19e68c" : r.score > 0.35 ? "#ffd077" : "#ff9066";
+        return '<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+          '<div style="background:var(--tinted);padding:8px 12px;display:flex;justify-content:space-between;align-items:center">' +
+            '<span style="font-size:11px;color:var(--sec)">#' + r.rank + ' &nbsp;·&nbsp; Doc ' + r.doc_idx + ' · Chunk ' + r.chunk_idx + '</span>' +
+            '<span style="font-size:13px;font-weight:700;color:' + barColor + '">' + r.score.toFixed(4) + '</span>' +
+          '</div>' +
+          '<div style="padding:4px 12px 4px;background:var(--tinted)">' +
+            '<div style="height:4px;background:var(--border);border-radius:2px">' +
+              '<div style="height:100%;background:' + barColor + ';width:' + pct + '%;border-radius:2px;transition:width 0.4s"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="padding:10px 12px;font-size:12px;font-family:monospace;white-space:pre-wrap;word-break:break-word">' +
+            r.text.substring(0, 400) + (r.text.length > 400 ? '…' : '') +
+          '</div>' +
+        '</div>';
+      }).join("");
+  });
+
+  // Restore previous results
+  if (node.data.last_results && node.data.last_results.length) {
+    var rrEl = document.getElementById("rr-results");
+    var q    = node.data.last_query || "";
+    rrEl.innerHTML =
+      '<hr class="sep">' +
+      '<div class="fl" style="font-size:12px;margin-bottom:8px;color:var(--sec)">Última búsqueda: <em>"' + q + '"</em></div>' +
+      node.data.last_results.map(function(r) {
+        var pct = Math.round(r.score * 100);
+        var barColor = r.score > 0.6 ? "#19e68c" : r.score > 0.35 ? "#ffd077" : "#ff9066";
+        return '<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+          '<div style="background:var(--tinted);padding:8px 12px;display:flex;justify-content:space-between;align-items:center">' +
+            '<span style="font-size:11px;color:var(--sec)">#' + r.rank + ' &nbsp;·&nbsp; Doc ' + r.doc_idx + ' · Chunk ' + r.chunk_idx + '</span>' +
+            '<span style="font-size:13px;font-weight:700;color:' + barColor + '">' + r.score.toFixed(4) + '</span>' +
+          '</div>' +
+          '<div style="padding:4px 12px 4px;background:var(--tinted)">' +
+            '<div style="height:4px;background:var(--border);border-radius:2px">' +
+              '<div style="height:100%;background:' + barColor + ';width:' + pct + '%;border-radius:2px"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="padding:10px 12px;font-size:12px;font-family:monospace;white-space:pre-wrap;word-break:break-word">' +
+            r.text.substring(0, 400) + (r.text.length > 400 ? '…' : '') +
+          '</div>' +
+        '</div>';
+      }).join("");
+  }
+}
+
+// ── Minimal markdown → HTML renderer for LLM responses ───────────────────────
+function _mdToHtml(text) {
+  if (!text) return "";
+  // Escape HTML first
+  var s = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  // Code blocks ```...```
+  s = s.replace(/```[\s\S]*?```/g, function(m) {
+    return '<pre style="background:var(--tinted);padding:8px;border-radius:4px;font-size:11px;overflow-x:auto;white-space:pre-wrap">' + m.slice(3, -3) + '</pre>';
+  });
+  // Inline code `...`
+  s = s.replace(/`([^`]+)`/g, '<code style="background:var(--tinted);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+  // Headers ### ## #
+  s = s.replace(/^### (.+)$/gm, '<div style="font-weight:700;font-size:13px;margin:10px 0 4px">$1</div>');
+  s = s.replace(/^## (.+)$/gm,  '<div style="font-weight:700;font-size:14px;margin:12px 0 4px">$1</div>');
+  s = s.replace(/^# (.+)$/gm,   '<div style="font-weight:700;font-size:15px;margin:14px 0 4px">$1</div>');
+  // Bold **text** and __text__
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g,      '<strong>$1</strong>');
+  // Italic *text* and _text_
+  s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  s = s.replace(/_([^_\n]+)_/g,   '<em>$1</em>');
+  // Unordered lists - item
+  s = s.replace(/^\s*[-*] (.+)$/gm, '<li style="margin-left:16px;margin-bottom:2px">$1</li>');
+  s = s.replace(/(<li.*<\/li>)/s, '<ul style="margin:6px 0;padding:0">$1</ul>');
+  // Numbered lists
+  s = s.replace(/^\s*\d+\. (.+)$/gm, '<li style="margin-left:16px;margin-bottom:2px">$1</li>');
+  // Line breaks
+  s = s.replace(/\n{2,}/g, '</p><p style="margin:6px 0">');
+  s = s.replace(/\n/g, '<br>');
+  return '<p style="margin:0">' + s + '</p>';
+}
+
+// ── LLM (RAG) ────────────────────────────────────────────────────────────────
+async function renderRagLlm(node) {
+  showModalLoading("Cargando contexto del retriever…");
+
+  // Walk upstream to find rag_retrieve node
+  var retrieveNode = null;
+  var visited = {}; var queue = [node.id];
+  while (queue.length) {
+    var cur = queue.shift();
+    if (visited[cur]) continue; visited[cur] = true;
+    for (var i = 0; i < edges.length; i++) {
+      if (edges[i].to === cur) {
+        var fromN = nodeById(edges[i].from);
+        if (!fromN) continue;
+        if (fromN.type === "rag_retrieve") { retrieveNode = fromN; break; }
+        queue.push(fromN.id);
+      }
+    }
+    if (retrieveNode) break;
+  }
+
+  if (!retrieveNode) { showNotConnected(T("rag-connect-retrieve")); return; }
+
+  var lastResults  = (retrieveNode.data && retrieveNode.data.last_results) || [];
+  var lastQuery    = (retrieveNode.data && retrieveNode.data.last_query)   || "";
+  var hasContext   = lastResults.length > 0;
+  var savedData    = node.data || {};
+
+  // Restore last responses if already generated
+  var cachedNoRag  = savedData.response_no_rag  || null;
+  var cachedRagResp = savedData.response_with_rag || null;
+  var cachedModel  = savedData.llm_model         || null;
+  var cachedQuery  = savedData.last_query        || null;
+  // Cached responses are valid only if the query hasn't changed
+  var cacheValid   = cachedNoRag && cachedRagResp && cachedQuery === lastQuery;
+
+  // ── Build prompt preview strings ─────────────────────────────────────────
+  var contextPreview = lastResults.slice(0, 3).map(function(r, i) {
+    return "[Fragmento " + (i+1) + " · score " + r.score.toFixed(3) + "]\n" +
+           r.text.slice(0, 200) + (r.text.length > 200 ? "…" : "");
+  }).join("\n\n---\n\n") + (lastResults.length > 3 ? "\n\n[… y " + (lastResults.length - 3) + " más]" : "");
+
+  var promptNoCtxPreview  = "Pregunta: " + (lastQuery || "(ninguna consulta)");
+  var promptWithCtxPreview = hasContext
+    ? "=== CONTEXTO ===\n" + contextPreview + "\n=== FIN ===\n\nPregunta: " + lastQuery
+    : T("rag-no-context");
+
+  // ── Helper: render a response box ────────────────────────────────────────
+  function _respBox(text, isRag) {
+    if (!text) return '<div style="color:var(--sec);font-size:12px;padding:8px">—</div>';
+    var bg = isRag ? "#f0fff4" : "#f8f8f8";
+    var br = isRag ? "1px solid #b2f5c8" : "1px solid var(--border)";
+    return '<div style="background:' + bg + ';border:' + br + ';border-radius:6px;padding:12px;font-size:13px;line-height:1.7;word-break:break-word">' +
+           _mdToHtml(text) + '</div>';
+  }
+
+  mBody.innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:14px">' +
+
+    // Status bar
+    (hasContext
+      ? '<div style="background:#f0fff4;border:1px solid #b2f5c8;border-radius:6px;padding:8px 12px;font-size:12px">' +
+          '✅ <b>' + lastResults.length + ' fragmentos</b> recuperados · consulta: <em>"' + lastQuery + '"</em>' +
+        '</div>'
+      : '<div style="background:#fff8e6;border:1px solid #ffd077;border-radius:6px;padding:8px 12px;font-size:12px">' +
+          T("rag-retriever-no-results") +
+        '</div>') +
+
+    // Model info + system prompt
+    '<div style="background:var(--tinted);border-radius:8px;padding:10px 12px;font-size:12px">' +
+      '<b>Modelo:</b> <span id="rl-model-name">' + (cachedModel || "Qwen/Qwen2.5-7B-Instruct") + '</span>' +
+      ' &nbsp;·&nbsp; HF Inference (sin API key)' +
+      '<br><span style="color:var(--sec)">Cold start ~30-40s en primera llamada. Respuestas en español o el idioma de la pregunta.</span>' +
+    '</div>' +
+
+    // System prompt (editable)
+    '<div>' +
+      '<div class="fl" style="margin-bottom:4px;font-size:12px">System prompt <span style="color:var(--sec);font-weight:400">(editable)</span></div>' +
+      '<textarea id="rl-sys" class="inp" rows="2" style="font-size:12px;resize:vertical">' +
+        (savedData.system_prompt || "Eres un asistente útil. Responde en el mismo idioma que la pregunta. Sé conciso y directo.") +
+      '</textarea>' +
+    '</div>' +
+
+    // Tabs
+    '<div class="tm-tabs" style="margin-bottom:0">' +
+      '<button class="tm-tab active" id="rl-tab-no">🤖 ' + T("rag-tab-norag") + '</button>' +
+      '<button class="tm-tab" id="rl-tab-si">🔍 ' + T("rag-tab-rag") + '</button>' +
+      '<button class="tm-tab" id="rl-tab-prompt">📋 ' + T("rag-tab-prompts") + '</button>' +
+    '</div>' +
+
+    // ── Tab: Sin RAG ─────────────────────────────────────────────────────────
+    '<div id="rl-panel-no">' +
+      '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">' +
+        'El LLM recibe solo la pregunta. Responde desde su conocimiento general preentrenado — sin acceso al corpus.' +
+      '</div>' +
+      '<div id="rl-resp-no">' + (cacheValid ? _respBox(cachedNoRag, false) : '<div style="color:var(--sec);font-size:12px;padding:8px">Pulsa «Generar» para ver la respuesta.</div>') + '</div>' +
+    '</div>' +
+
+    // ── Tab: Con RAG ──────────────────────────────────────────────────────────
+    '<div id="rl-panel-si" style="display:none">' +
+      '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">' +
+        'El mismo LLM, pero con los fragmentos del corpus como contexto en el prompt. Puede responder con información real del corpus.' +
+      '</div>' +
+      '<div id="rl-resp-si">' + (cacheValid ? _respBox(cachedRagResp, true) : '<div style="color:var(--sec);font-size:12px;padding:8px">Pulsa «Generar» para ver la respuesta.</div>') + '</div>' +
+      (cacheValid ? '<div style="margin-top:8px;font-size:11px;color:var(--sec)">💡 <b>Esto es RAG:</b> el LLM ancla su respuesta en fragmentos reales del corpus, no en su entrenamiento.</div>' : '') +
+    '</div>' +
+
+    // ── Tab: Prompts ──────────────────────────────────────────────────────────
+    '<div id="rl-panel-prompt" style="display:none">' +
+      '<div style="font-size:11px;color:var(--sec);margin-bottom:6px;font-weight:600">' + T("rag-tab-norag") + ' — prompt completo</div>' +
+      '<div style="background:var(--tinted);border-radius:6px;padding:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:120px;overflow-y:auto;word-break:break-word">' + promptNoCtxPreview + '</div>' +
+      '<div style="font-size:11px;color:var(--sec);margin:10px 0 6px;font-weight:600">' + T("rag-tab-rag") + ' — prompt completo (primeros 3 fragmentos)</div>' +
+      '<div style="background:var(--tinted);border-radius:6px;padding:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;word-break:break-word">' + promptWithCtxPreview + '</div>' +
+    '</div>' +
+
+    // Generate button + elapsed
+    '<div style="display:flex;align-items:center;gap:10px">' +
+      '<button class="btn btn-black" id="rl-run" ' + (!hasContext ? 'disabled title="' + T("rag-run-retriever-disabled") + '"' : '') + '>' + T("rag-generate-btn") + '</button>' +
+      '<span style="font-size:12px;color:var(--sec)" id="rl-elapsed"></span>' +
+    '</div>' +
+
+    (cacheValid ? '<div style="font-size:11px;color:var(--sec)">Respuestas guardadas de la última consulta. Pulsa «Generar» para actualizar.</div>' : '') +
+
+    '</div>';
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  var tabs   = ["no","si","prompt"];
+  var panels = tabs.map(function(t){ return document.getElementById("rl-panel-" + t); });
+  tabs.forEach(function(t, i) {
+    var btn = document.getElementById("rl-tab-" + t);
+    if (!btn) return;
+    btn.addEventListener("click", function() {
+      tabs.forEach(function(tt){ document.getElementById("rl-tab-" + tt).classList.remove("active"); });
+      panels.forEach(function(p){ if (p) p.style.display = "none"; });
+      btn.classList.add("active");
+      if (panels[i]) panels[i].style.display = "block";
+    });
+  });
+
+  // ── Generate ──────────────────────────────────────────────────────────────
+  var runBtn = document.getElementById("rl-run");
+  if (runBtn) runBtn.addEventListener("click", async function() {
+    if (!hasContext) { toast(T("rag-run-retriever-first")); return; }
+    var sysPrompt = (document.getElementById("rl-sys").value || "").trim();
+    this.disabled = true; this.textContent = "⏳ Generando…";
+    var elapsed = document.getElementById("rl-elapsed");
+    var t0 = Date.now();
+
+    // Show spinners in both response areas
+    var spinHtml = '<div style="color:var(--sec);font-size:12px;padding:8px">⏳ Esperando respuesta…</div>';
+    document.getElementById("rl-resp-no").innerHTML = spinHtml;
+    document.getElementById("rl-resp-si").innerHTML = spinHtml;
+    if (elapsed) elapsed.textContent = "";
+
+    // Tick timer while waiting
+    var timerTick = setInterval(function() {
+      var secs = Math.round((Date.now() - t0) / 1000);
+      if (elapsed) elapsed.textContent = "⏱ " + _fmtTime(secs);
+    }, 500);
+
+    var res = await fetch("/api/rag_generate", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        query:          lastQuery,
+        context_chunks: lastResults,
+        max_new_tokens: 300,
+        system_prompt:  sysPrompt
+      })
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+
+    clearInterval(timerTick);
+    var totalTime = _fmtTime(Math.round((Date.now() - t0) / 1000));
+    if (elapsed) elapsed.textContent = "✅ " + totalTime;
+    this.disabled = false; this.textContent = T("rag-generate-btn");
+
+    if (res.error) {
+      var errHtml = '<div style="color:#ff6b6b;font-size:12px;padding:8px">❌ ' + res.error + '</div>';
+      document.getElementById("rl-resp-no").innerHTML = errHtml;
+      document.getElementById("rl-resp-si").innerHTML = errHtml;
+      toast("Error LLM: " + res.error);
+      return;
+    }
+
+    // Render responses
+    document.getElementById("rl-resp-no").innerHTML = _respBox(res.response_no_rag, false);
+    document.getElementById("rl-resp-si").innerHTML =
+      _respBox(res.response_with_rag, true) +
+      '<div style="margin-top:8px;font-size:11px;color:var(--sec)">💡 <b>Esto es RAG:</b> el LLM ancla su respuesta en ' + lastResults.length + ' fragmentos reales del corpus, no en su entrenamiento.</div>';
+
+    // Update model name display
+    var modelEl = document.getElementById("rl-model-name");
+    if (modelEl && res.model) modelEl.textContent = res.model;
+
+    // Persist
+    node.data = Object.assign(node.data || {}, {
+      response_no_rag:  res.response_no_rag,
+      response_with_rag: res.response_with_rag,
+      llm_model:        res.model,
+      last_query:       lastQuery,
+      system_prompt:    sysPrompt,
+      llm_time:         totalTime,
+    });
+    setOK(node.id, true);
+    setNS(node.id, totalTime);
+    setNB(node.id, "✅ " + totalTime, "badge-ok");
+  });
+
+  setOK(node.id, cacheValid);
+  if (cacheValid) { setNS(node.id, savedData.llm_time || "listo"); setNB(node.id, "✅ " + (savedData.llm_time||""), "badge-ok"); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// END RAG
+// ═══════════════════════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
