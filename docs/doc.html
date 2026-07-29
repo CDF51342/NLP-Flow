@@ -20,78 +20,58 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
 a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
-
-/* ── Topbar ── */
-.topbar{display:flex;align-items:center;gap:10px;padding:0 24px;background:var(--card);border-bottom:1.5px solid var(--border);height:54px;position:sticky;top:0;z-index:200}
-.logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--card);border-bottom:1.5px solid var(--border);height:54px;position:sticky;top:0;z-index:200;flex-wrap:wrap}
+.logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;flex-shrink:0}
 .logo-grid span{width:9px;height:9px;border-radius:2px;display:block}
-.topbar-name{font-size:15px;font-weight:700;letter-spacing:-.01em}
-.topbar-ver{font-size:12px;color:var(--sec);margin-left:2px;font-weight:400}
-.topbar-spacer{flex:1}
+.topbar-name{font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.topbar-ver{font-size:12px;color:var(--sec);margin-left:2px;font-weight:400;white-space:nowrap}
+.topbar-spacer{flex:1;min-width:8px}
 .lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden}
-.lang-btn{padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast)}
+.lang-btn{padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast);white-space:nowrap}
 .lang-btn.active{background:var(--accent-tint);color:var(--ink);border-bottom:2px solid var(--accent)}
 .lang-btn:hover:not(.active){background:var(--bg)}
-
-/* ── Layout with sidebar ── */
 .layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:100vh}
-@media(max-width:780px){.layout{grid-template-columns:1fr}}
-
-/* ── TOC Sidebar ── */
+@media(max-width:760px){.layout{grid-template-columns:1fr}}
 .toc{position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card)}
-@media(max-width:780px){.toc{display:none}}
+@media(max-width:760px){.toc{display:none}}
 .toc-group{margin-bottom:4px}
 .toc-group-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);padding:10px 18px 4px}
 .toc-link{display:block;padding:6px 18px;font-size:13px;font-weight:500;color:var(--sec);text-decoration:none;border-left:3px solid transparent;transition:background var(--fast),color var(--fast),border-color var(--fast)}
 .toc-link:hover{background:var(--bg);color:var(--ink)}
 .toc-link.active{color:var(--ink);font-weight:700;border-left-color:var(--accent);background:var(--accent-tint)}
-
-/* ── Main content ── */
-.main{padding:44px 36px 100px;min-width:0}
+.main{padding:32px 20px 80px;min-width:0}
+@media(min-width:760px){.main{padding:44px 36px 100px}}
 .lang-content{display:none}.lang-content.visible{display:block}
-
-/* ── Hero ── */
-.hero{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:36px 40px;margin-bottom:32px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:var(--accent-tint);pointer-events:none}
-.hero h1{font-size:30px;font-weight:700;letter-spacing:-.025em;margin-bottom:10px;position:relative}
+.hero{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:24px 22px;margin-bottom:24px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+@media(min-width:600px){.hero{padding:36px 40px}}
+.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:var(--accent-tint);pointer-events:none}
+.hero h1{font-size:24px;font-weight:700;letter-spacing:-.025em;margin-bottom:10px;position:relative}
+@media(min-width:600px){.hero h1{font-size:30px}}
 .hero h1 span{color:var(--accent)}
-.hero p{font-size:15px;color:var(--sec);max-width:520px;position:relative}
-.hero-badges{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;position:relative}
+.hero p{font-size:14px;color:var(--sec);max-width:520px;position:relative}
+.hero-badges{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap;position:relative}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:4px 11px;border-radius:var(--pill)}
 .badge-green{background:var(--accent-tint);color:#0a7a45}
 .badge-gray{background:var(--bg);border:1.5px solid var(--border);color:var(--sec)}
-
-/* ── Rows ── */
-.row-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
-@media(max-width:640px){.row-2,.row-3{grid-template-columns:1fr}}
-.row-2>*,.row-3>*{margin-bottom:0}
-
-/* ── Section anchor + title ── */
+.row-2{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+@media(min-width:640px){.row-2{grid-template-columns:1fr 1fr}}
+.row-2>*{margin-bottom:0}
 .sec-anchor{display:block;height:0;visibility:hidden;margin-top:-80px;padding-top:80px}
-.sec-title{font-size:17px;font-weight:700;margin:40px 0 14px;display:flex;align-items:center;gap:9px}
+.sec-title{font-size:16px;font-weight:700;margin:36px 0 12px;display:flex;align-items:center;gap:9px}
 .sec-title::before{content:'';display:block;width:4px;height:20px;background:var(--accent);border-radius:var(--pill);flex-shrink:0}
-
-/* ── Card ── */
-.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:22px 26px;box-shadow:var(--shadow);margin-bottom:14px}
+.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px 18px;box-shadow:var(--shadow);margin-bottom:12px}
+@media(min-width:600px){.card{padding:22px 26px}}
 .card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-label::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:var(--pill);display:block}
-
-/* ── Code ── */
-pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:14px 18px;font-size:13px;overflow-x:auto;margin-bottom:14px;line-height:1.5}
+pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:12px 16px;font-size:12.5px;overflow-x:auto;margin-bottom:12px;line-height:1.5}
 code{font-family:'SF Mono','Fira Code',monospace}
-p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12.5px}
-
-/* ── File tree ── */
-.tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:16px 20px;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.9;margin-bottom:0}
+p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12px}
+.tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:14px 18px;font-family:'SF Mono','Fira Code',monospace;font-size:12.5px;line-height:1.9;overflow-x:auto}
 .tree .dir{color:var(--accent)}.tree .comment{color:#888}
-
-/* ── Category label ── */
 .cat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin:20px 0 10px;padding-left:6px;border-left:3px solid var(--accent)}
-
-/* ── Block CARDS (first-HTML style, grid) ── */
-.blocks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:4px}
-.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow var(--fast),transform var(--fast),border-color var(--fast)}
+.blocks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:4px}
+@media(min-width:600px){.blocks-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow var(--fast),transform var(--fast),border-color var(--fast)}
 .block-card:hover{box-shadow:var(--shadow-h);transform:translateY(-2px);border-color:#bbb}
 .bc-icon{font-size:22px;margin-bottom:8px}
 .bc-name{font-size:13px;font-weight:700;margin-bottom:4px}
@@ -101,68 +81,61 @@ p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-
 .pb-in{background:#e0f0ff;color:#1a6cf6}
 .pb-out{background:var(--accent-tint);color:#0a7a45}
 .pb-none{background:var(--bg);border:1px solid var(--border);color:var(--ter)}
-
-/* ── Modal ── */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(18,18,18,.45);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(18,18,18,.45);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center;padding:16px}
 .modal-overlay.open{display:flex}
-.modal{background:var(--card);border-radius:18px;box-shadow:var(--shadow-modal);width:min(700px,94vw);max-height:86vh;overflow-y:auto;position:relative}
-.modal-hdr{display:flex;align-items:center;gap:12px;padding:20px 22px 14px;border-bottom:1.5px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2;border-radius:18px 18px 0 0}
-.modal-icon{font-size:26px}
-.modal-title{font-size:16px;font-weight:700;flex:1}
-.modal-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--sec);transition:background var(--fast)}
+.modal{background:var(--card);border-radius:18px;box-shadow:var(--shadow-modal);width:min(700px,100%);max-height:90vh;overflow-y:auto;position:relative}
+.modal-hdr{display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1.5px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2;border-radius:18px 18px 0 0}
+@media(min-width:600px){.modal-hdr{padding:20px 22px 14px}}
+.modal-icon{font-size:24px;flex-shrink:0}
+.modal-title{font-size:14px;font-weight:700;flex:1;line-height:1.3}
+@media(min-width:600px){.modal-title{font-size:16px}}
+.modal-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--sec);flex-shrink:0}
 .modal-close:hover{background:var(--border)}
-.modal-body{padding:20px 22px 26px}
+.modal-body{padding:16px 18px 22px}
+@media(min-width:600px){.modal-body{padding:20px 22px 26px}}
 .modal-desc{font-size:14px;color:var(--sec);margin-bottom:20px;line-height:1.65}
-
-/* ── Mini canvas (app-style) ── */
-.mini-canvas{background:#f0f0f0;border-radius:12px;padding:26px 16px;margin-bottom:20px;position:relative;overflow:hidden;min-height:100px}
+.mini-canvas{background:#f0f0f0;border-radius:12px;padding:20px 12px;margin-bottom:16px;position:relative;overflow:hidden;min-height:90px}
 .mini-canvas::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#ccc 1px,transparent 1px);background-size:20px 20px;opacity:.5;pointer-events:none}
-.mc-inner{display:flex;align-items:center;justify-content:center;gap:0;position:relative;z-index:1}
-.mc-node{background:var(--card);border:2px solid var(--border);border-radius:12px;min-width:120px;box-shadow:var(--shadow);position:relative;flex-shrink:0}
+.mc-inner{display:flex;align-items:center;justify-content:center;gap:0;position:relative;z-index:1;flex-wrap:wrap;row-gap:10px}
+.mc-node{background:var(--card);border:2px solid var(--border);border-radius:12px;min-width:100px;box-shadow:var(--shadow);position:relative;flex-shrink:0}
+@media(min-width:480px){.mc-node{min-width:120px}}
 .mc-node.active{border-color:var(--accent);box-shadow:0 0 0 3px rgba(25,230,140,.2),var(--shadow-h)}
-.mc-node-hdr{padding:8px 11px 6px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--hair)}
-.mc-node-icon{font-size:14px}.mc-node-name{font-size:11px;font-weight:700;color:var(--ink)}
-.mc-node-status{padding:4px 11px 7px;font-size:10.5px;color:var(--sec)}
+.mc-node-hdr{padding:7px 10px 5px;display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--hair)}
+.mc-node-icon{font-size:13px}.mc-node-name{font-size:10.5px;font-weight:700;color:var(--ink)}
+.mc-node-status{padding:4px 10px 6px;font-size:10px;color:var(--sec)}
 .mc-port{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--card);border:2.5px solid #aaa;top:50%;transform:translateY(-50%);z-index:5}
 .mc-port.in{left:-7px}.mc-port.out{right:-7px}
 .mc-port.connected{border-color:var(--accent);background:var(--accent)}
-.mc-gap{width:40px;flex-shrink:0}
+.mc-gap{width:32px;flex-shrink:0}
+@media(min-width:480px){.mc-gap{width:40px}}
 .mc-svg{position:absolute;inset:0;pointer-events:none;overflow:visible}
-
-/* ── Conn boxes ── */
 .conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.conn-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:11px 13px}
+.conn-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px}
 .conn-box-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:8px;display:flex;align-items:center;gap:5px}
 .conn-chips{display:flex;flex-wrap:wrap;gap:5px}
 .conn-chip{font-size:12px;font-weight:600;padding:3px 10px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--pill)}
 .conn-chip.none-chip{color:var(--ter);font-style:italic;border-style:dashed;background:transparent}
 .conn-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:10px}
-
-/* ── Pipelines — nowrap scrollable ── */
-.pipeline-wrap{overflow-x:auto;margin:10px 0}
-.pipeline{display:inline-flex;align-items:center;gap:0;padding:12px 16px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);white-space:nowrap;min-width:100%}
-.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:6px 11px;font-size:13px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.pipeline-wrap{overflow-x:auto;margin:8px 0;-webkit-overflow-scrolling:touch}
+.pipeline{display:inline-flex;align-items:center;gap:0;padding:10px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);white-space:nowrap;min-width:100%}
+.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:600;white-space:nowrap;flex-shrink:0}
 .pip-arrow{color:var(--accent);font-size:18px;padding:0 4px;font-weight:700;line-height:1;flex-shrink:0}
-.pip-sep{margin:0 10px;color:var(--ter);font-size:13px;flex-shrink:0}
-
-/* ── Tables / kbd / note ── */
-.tbl-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th{text-align:left;padding:9px 12px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
-td{padding:9px 12px;border-bottom:1px solid var(--hair)}
+.pip-sep{margin:0 8px;color:var(--ter);font-size:13px;flex-shrink:0}
+.pip-node.rag{background:#f0fff8;border-color:#19e68c}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;padding:8px 10px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
+td{padding:8px 10px;border-bottom:1px solid var(--hair)}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--bg)}
 kbd{background:var(--card);border:1.5px solid var(--border);border-radius:5px;padding:1px 6px;font-size:11.5px;box-shadow:0 1px 0 var(--border)}
-.note{background:var(--accent-tint);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:11px 14px;font-size:13.5px;color:var(--ink);margin:12px 0 0}
-
-/* ── Prose ── */
-p{font-size:14.5px;margin-bottom:12px}
-ul,ol{padding-left:20px;margin-bottom:12px}
-li{font-size:14.5px;margin-bottom:5px}
-h3{font-size:14px;font-weight:700;margin:18px 0 8px}
-
-/* ── Footer ── */
-.footer{margin-top:56px;padding-top:24px;border-top:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.note{background:var(--accent-tint);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13.5px;color:var(--ink);margin:12px 0 0}
+.note-rag{background:#fff8f0;border-left:3px solid #ff9066;border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin:10px 0 0}
+p{font-size:14px;margin-bottom:10px}
+ul,ol{padding-left:20px;margin-bottom:10px}
+li{font-size:14px;margin-bottom:5px}
+h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
+.footer{margin-top:48px;padding-top:20px;border-top:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .footer-credits{font-size:13px;color:var(--sec)}
 .footer-credits strong{color:var(--ink)}
 .footer-credits a{color:var(--accent);font-weight:600}
@@ -207,8 +180,8 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
   <span class="topbar-name">NLP Flow</span><span class="topbar-ver">v4 · docs</span>
   <div class="topbar-spacer"></div>
   <div class="lang-bar">
-    <button class="lang-btn active" onclick="setLang('es')">🇪🇸 Español</button>
-    <button class="lang-btn" onclick="setLang('en')">🇬🇧 English</button>
+    <button class="lang-btn active" onclick="setLang('es')">🇪🇸 ES</button>
+    <button class="lang-btn" onclick="setLang('en')">🇬🇧 EN</button>
   </div>
 </div>
 
@@ -217,39 +190,40 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
   <nav class="toc" id="tocNav">
     <div class="toc-group" id="tocGroupEs">
       <div class="toc-group-label">NLP Flow v4</div>
-      <a class="toc-link" href="#es-start" onclick="tocClick(this)">Inicio</a>
-      <a class="toc-link" href="#es-setup" onclick="tocClick(this)">Arranque</a>
-      <a class="toc-link" href="#es-blocks" onclick="tocClick(this)">Bloques</a>
+      <a class="toc-link" href="#es-start"     onclick="tocClick(this)">Inicio</a>
+      <a class="toc-link" href="#es-setup"     onclick="tocClick(this)">Arranque</a>
+      <a class="toc-link" href="#es-blocks"    onclick="tocClick(this)">Bloques</a>
       <a class="toc-link" href="#es-pipelines" onclick="tocClick(this)">Pipelines</a>
+      <a class="toc-link" href="#es-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#es-shortcuts" onclick="tocClick(this)">Atajos</a>
-      <a class="toc-link" href="#es-more" onclick="tocClick(this)">Más info</a>
+      <a class="toc-link" href="#es-more"      onclick="tocClick(this)">Más info</a>
     </div>
     <div class="toc-group" id="tocGroupEn" style="display:none">
       <div class="toc-group-label">NLP Flow v4</div>
-      <a class="toc-link" href="#en-start" onclick="tocClick(this)">Start</a>
-      <a class="toc-link" href="#en-setup" onclick="tocClick(this)">Setup</a>
-      <a class="toc-link" href="#en-blocks" onclick="tocClick(this)">Blocks</a>
+      <a class="toc-link" href="#en-start"     onclick="tocClick(this)">Start</a>
+      <a class="toc-link" href="#en-setup"     onclick="tocClick(this)">Setup</a>
+      <a class="toc-link" href="#en-blocks"    onclick="tocClick(this)">Blocks</a>
       <a class="toc-link" href="#en-pipelines" onclick="tocClick(this)">Pipelines</a>
+      <a class="toc-link" href="#en-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#en-shortcuts" onclick="tocClick(this)">Shortcuts</a>
-      <a class="toc-link" href="#en-more" onclick="tocClick(this)">More</a>
+      <a class="toc-link" href="#en-more"      onclick="tocClick(this)">More</a>
     </div>
   </nav>
 
-  <!-- Main -->
   <main class="main">
-
     <!-- ══════════ ESPAÑOL ══════════ -->
     <div class="lang-content visible" id="content-es">
 
       <span class="sec-anchor" id="es-start"></span>
       <div class="hero">
         <h1>NLP Flow <span>v4</span></h1>
-        <p>Entorno visual de machine learning basado en pipelines. Conectas bloques en un canvas, configuras cada uno con doble clic y ejecutas el flujo completo con un botón. Sin código.</p>
+        <p>Entorno visual de machine learning basado en pipelines. Conecta bloques en un canvas, configura cada uno con doble clic y ejecuta el flujo completo con un botón. Sin código.</p>
         <div class="hero-badges">
           <span class="badge badge-green">Sin código</span>
           <span class="badge badge-gray">Python 3.10+</span>
           <span class="badge badge-gray">Flask</span>
           <span class="badge badge-gray">scikit-learn</span>
+          <span class="badge badge-gray">RAG · LLM</span>
           <span class="badge badge-gray">localhost:5053</span>
         </div>
       </div>
@@ -260,7 +234,7 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <div class="card-label">Requisitos y arranque</div>
           <p>Instala dependencias:</p>
           <pre><code>pip install -r requirements.txt</code></pre>
-          <p><strong>Modo escritorio</strong> — ventana nativa 1440×900:</p>
+          <p><strong>Modo escritorio</strong> — ventana nativa:</p>
           <pre><code>python main.py</code></pre>
           <p><strong>Solo navegador:</strong></p>
           <pre style="margin-bottom:0"><code>python server.py
@@ -271,20 +245,20 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <div class="tree">
             <span class="dir">NLP-flow/</span><br>
             ├── main.py      <span class="comment"># Flask + ventana</span><br>
-            ├── server.py    <span class="comment"># Backend 55+ rutas</span><br>
+            ├── server.py    <span class="comment"># Backend 60+ rutas</span><br>
+            ├── .env         <span class="comment"># HF_TOKEN para LLM</span><br>
             ├── requirements.txt<br>
             ├── <span class="dir">docs/</span><br>
-            │&nbsp;&nbsp;└── doc.html <span class="comment"># GitHub Pages</span><br>
+            │&nbsp;&nbsp;└── doc.html<br>
             └── <span class="dir">static/</span><br>
-            &nbsp;&nbsp;&nbsp;├── index.html<br>
-            &nbsp;&nbsp;&nbsp;└── style.css
+            &nbsp;&nbsp;&nbsp;└── index.html
           </div>
         </div>
       </div>
 
       <span class="sec-anchor" id="es-blocks"></span>
       <div class="sec-title">Bloques disponibles</div>
-      <p style="color:var(--sec);font-size:14px;margin-bottom:16px">Haz clic en un bloque para ver descripción, conexiones y ejemplo en el canvas.</p>
+      <p style="color:var(--sec);font-size:13.5px;margin-bottom:14px">Haz clic en un bloque para ver descripción, conexiones y ejemplo.</p>
       <div class="cat-label">📦 Datos de entrada</div>
       <div class="blocks-grid" id="es-grid-data"></div>
       <div class="cat-label">🔧 Procesado</div>
@@ -293,18 +267,28 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
       <div class="blocks-grid" id="es-grid-models"></div>
       <div class="cat-label">🧠 NLP — texto</div>
       <div class="blocks-grid" id="es-grid-nlp"></div>
+      <div class="cat-label">🔍 RAG — recuperación con LLM</div>
+      <div class="blocks-grid" id="es-grid-rag"></div>
 
       <span class="sec-anchor" id="es-pipelines"></span>
-      <div class="row-2" style="margin-top:36px">
+      <div class="sec-title">Pipelines típicas</div>
+      <div class="row-2">
         <div class="card">
-          <div class="card-label">Pipelines típicas</div>
-          <h3 style="margin-top:4px">Clasificación / regresión tabular</h3>
+          <div class="card-label">ML tabular</div>
+          <h3 style="margin-top:4px">Regresión (OLS / Ridge / Lasso)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
             <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
             <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
             <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow">→</div>
             <div class="pip-node">📋 Evaluación</div><div class="pip-arrow">→</div>
             <div class="pip-node">💾 Guardar</div>
+          </div></div>
+          <h3>Clasificación tabular (Logística / KNN / RF / SVM)</h3>
+          <div class="pipeline-wrap"><div class="pipeline">
+            <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
+            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
+            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📋 Evaluación</div>
           </div></div>
           <h3>Exploración</h3>
           <div class="pipeline-wrap"><div class="pipeline">
@@ -341,15 +325,61 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
         </div>
       </div>
 
+      <span class="sec-anchor" id="es-rag"></span>
+      <div class="sec-title">Pipeline RAG</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">¿Qué es RAG?</div>
+        <p>RAG (<em>Retrieval-Augmented Generation</em>) combina búsqueda semántica y generación de texto. El LLM recibe los fragmentos más relevantes de tu corpus como contexto en el prompt — la diferencia entre "sin RAG" y "con RAG" es literalmente más texto en el input.</p>
+        <h3>Flujo completo</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node rag">📂 Datos</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">💾 Guardar</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Configuración necesaria</div>
+          <p>El bloque LLM requiere un token de Hugging Face. Crea un fichero <code>.env</code> en la raíz del proyecto:</p>
+          <pre><code>HF_TOKEN=hf_tutoken
+HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
+          <p>Los embeddings funcionan sin token (modelo <code>all-MiniLM-L6-v2</code>).</p>
+          <div class="note-rag">⚠️ Sin <code>HF_TOKEN</code> el bloque LLM no generará respuestas. Los demás bloques RAG funcionan sin él.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Qué ve el estudiante</div>
+          <ul>
+            <li><strong>Sin RAG:</strong> el LLM responde solo con su conocimiento preentrenado</li>
+            <li><strong>Con RAG:</strong> el LLM recibe los N fragmentos más similares del corpus como contexto</li>
+            <li>Las dos respuestas aparecen en paralelo para comparar</li>
+            <li>El bloque <strong>Guardar</strong> exporta un informe HTML con toda la sesión</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Parámetros clave</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parámetro</th><th>Bloque</th><th>Descripción</th></tr>
+          <tr><td>Modo chunking</td><td>✂️ Chunking</td><td>Automático (por tamaño) o 1 chunk por documento</td></tr>
+          <tr><td>Tamaño chunk</td><td>✂️ Chunking</td><td>Nº de caracteres por fragmento (modo automático)</td></tr>
+          <tr><td>Top-K</td><td>🔎 Retriever</td><td>Cuántos fragmentos recuperar por consulta</td></tr>
+          <tr><td>System prompt</td><td>🤖 LLM</td><td>Instrucciones base del modelo, editable en el bloque</td></tr>
+          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>Modelo LLM usado (por defecto Qwen2.5-7B-Instruct)</td></tr>
+        </table></div>
+      </div>
+
       <span class="sec-anchor" id="es-shortcuts"></span>
       <div class="sec-title">Atajos de teclado</div>
       <div class="card">
-        <div class="tbl-wrap"><table id="es-kbd-table">
+        <div class="tbl-wrap"><table>
           <tr><th>Atajo</th><th>Acción</th></tr>
           <tr><td>Doble clic</td><td>Abre popup del bloque</td></tr>
           <tr><td id="es-k1"></td><td>Multi-selección</td></tr>
           <tr><td id="es-k2"></td><td>Seleccionar todos</td></tr>
-          <tr><td id="es-k3"></td><td>Copiar / Pegar (mantiene conexiones)</td></tr>
+          <tr><td id="es-k3"></td><td>Copiar / Pegar</td></tr>
           <tr><td id="es-k4"></td><td>Deshacer / Rehacer</td></tr>
           <tr><td><kbd>Supr</kbd>/<kbd>⌫</kbd></td><td>Eliminar selección</td></tr>
           <tr><td>Rueda ratón</td><td>Zoom in/out</td></tr>
@@ -362,19 +392,21 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
         <div class="card">
           <div class="card-label">Guardar y cargar</div>
           <ul>
-            <li><strong>💾 Guardar sesión (.zip)</strong> — canvas + configuración completa</li>
+            <li><strong>💾 Guardar sesión (.zip)</strong> — canvas + configuración</li>
             <li><strong>📂 Cargar sesión (.zip)</strong> — restaura un canvas guardado</li>
             <li><strong>🗺 Exportar (.json)</strong> — estructura y conexiones</li>
+            <li><strong>📄 Informe RAG (.html)</strong> — consulta, fragmentos y respuestas</li>
           </ul>
-          <div class="note">Los datos no se persisten entre sesiones. Al restaurar, recarga el dataset en Datos.</div>
+          <div class="note">Los datos no se persisten entre sesiones. Al restaurar, recarga el dataset en el bloque Datos.</div>
         </div>
         <div class="card">
           <div class="card-label">Notas técnicas</div>
           <ul>
             <li>Servidor en <code>localhost:5053</code>, sin puertos externos</li>
-            <li>Modelos en memoria — se borran al reiniciar</li>
+            <li>Embeddings: <code>all-MiniLM-L6-v2</code> vía HF Inference API</li>
+            <li>LLM: <code>Qwen/Qwen2.5-7B-Instruct</code> vía HF router</li>
+            <li>Estado RAG en <code>_RAG[chunk_node_id]</code></li>
             <li>Gráficas con matplotlib → PNG en base64</li>
-            <li>Cada nodo Datos tiene slot <code>_NODE_DATA[id]</code></li>
             <li>SPA sin frameworks — estado en memoria JS</li>
           </ul>
         </div>
@@ -391,7 +423,6 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
         </div>
       </div>
     </div><!-- /es -->
-
     <!-- ══════════ ENGLISH ══════════ -->
     <div class="lang-content" id="content-en">
 
@@ -404,6 +435,7 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <span class="badge badge-gray">Python 3.10+</span>
           <span class="badge badge-gray">Flask</span>
           <span class="badge badge-gray">scikit-learn</span>
+          <span class="badge badge-gray">RAG · LLM</span>
           <span class="badge badge-gray">localhost:5053</span>
         </div>
       </div>
@@ -411,10 +443,10 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
       <span class="sec-anchor" id="en-setup"></span>
       <div class="row-2">
         <div class="card">
-          <div class="card-label">Requirements & startup</div>
+          <div class="card-label">Requirements &amp; startup</div>
           <p>Install dependencies:</p>
           <pre><code>pip install -r requirements.txt</code></pre>
-          <p><strong>Desktop mode</strong> — native window 1440×900:</p>
+          <p><strong>Desktop mode</strong> — native window:</p>
           <pre><code>python main.py</code></pre>
           <p><strong>Browser only:</strong></p>
           <pre style="margin-bottom:0"><code>python server.py
@@ -425,20 +457,20 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <div class="tree">
             <span class="dir">NLP-flow/</span><br>
             ├── main.py      <span class="comment"># Flask + window</span><br>
-            ├── server.py    <span class="comment"># Backend 55+ routes</span><br>
+            ├── server.py    <span class="comment"># Backend 60+ routes</span><br>
+            ├── .env         <span class="comment"># HF_TOKEN for LLM</span><br>
             ├── requirements.txt<br>
             ├── <span class="dir">docs/</span><br>
-            │&nbsp;&nbsp;└── doc.html <span class="comment"># GitHub Pages</span><br>
+            │&nbsp;&nbsp;└── doc.html<br>
             └── <span class="dir">static/</span><br>
-            &nbsp;&nbsp;&nbsp;├── index.html<br>
-            &nbsp;&nbsp;&nbsp;└── style.css
+            &nbsp;&nbsp;&nbsp;└── index.html
           </div>
         </div>
       </div>
 
       <span class="sec-anchor" id="en-blocks"></span>
       <div class="sec-title">Available blocks</div>
-      <p style="color:var(--sec);font-size:14px;margin-bottom:16px">Click a block to see its description, connections and canvas example.</p>
+      <p style="color:var(--sec);font-size:13.5px;margin-bottom:14px">Click a block to see its description, connections and canvas example.</p>
       <div class="cat-label">📦 Data input</div>
       <div class="blocks-grid" id="en-grid-data"></div>
       <div class="cat-label">🔧 Processing</div>
@@ -447,18 +479,28 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
       <div class="blocks-grid" id="en-grid-models"></div>
       <div class="cat-label">🧠 NLP — text</div>
       <div class="blocks-grid" id="en-grid-nlp"></div>
+      <div class="cat-label">🔍 RAG — retrieval with LLM</div>
+      <div class="blocks-grid" id="en-grid-rag"></div>
 
       <span class="sec-anchor" id="en-pipelines"></span>
-      <div class="row-2" style="margin-top:36px">
+      <div class="sec-title">Typical pipelines</div>
+      <div class="row-2">
         <div class="card">
-          <div class="card-label">Typical pipelines</div>
-          <h3 style="margin-top:4px">Tabular classification / regression</h3>
+          <div class="card-label">ML tabular</div>
+          <h3 style="margin-top:4px">Regression (OLS / Ridge / Lasso)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
             <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
             <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
             <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow">→</div>
             <div class="pip-node">📋 Evaluation</div><div class="pip-arrow">→</div>
             <div class="pip-node">💾 Save</div>
+          </div></div>
+          <h3>Tabular classification (Logistic / KNN / RF / SVM)</h3>
+          <div class="pipeline-wrap"><div class="pipeline">
+            <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
+            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
+            <div class="pip-node">🧠 Train</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📋 Evaluation</div>
           </div></div>
           <h3>Data exploration</h3>
           <div class="pipeline-wrap"><div class="pipeline">
@@ -495,6 +537,52 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
         </div>
       </div>
 
+      <span class="sec-anchor" id="en-rag"></span>
+      <div class="sec-title">RAG Pipeline</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">What is RAG?</div>
+        <p>RAG (<em>Retrieval-Augmented Generation</em>) combines semantic search and text generation. The LLM receives the most relevant fragments from your corpus as context in the prompt — the difference between "without RAG" and "with RAG" is literally more text in the input.</p>
+        <h3>Full flow</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node rag">📂 Data</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">💾 Save</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Required configuration</div>
+          <p>The LLM block requires a Hugging Face token. Create a <code>.env</code> file in the project root:</p>
+          <pre><code>HF_TOKEN=hf_yourtoken
+HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
+          <p>Embeddings work without a token (model <code>all-MiniLM-L6-v2</code>).</p>
+          <div class="note-rag">⚠️ Without <code>HF_TOKEN</code> the LLM block will not generate responses. All other RAG blocks work without it.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">What the student sees</div>
+          <ul>
+            <li><strong>Without RAG:</strong> the LLM answers using only its pre-trained knowledge</li>
+            <li><strong>With RAG:</strong> the LLM receives the N most similar fragments from the corpus as context</li>
+            <li>Both responses are shown side by side for comparison</li>
+            <li>The <strong>Save</strong> block exports an HTML report with the full session</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Key parameters</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parameter</th><th>Block</th><th>Description</th></tr>
+          <tr><td>Chunking mode</td><td>✂️ Chunking</td><td>Automatic (by size) or 1 chunk per document</td></tr>
+          <tr><td>Chunk size</td><td>✂️ Chunking</td><td>Number of characters per fragment (automatic mode)</td></tr>
+          <tr><td>Top-K</td><td>🔎 Retriever</td><td>How many fragments to retrieve per query</td></tr>
+          <tr><td>System prompt</td><td>🤖 LLM</td><td>Base instructions for the model, editable in the block</td></tr>
+          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>LLM model used (default: Qwen2.5-7B-Instruct)</td></tr>
+        </table></div>
+      </div>
+
       <span class="sec-anchor" id="en-shortcuts"></span>
       <div class="sec-title">Keyboard shortcuts</div>
       <div class="card">
@@ -503,7 +591,7 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <tr><td>Double-click</td><td>Open block popup</td></tr>
           <tr><td id="en-k1"></td><td>Multi-select</td></tr>
           <tr><td id="en-k2"></td><td>Select all</td></tr>
-          <tr><td id="en-k3"></td><td>Copy / Paste (keeps connections)</td></tr>
+          <tr><td id="en-k3"></td><td>Copy / Paste</td></tr>
           <tr><td id="en-k4"></td><td>Undo / Redo</td></tr>
           <tr><td><kbd>Del</kbd>/<kbd>⌫</kbd></td><td>Delete selection</td></tr>
           <tr><td>Mouse wheel</td><td>Zoom in/out</td></tr>
@@ -519,6 +607,7 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
             <li><strong>💾 Save session (.zip)</strong> — canvas + full configuration</li>
             <li><strong>📂 Load session (.zip)</strong> — restores a saved canvas</li>
             <li><strong>🗺 Export (.json)</strong> — block structure and connections</li>
+            <li><strong>📄 RAG Report (.html)</strong> — query, fragments and responses</li>
           </ul>
           <div class="note">Data is not persisted between sessions. When restoring, reload the dataset in the Data block.</div>
         </div>
@@ -526,9 +615,10 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
           <div class="card-label">Technical notes</div>
           <ul>
             <li>Server on <code>localhost:5053</code>, no external ports</li>
-            <li>Models in memory — cleared on restart</li>
+            <li>Embeddings: <code>all-MiniLM-L6-v2</code> via HF Inference API</li>
+            <li>LLM: <code>Qwen/Qwen2.5-7B-Instruct</code> via HF router</li>
+            <li>RAG state in <code>_RAG[chunk_node_id]</code></li>
             <li>Plots via matplotlib → base64 PNG</li>
-            <li>Each Data node has slot <code>_NODE_DATA[id]</code></li>
             <li>Framework-free SPA — canvas state in JS memory</li>
           </ul>
         </div>
@@ -549,281 +639,361 @@ h3{font-size:14px;font-weight:700;margin:18px 0 8px}
   </main>
 </div><!-- /layout -->
 <script>
-// ── Detect Mac ────────────────────────────────────────────────────
-var isMac = /Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent);
-var MOD   = isMac ? '⌘' : 'Ctrl';
-function kbd(k){ return '<kbd>'+MOD+'</kbd>+<kbd>'+k+'</kbd>'; }
-
-function fillShortcuts() {
-  // ES
-  var es1=document.getElementById('es-k1'); if(es1) es1.innerHTML=kbd('clic');
-  var es2=document.getElementById('es-k2'); if(es2) es2.innerHTML=kbd('A');
-  var es3=document.getElementById('es-k3'); if(es3) es3.innerHTML=kbd('C')+' / '+kbd('V');
-  var es4=document.getElementById('es-k4'); if(es4) es4.innerHTML=kbd('Z')+' / '+kbd('Y');
-  // EN
-  var en1=document.getElementById('en-k1'); if(en1) en1.innerHTML=kbd('click');
-  var en2=document.getElementById('en-k2'); if(en2) en2.innerHTML=kbd('A');
-  var en3=document.getElementById('en-k3'); if(en3) en3.innerHTML=kbd('C')+' / '+kbd('V');
-  var en4=document.getElementById('en-k4'); if(en4) en4.innerHTML=kbd('Z')+' / '+kbd('Y');
+// ─── Lang switch ────────────────────────────────────────────────────────────
+var _lang = 'es';
+function setLang(l){
+  _lang = l;
+  document.querySelectorAll('.lang-content').forEach(function(el){
+    el.classList.remove('visible');
+  });
+  document.getElementById('content-'+l).classList.add('visible');
+  document.querySelectorAll('.lang-btn').forEach(function(b){
+    b.classList.remove('active');
+    if(b.textContent.toLowerCase().indexOf(l)>-1) b.classList.add('active');
+  });
+  document.getElementById('tocGroupEs').style.display = l==='es'?'':'none';
+  document.getElementById('tocGroupEn').style.display = l==='en'?'':'none';
+  renderBlocks(l);
+  setShortcutKeys(l);
 }
 
-// ── Block data ────────────────────────────────────────────────────
+// ─── OS detection ───────────────────────────────────────────────────────────
+var _mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+var _mod = _mac ? '⌘' : 'Ctrl';
+
+function setShortcutKeys(l){
+  var pre = l==='es' ? 'es' : 'en';
+  var kk = [
+    [pre+'-k1', _mod+'+Click'],
+    [pre+'-k2', _mod+'+A'],
+    [pre+'-k3', _mod+'+C / '+_mod+'+V'],
+    [pre+'-k4', _mod+'+Z / '+_mod+'+Y']
+  ];
+  kk.forEach(function(kv){
+    var el = document.getElementById(kv[0]);
+    if(el) el.innerHTML = '<kbd>'+kv[1]+'</kbd>';
+  });
+}
+
+// ─── Block definitions ──────────────────────────────────────────────────────
 var BLOCKS = {
-  es:{
-    data:[
-      { icon:'📂', name:'Datos', tagline:'Carga datasets y configura columnas',
-        portsIn:[], portsOut:['Análisis','Plots','Preprocesado','Reg. Lineal','Entrena NLP','Topic Model'],
-        desc:'Punto de entrada de cualquier pipeline. Selecciona un dataset built-in o sube un CSV propio. Define la columna objetivo (target) y las features.',
-        example:['📂 Datos','🔧 Preprocesado','📉 Reg. Lineal'], active:'📂 Datos' },
-      { icon:'📂', name:'Cargar Modelo', tagline:'Carga un modelo .pkl guardado',
-        portsIn:[], portsOut:['Evaluación'],
-        desc:'Carga un modelo .pkl guardado previamente. Lo evalúa con el test set guardado o con datos nuevos en CSV.',
-        example:['📂 Cargar Modelo','📋 Evaluación'], active:'📂 Cargar Modelo' }
+  es: {
+    data: [
+      {id:'datos', icon:'📂', name:'Datos',
+       tagline:'Carga un CSV local o uno de los datasets incluidos.',
+       desc:'Punto de entrada de todos los flujos. Sube tu propio fichero CSV o selecciona un dataset de muestra. Detecta automáticamente columnas de texto y etiquetas. Los datos cargados están disponibles para todos los bloques conectados aguas abajo.',
+       ins:[], outs:['Datos tabulares','Corpus de texto'],
+       canvas:[{icon:'📂',name:'Datos',status:'1 200 filas · 3 cols',out:true}]},
+      {id:'analisis', icon:'🔬', name:'Análisis',
+       tagline:'Estadísticas descriptivas, distribución y correlaciones.',
+       desc:'Muestra estadísticas básicas del dataset: tipos de columna, valores nulos, distribución de clases y matriz de correlación. No modifica los datos ni genera modelos.',
+       ins:['Datos tabulares'], outs:[],
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🔬',name:'Análisis',status:'Listo'}]},
     ],
-    proc:[
-      { icon:'🔬', name:'Análisis', tagline:'Estadísticas descriptivas',
-        portsIn:['Datos'], portsOut:[],
-        desc:'Filas, columnas, tipos, valores nulos y estadísticas básicas. Solo recibe datos, no los pasa adelante.',
-        example:['📂 Datos','🔬 Análisis'], active:'🔬 Análisis' },
-      { icon:'📊', name:'Plots', tagline:'Visualizaciones exploratorias',
-        portsIn:['Datos'], portsOut:['Preprocesado','Reg. Lineal'],
-        desc:'Histograma, boxplot, scatter, correlación, barras, tarta, líneas. Historial de gráficas. Se adapta al tipo de problema.',
-        example:['📂 Datos','📊 Plots','🔧 Preprocesado'], active:'📊 Plots' },
-      { icon:'🔧', name:'Preprocesado', tagline:'Limpieza y transformación',
-        portsIn:['Datos','Plots'], portsOut:['Reg. Lineal','Entrena NLP'],
-        desc:'Imputación, normalización (MinMax, Standard, Robust), codificación (OneHot, Label), split train/test, selección de features y desbalanceo.',
-        example:['📂 Datos','🔧 Preprocesado','📉 Reg. Lineal'], active:'🔧 Preprocesado' }
+    proc: [
+      {id:'prep', icon:'🔧', name:'Preprocesado',
+       tagline:'Rellena nulos, escala, codifica variables categóricas.',
+       desc:'Aplica un pipeline de sklearn automático: imputa valores nulos (mediana numérica, moda categórica), escala con StandardScaler y codifica variables categóricas con OneHotEncoder. El pipeline se guarda junto al modelo para inference.',
+       ins:['Datos tabulares','Corpus de texto'], outs:['Datos procesados'],
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🔧',name:'Preprocesado',status:'Pipeline listo',out:true,inp:true}]},
+      {id:'plots', icon:'📊', name:'Plots',
+       tagline:'Visualizaciones del dataset: histogramas, boxplots, pairplot.',
+       desc:'Genera gráficas matplotlib sobre el dataset activo: histograma por columna, boxplot, pairplot de las primeras 5 variables numéricas y distribución de la variable objetivo. Las gráficas se muestran en el panel lateral.',
+       ins:['Datos tabulares'], outs:[],
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'📊',name:'Plots',status:'Ver gráficas →'}]},
     ],
-    models:[
-      { icon:'📉', name:'Reg. Lineal', tagline:'OLS, Ridge y LASSO — tabular',
-        portsIn:['Datos','Plots','Preprocesado'], portsOut:['Evaluación','Guardar'],
-        desc:'OLS, Ridge (L2) y LASSO (L1). Detecta automáticamente clasificación o regresión según el target. Grid search CV para lambda o C.',
-        example:['🔧 Preprocesado','📉 Reg. Lineal','📋 Evaluación'], active:'📉 Reg. Lineal' },
-      { icon:'📋', name:'Evaluación', tagline:'Métricas y visualizaciones',
-        portsIn:['Reg. Lineal','Cargar Modelo'], portsOut:['Guardar'],
-        desc:'Clasificación: accuracy, F1, precisión, recall, matriz de confusión, ROC, frontera de decisión. Regresión: RMSE, MAE, R², supuestos. Tab CV.',
-        example:['📉 Reg. Lineal','📋 Evaluación','💾 Guardar'], active:'📋 Evaluación' },
-      { icon:'💾', name:'Guardar', tagline:'Exporta modelo, métricas y gráficas',
-        portsIn:['Reg. Lineal','Evaluación'], portsOut:[],
-        desc:'Exporta el modelo como .pkl (con X_test, y_test y columnas), métricas como .json/.csv, gráficas como .png.',
-        example:['📋 Evaluación','💾 Guardar'], active:'💾 Guardar' }
+    models: [
+      {id:'linreg', icon:'📉', name:'Reg. Lineal',
+       tagline:'OLS, Ridge y Lasso con métricas RMSE/MAE/R² y validación cruzada de λ.',
+       desc:'Entrena modelos de regresión sobre datos tabulares. Soporta OLS (LinearRegression), Ridge y Lasso con slider de λ y pestaña de CV para seleccionar el mejor hiperparámetro. Muestra RMSE, MAE, R², coeficientes y gráficas de residuos. El modelo entrenado se pasa al bloque Evaluación.',
+       ins:['Datos procesados'], outs:['Modelo entrenado'],
+       canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'📉',name:'Reg. Lineal',status:'R² 0.84',out:true,inp:true}]},
+      {id:'eval', icon:'📋', name:'Evaluación',
+       tagline:'Métricas detalladas + matriz de confusión.',
+       desc:'Evalúa el modelo conectado sobre el split de test. Muestra accuracy, precision, recall, F1, AUC-ROC (si aplica) y matriz de confusión como heatmap.',
+       ins:['Modelo entrenado'], outs:[],
+       canvas:[{icon:'🌲',name:'Random Forest',out:true},{icon:'📋',name:'Evaluación',status:'Métricas →',inp:true}]},
+      {id:'guardar', icon:'💾', name:'Guardar',
+       tagline:'Exporta el modelo .pkl, plots .zip e informe RAG .html.',
+       desc:'Guarda el modelo serializado (joblib .pkl), los plots generados (.zip) y, si hay un bloque LLM conectado, el informe RAG completo en HTML con consulta, fragmentos recuperados, prompt completo y las dos respuestas.',
+       ins:['Modelo entrenado','LLM'], outs:[],
+       canvas:[{icon:'📋',name:'Evaluación',out:true},{icon:'💾',name:'Guardar',status:'Guardar modelo',inp:true}]},
+      {id:'cargar', icon:'📂', name:'Cargar Modelo',
+       tagline:'Restaura un modelo .pkl guardado previamente.',
+       desc:'Carga un modelo serializado con joblib (.pkl) generado por el bloque Guardar. Restaura el modelo entrenado, el pipeline de preprocesado y los datos de test originales. Actúa como si viniera directamente del bloque Regresión Lineal o Entrenamiento NLP, pasando el modelo al bloque Evaluación.',
+       ins:[], outs:['Modelo entrenado'],
+       canvas:[{icon:'📂',name:'Cargar Modelo',status:'modelo.pkl',out:true},{icon:'📋',name:'Evaluación',status:'Métricas →',inp:true}]},
     ],
-    nlp:[
-      { icon:'🧠', name:'Entrena NLP', tagline:'TF-IDF + clasificador sobre texto',
-        portsIn:['Datos','Preprocesado'], portsOut:['Clasifica NLP'],
-        desc:'Pipeline de texto: tokenización, TF-IDF y clasificador. Compatible con Movie Reviews, Spam vs Ham y Twitter Sentiment.',
-        example:['📂 Datos','🧠 Entrena NLP','🎯 Clasifica NLP'], active:'🧠 Entrena NLP' },
-      { icon:'🗂️', name:'Topic Model', tagline:'LDA — descubrimiento de temas',
-        portsIn:['Datos'], portsOut:[],
-        desc:'LDA sobre un corpus para descubrir temas latentes. Muestra los términos más representativos de cada topic.',
-        example:['📂 Datos','🗂️ Topic Model'], active:'🗂️ Topic Model' },
-      { icon:'🎯', name:'Clasifica NLP', tagline:'Clasifica nuevas muestras de texto',
-        portsIn:['Entrena NLP'], portsOut:[],
-        desc:'Recibe texto nuevo (escrito o en CSV) y lo clasifica con el modelo NLP entrenado.',
-        example:['🧠 Entrena NLP','🎯 Clasifica NLP'], active:'🎯 Clasifica NLP' }
+    nlp: [
+      {id:'tfnat', icon:'🧠', name:'Entrena (NLP)',
+       tagline:'TF-IDF + clasificador: Naive Bayes, Logística, KNN, Random Forest o SVM.',
+       desc:'Vectoriza el corpus con TF-IDF (configurable: max_features, ngram_range) y entrena un clasificador de texto a elegir: Naive Bayes, Regresión Logística, KNN, Random Forest o SVM (LinearSVC). También se usa para clasificación tabular con los mismos algoritmos (Logística, KNN, RF, SVM). El vectorizador y el pipeline se guardan junto al modelo.',
+       ins:['Datos procesados'], outs:['Modelo NLP'],
+       canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'🧠',name:'Entrena (NLP)',status:'Modelo listo',out:true,inp:true}]},
+      {id:'pred', icon:'🎯', name:'Clasifica',
+       tagline:'Clasifica nuevos textos con el modelo NLP entrenado.',
+       desc:'Interfaz de predicción en tiempo real. Escribe un texto en el modal y el modelo devuelve la clase predicha con la distribución de probabilidades por clase.',
+       ins:['Modelo NLP'], outs:[],
+       canvas:[{icon:'🧠',name:'Entrena (NLP)',out:true},{icon:'🎯',name:'Clasifica',status:'Predice aquí →',inp:true}]},
+      {id:'lda', icon:'🗂', name:'LDA',
+       tagline:'Topic modeling — extrae temas latentes del corpus.',
+       desc:'Aplica Latent Dirichlet Allocation con scikit-learn. Configurable: número de tópicos y palabras por tópico. Muestra las palabras más relevantes de cada tema.',
+       ins:['Datos tabulares'], outs:[],
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🗂',name:'LDA',status:'Temas →',inp:true}]},
+    ],
+    rag: [
+      {id:'rag-chunk', icon:'✂️', name:'Chunking',
+       tagline:'Divide documentos en fragmentos para embeddings.',
+       desc:'Divide el corpus en fragmentos de texto (chunks). Dos modos: automático (por tamaño en caracteres, con solapamiento opcional) y 1 chunk por documento (preserva cada fila como una unidad semántica). Muestra el número total de chunks generados y la longitud media.',
+       ins:['Corpus de texto'], outs:['Chunks'],
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'✂️',name:'Chunking',status:'2 400 chunks',out:true,inp:true,rag:true}]},
+      {id:'rag-embed', icon:'🧬', name:'Embeddings',
+       tagline:'Vectoriza chunks con all-MiniLM-L6-v2.',
+       desc:'Convierte cada chunk en un vector de 384 dimensiones usando el modelo sentence-transformers/all-MiniLM-L6-v2 vía la API de inferencia de Hugging Face (sin token requerido). El proceso se ejecuta en segundo plano con barra de progreso. Los vectores se almacenan en memoria para el Retriever.',
+       ins:['Chunks'], outs:['Vectores'],
+       canvas:[{icon:'✂️',name:'Chunking',out:true},{icon:'🧬',name:'Embeddings',status:'Procesando…',out:true,inp:true,rag:true}]},
+      {id:'rag-ret', icon:'🔎', name:'Retriever',
+       tagline:'Búsqueda semántica por similitud coseno.',
+       desc:'Dado un texto de consulta, vectoriza la pregunta con el mismo modelo y calcula la similitud coseno contra todos los chunks. Devuelve los top-K fragmentos más relevantes con sus scores. Los fragmentos recuperados se muestran en el modal antes de pasarlos al LLM.',
+       ins:['Vectores'], outs:['Fragmentos'],
+       canvas:[{icon:'🧬',name:'Embeddings',out:true},{icon:'🔎',name:'Retriever',status:'Consulta →',out:true,inp:true,rag:true}]},
+      {id:'rag-llm', icon:'🤖', name:'LLM (RAG)',
+       tagline:'Genera respuesta sin RAG y con RAG en paralelo.',
+       desc:'Llama a Qwen/Qwen2.5-7B-Instruct vía el router de Hugging Face (requiere HF_TOKEN en .env). Genera dos respuestas en paralelo: sin contexto (sin RAG) y con los fragmentos recuperados como contexto (con RAG). Ambas respuestas se muestran lado a lado con markdown renderizado. El system prompt es editable.',
+       ins:['Fragmentos'], outs:['Respuesta LLM'],
+       canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Respuesta →',out:true,inp:true,rag:true}]},
     ]
   },
-  en:{
-    data:[
-      { icon:'📂', name:'Data', tagline:'Load datasets and configure columns',
-        portsIn:[], portsOut:['Analysis','Plots','Preprocessing','Lin. Reg.','NLP Training','Topic Model'],
-        desc:'Entry point for any pipeline. Select a built-in dataset or upload your own CSV. Defines the target column and feature columns.',
-        example:['📂 Data','🔧 Preprocessing','📉 Lin. Reg.'], active:'📂 Data' },
-      { icon:'📂', name:'Load Model', tagline:'Load a saved .pkl model',
-        portsIn:[], portsOut:['Evaluation'],
-        desc:'Loads a previously saved .pkl model. Evaluates it with the saved test set or with new CSV data.',
-        example:['📂 Load Model','📋 Evaluation'], active:'📂 Load Model' }
+  en: {
+    data: [
+      {id:'datos', icon:'📂', name:'Data',
+       tagline:'Load a local CSV or one of the included datasets.',
+       desc:'Entry point for all flows. Upload your own CSV file or select a sample dataset. Automatically detects text and label columns. Loaded data is available to all downstream blocks.',
+       ins:[], outs:['Tabular data','Text corpus'],
+       canvas:[{icon:'📂',name:'Data',status:'1,200 rows · 3 cols',out:true}]},
+      {id:'analisis', icon:'🔬', name:'Analysis',
+       tagline:'Descriptive statistics, distribution and correlations.',
+       desc:'Shows basic dataset statistics: column types, null values, class distribution and correlation matrix. Does not modify data or produce models.',
+       ins:['Tabular data'], outs:[],
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'🔬',name:'Analysis',status:'Ready'}]},
     ],
-    proc:[
-      { icon:'🔬', name:'Analysis', tagline:'Descriptive statistics',
-        portsIn:['Data'], portsOut:[],
-        desc:'Rows, columns, types, missing values and basic statistics. Receives data only, does not pass it forward.',
-        example:['📂 Data','🔬 Analysis'], active:'🔬 Analysis' },
-      { icon:'📊', name:'Plots', tagline:'Exploratory visualisations',
-        portsIn:['Data'], portsOut:['Preprocessing','Lin. Reg.'],
-        desc:'Histogram, boxplot, scatter, correlation, bar chart, pie, line. Plot history. Adapts to problem type.',
-        example:['📂 Data','📊 Plots','🔧 Preprocessing'], active:'📊 Plots' },
-      { icon:'🔧', name:'Preprocessing', tagline:'Data cleaning and transformation',
-        portsIn:['Data','Plots'], portsOut:['Lin. Reg.','NLP Training'],
-        desc:'Imputation, normalisation (MinMax, Standard, Robust), encoding (OneHot, Label), train/test split, feature selection and imbalance handling.',
-        example:['📂 Data','🔧 Preprocessing','📉 Lin. Reg.'], active:'🔧 Preprocessing' }
+    proc: [
+      {id:'prep', icon:'🔧', name:'Preprocessing',
+       tagline:'Fill nulls, scale, encode categorical variables.',
+       desc:'Applies an automatic sklearn pipeline: imputes null values (numeric median, categorical mode), scales with StandardScaler and encodes categoricals with OneHotEncoder. The pipeline is saved with the model for inference.',
+       ins:['Tabular data','Text corpus'], outs:['Processed data'],
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'🔧',name:'Preprocessing',status:'Pipeline ready',out:true,inp:true}]},
+      {id:'plots', icon:'📊', name:'Plots',
+       tagline:'Dataset visualisations: histograms, boxplots, pairplot.',
+       desc:'Generates matplotlib plots on the active dataset: histogram per column, boxplot, pairplot of the first 5 numeric variables and target variable distribution.',
+       ins:['Tabular data'], outs:[],
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'📊',name:'Plots',status:'See plots →'}]},
     ],
-    models:[
-      { icon:'📉', name:'Lin. Reg.', tagline:'OLS, Ridge and LASSO — tabular',
-        portsIn:['Data','Plots','Preprocessing'], portsOut:['Evaluation','Save'],
-        desc:'OLS, Ridge (L2) and LASSO (L1). Auto-detects regression vs classification from target type. CV grid search for lambda or C.',
-        example:['🔧 Preprocessing','📉 Lin. Reg.','📋 Evaluation'], active:'📉 Lin. Reg.' },
-      { icon:'📋', name:'Evaluation', tagline:'Metrics and model visualisations',
-        portsIn:['Lin. Reg.','Load Model'], portsOut:['Save'],
-        desc:'Classification: accuracy, F1, precision, recall, confusion matrix, ROC, decision boundary. Regression: RMSE, MAE, R², assumptions. CV tab.',
-        example:['📉 Lin. Reg.','📋 Evaluation','💾 Save'], active:'📋 Evaluation' },
-      { icon:'💾', name:'Save', tagline:'Export model, metrics and plots',
-        portsIn:['Lin. Reg.','Evaluation'], portsOut:[],
-        desc:'Exports: model as .pkl (with X_test, y_test, column names), metrics as .json/.csv, plots as .png.',
-        example:['📋 Evaluation','💾 Save'], active:'💾 Save' }
+    models: [
+      {id:'linreg', icon:'📉', name:'Linear Reg.',
+       tagline:'OLS, Ridge and Lasso with RMSE/MAE/R² metrics and λ cross-validation.',
+       desc:'Trains regression models on tabular data. Supports OLS (LinearRegression), Ridge and Lasso with a λ slider and a CV tab to select the best hyperparameter. Shows RMSE, MAE, R², coefficients and residual plots. The trained model is passed to the Evaluation block.',
+       ins:['Processed data'], outs:['Trained model'],
+       canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'📉',name:'Linear Reg.',status:'R² 0.84',out:true,inp:true}]},
+      {id:'eval', icon:'📋', name:'Evaluation',
+       tagline:'Detailed metrics + confusion matrix.',
+       desc:'Evaluates the connected model on the test split. Shows accuracy, precision, recall, F1, AUC-ROC (if applicable) and confusion matrix as heatmap.',
+       ins:['Trained model'], outs:[],
+       canvas:[{icon:'🌲',name:'Random Forest',out:true},{icon:'📋',name:'Evaluation',status:'Metrics →',inp:true}]},
+      {id:'guardar', icon:'💾', name:'Save',
+       tagline:'Export model .pkl, plots .zip and RAG report .html.',
+       desc:'Saves the serialised model (joblib .pkl), generated plots (.zip) and, if a LLM block is connected, the full RAG HTML report with query, retrieved fragments, full prompt and both responses.',
+       ins:['Trained model','LLM'], outs:[],
+       canvas:[{icon:'📋',name:'Evaluation',out:true},{icon:'💾',name:'Save',status:'Save model',inp:true}]},
+      {id:'cargar', icon:'📂', name:'Load Model',
+       tagline:'Restore a previously saved .pkl model.',
+       desc:'Loads a joblib-serialised model (.pkl) produced by the Save block. Restores the trained model, the preprocessing pipeline and the original test data. Acts as if the model came directly from the Linear Reg. or Train (NLP) block, passing the model on to the Evaluation block.',
+       ins:[], outs:['Trained model'],
+       canvas:[{icon:'📂',name:'Load Model',status:'model.pkl',out:true},{icon:'📋',name:'Evaluation',status:'Metrics →',inp:true}]},
     ],
-    nlp:[
-      { icon:'🧠', name:'NLP Training', tagline:'TF-IDF + classifier on text',
-        portsIn:['Data','Preprocessing'], portsOut:['Classify NLP'],
-        desc:'Text pipeline: tokenisation, TF-IDF and classifier. Works with Movie Reviews, Spam vs Ham and Twitter Sentiment.',
-        example:['📂 Data','🧠 NLP Training','🎯 Classify NLP'], active:'🧠 NLP Training' },
-      { icon:'🗂️', name:'Topic Model', tagline:'LDA — topic discovery',
-        portsIn:['Data'], portsOut:[],
-        desc:'LDA on a text corpus to discover latent topics. Shows most representative terms per topic.',
-        example:['📂 Data','🗂️ Topic Model'], active:'🗂️ Topic Model' },
-      { icon:'🎯', name:'Classify NLP', tagline:'Classify new text samples',
-        portsIn:['NLP Training'], portsOut:[],
-        desc:'Receives new text (typed or CSV) and classifies it using the trained NLP model.',
-        example:['🧠 NLP Training','🎯 Classify NLP'], active:'🎯 Classify NLP' }
+    nlp: [
+      {id:'tfnat', icon:'🧠', name:'Train (NLP)',
+       tagline:'TF-IDF + classifier: Naive Bayes, Logistic, KNN, Random Forest or SVM.',
+       desc:'Vectorises the corpus with TF-IDF (configurable: max_features, ngram_range) and trains a text classifier: Naive Bayes, Logistic Regression, KNN, Random Forest or SVM (LinearSVC). Also used for tabular classification with the same algorithms. The vectoriser and pipeline are saved alongside the model.',
+       ins:['Processed data'], outs:['NLP model'],
+       canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'🧠',name:'Train (NLP)',status:'Model ready',out:true,inp:true}]},
+      {id:'pred', icon:'🎯', name:'Classify',
+       tagline:'Classify new texts with the trained NLP model.',
+       desc:'Real-time prediction interface. Type a text in the modal and the model returns the predicted class with per-class probability distribution.',
+       ins:['NLP model'], outs:[],
+       canvas:[{icon:'🧠',name:'Train (NLP)',out:true},{icon:'🎯',name:'Classify',status:'Predict here →',inp:true}]},
+      {id:'lda', icon:'🗂', name:'LDA',
+       tagline:'Topic modelling — extract latent topics from the corpus.',
+       desc:'Applies Latent Dirichlet Allocation with scikit-learn. Configurable: number of topics and words per topic. Shows the most relevant words for each theme.',
+       ins:['Tabular data'], outs:[],
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'🗂',name:'LDA',status:'Topics →',inp:true}]},
+    ],
+    rag: [
+      {id:'rag-chunk', icon:'✂️', name:'Chunking',
+       tagline:'Split documents into fragments for embeddings.',
+       desc:'Splits the corpus into text fragments (chunks). Two modes: automatic (by character size, with optional overlap) and 1 chunk per document (preserves each row as a semantic unit). Shows total number of chunks generated and mean length.',
+       ins:['Text corpus'], outs:['Chunks'],
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'✂️',name:'Chunking',status:'2,400 chunks',out:true,inp:true,rag:true}]},
+      {id:'rag-embed', icon:'🧬', name:'Embeddings',
+       tagline:'Vectorise chunks with all-MiniLM-L6-v2.',
+       desc:'Converts each chunk into a 384-dimensional vector using sentence-transformers/all-MiniLM-L6-v2 via the Hugging Face Inference API (no token required). The process runs in the background with a progress bar. Vectors are stored in memory for the Retriever.',
+       ins:['Chunks'], outs:['Vectors'],
+       canvas:[{icon:'✂️',name:'Chunking',out:true},{icon:'🧬',name:'Embeddings',status:'Processing…',out:true,inp:true,rag:true}]},
+      {id:'rag-ret', icon:'🔎', name:'Retriever',
+       tagline:'Semantic search by cosine similarity.',
+       desc:'Given a query text, vectorises the question with the same model and computes cosine similarity against all chunks. Returns the top-K most relevant fragments with their scores. Retrieved fragments are shown in the modal before being passed to the LLM.',
+       ins:['Vectors'], outs:['Fragments'],
+       canvas:[{icon:'🧬',name:'Embeddings',out:true},{icon:'🔎',name:'Retriever',status:'Query →',out:true,inp:true,rag:true}]},
+      {id:'rag-llm', icon:'🤖', name:'LLM (RAG)',
+       tagline:'Generate responses without and with RAG in parallel.',
+       desc:'Calls Qwen/Qwen2.5-7B-Instruct via the Hugging Face router (requires HF_TOKEN in .env). Generates two responses in parallel: without context (without RAG) and with the retrieved fragments as context (with RAG). Both responses are shown side by side with rendered markdown. The system prompt is editable.',
+       ins:['Fragments'], outs:['LLM response'],
+       canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Response →',out:true,inp:true,rag:true}]},
     ]
   }
 };
 
-var L = {
-  es:{ inLabel:'Acepta desde', outLabel:'Conecta hacia', none:'ninguno', connTitle:'Conexiones', statusReady:'Listo', statusActive:'Activo' },
-  en:{ inLabel:'Accepts from',  outLabel:'Connects to',  none:'none',    connTitle:'Connections', statusReady:'Ready', statusActive:'Active' }
-};
-
-// ── Render block cards ────────────────────────────────────────────
-function renderCards(lang) {
-  var d = BLOCKS[lang];
-  ['data','proc','models','nlp'].forEach(function(cat) {
-    var el = document.getElementById(lang+'-grid-'+cat);
-    if (!el) return;
-    el.innerHTML = d[cat].map(function(b, idx) {
-      var pinCls  = b.portsIn.length  ? 'pb-in'  : 'pb-none';
-      var poutCls = b.portsOut.length ? 'pb-out' : 'pb-none';
-      var pinTxt  = b.portsIn.length  ? (lang==='es'?'← entrada':'← input')  : (lang==='es'?'sin entrada':'no input');
-      var poutTxt = b.portsOut.length ? (lang==='es'?'salida →':'output →')  : (lang==='es'?'sin salida':'no output');
-      return '<div class="block-card" onclick="openModal(\''+lang+'\',\''+cat+'\','+idx+')">'
-        +'<div class="bc-icon">'+b.icon+'</div>'
-        +'<div class="bc-name">'+b.name+'</div>'
-        +'<div class="bc-tagline">'+b.tagline+'</div>'
-        +'<div class="bc-ports">'
-        +'<span class="pbadge '+pinCls+'">'+pinTxt+'</span>'
-        +'<span class="pbadge '+poutCls+'">'+poutTxt+'</span>'
-        +'</div>'
-        +'</div>';
-    }).join('');
-  });
+// ─── Render block grids ─────────────────────────────────────────────────────
+function renderBlocks(l){
+  var b = BLOCKS[l];
+  renderGrid(l+'-grid-data',   b.data,   l);
+  renderGrid(l+'-grid-proc',   b.proc,   l);
+  renderGrid(l+'-grid-models', b.models, l);
+  renderGrid(l+'-grid-nlp',    b.nlp,    l);
+  renderGrid(l+'-grid-rag',    b.rag,    l);
 }
 
-// ── Mini canvas ───────────────────────────────────────────────────
-function buildMiniCanvas(b, lb) {
-  var nodes = b.example;
-  var active = b.active;
-  var html = '<div class="mc-inner" id="mcInner">';
-  nodes.forEach(function(name, i) {
-    var isActive = name === active;
-    var hasIn  = i > 0;
-    var hasOut = i < nodes.length - 1;
-    html += '<div class="mc-node'+(isActive?' active':'')+'" id="mcNode'+i+'">';
-    if (hasIn)  html += '<div class="mc-port in connected"></div>';
-    if (hasOut) html += '<div class="mc-port out connected"></div>';
-    html += '<div class="mc-node-hdr">'
-      +'<span class="mc-node-icon">'+name.split(' ')[0]+'</span>'
-      +'<span class="mc-node-name">'+name.split(' ').slice(1).join(' ')+'</span>'
-      +'</div>'
-      +'<div class="mc-node-status">'+(isActive?lb.statusActive:lb.statusReady)+'</div>'
-      +'</div>';
-    if (i < nodes.length - 1) html += '<div class="mc-gap" id="mcGap'+i+'"></div>';
+function renderGrid(id, items, l){
+  var el = document.getElementById(id);
+  if(!el) return;
+  var html = '';
+  items.forEach(function(b){
+    var ports = '';
+    if(b.ins.length===0)  ports += '<span class="pbadge pb-none">Sin entrada</span>';
+    b.ins.forEach(function(p){ ports += '<span class="pbadge pb-in">← '+p+'</span>'; });
+    b.outs.forEach(function(p){ ports += '<span class="pbadge pb-out">'+p+' →</span>'; });
+    html += '<div class="block-card" onclick="openModal(\''+l+'\',\''+b.id+'\')">';
+    html += '<div class="bc-icon">'+b.icon+'</div>';
+    html += '<div class="bc-name">'+b.name+'</div>';
+    html += '<div class="bc-tagline">'+b.tagline+'</div>';
+    html += '<div class="bc-ports">'+ports+'</div>';
+    html += '</div>';
   });
-  html += '</div>';
-  return html;
+  el.innerHTML = html;
 }
 
-function drawLines() {
-  var canvas = document.getElementById('mCanvas');
-  if (!canvas) return;
-  var inner = document.getElementById('mcInner');
-  if (!inner) return;
-  var old = canvas.querySelector('svg.mc-svg');
-  if (old) old.parentNode.removeChild(old);
-  var cRect = canvas.getBoundingClientRect();
-  var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('class','mc-svg');
-  svg.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:visible;width:'+canvas.offsetWidth+'px;height:'+canvas.offsetHeight+'px';
-  var nodes = inner.querySelectorAll('.mc-node');
-  nodes.forEach(function(node, i) {
-    if (i >= nodes.length-1) return;
-    var op = node.querySelector('.mc-port.out');
-    var ip = nodes[i+1].querySelector('.mc-port.in');
-    if (!op||!ip) return;
-    var oR = op.getBoundingClientRect(), iR = ip.getBoundingClientRect();
-    var x1=oR.left+oR.width/2-cRect.left, y1=oR.top+oR.height/2-cRect.top;
-    var x2=iR.left+iR.width/2-cRect.left, y2=iR.top+iR.height/2-cRect.top;
-    var cp=(x2-x1)*0.45;
-    var path=document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d','M '+x1+' '+y1+' C '+(x1+cp)+' '+y1+' '+(x2-cp)+' '+y2+' '+x2+' '+y2);
-    path.setAttribute('stroke','#19e68c');path.setAttribute('stroke-width','2');
-    path.setAttribute('fill','none');path.setAttribute('stroke-linecap','round');
-    svg.appendChild(path);
-  });
-  canvas.appendChild(svg);
+// ─── Modal ─────────────────────────────────────────────────────────────────
+function findBlock(l, id){
+  var b = BLOCKS[l];
+  var all = b.data.concat(b.proc).concat(b.models).concat(b.nlp).concat(b.rag);
+  for(var i=0;i<all.length;i++) if(all[i].id===id) return all[i];
+  return null;
 }
 
-// ── Modal ─────────────────────────────────────────────────────────
-function openModal(lang, cat, idx) {
-  var b=BLOCKS[lang][cat][idx], lb=L[lang];
+function openModal(l, id){
+  var b = findBlock(l, id);
+  if(!b) return;
   document.getElementById('mIcon').textContent  = b.icon;
-  document.getElementById('mTitle').textContent = b.name+' — '+b.tagline;
+  document.getElementById('mTitle').textContent = b.name;
   document.getElementById('mDesc').textContent  = b.desc;
-  document.getElementById('mConnTitle').textContent = lb.connTitle;
-  document.getElementById('mInLabel').textContent   = lb.inLabel;
-  document.getElementById('mOutLabel').textContent  = lb.outLabel;
-  var inC  = b.portsIn.length  ? b.portsIn.map(function(p){return'<span class="conn-chip">'+p+'</span>';}).join('')  : '<span class="conn-chip none-chip">'+lb.none+'</span>';
-  var outC = b.portsOut.length ? b.portsOut.map(function(p){return'<span class="conn-chip">'+p+'</span>';}).join('') : '<span class="conn-chip none-chip">'+lb.none+'</span>';
-  document.getElementById('mInChips').innerHTML  = inC;
-  document.getElementById('mOutChips').innerHTML = outC;
-  document.getElementById('mCanvas').innerHTML   = buildMiniCanvas(b, lb);
+
+  // mini canvas
+  var nodes = b.canvas;
+  var W = 120, GAP = 44, R = 10;
+  var totalW = nodes.length * W + (nodes.length-1) * GAP + 32;
+  var canvHtml = '<div style="position:relative;min-height:90px">';
+  canvHtml += '<svg class="mc-svg" style="position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:0" width="'+totalW+'" height="90"></svg>';
+  canvHtml += '<div style="display:flex;align-items:center;justify-content:center;gap:'+GAP+'px;position:relative;z-index:1">';
+  nodes.forEach(function(n,i){
+    var bc = n.rag ? '#f0fff8' : '#fff';
+    var bd = n.rag ? '#19e68c' : '#dedede';
+    canvHtml += '<div style="background:'+bc+';border:2px solid '+bd+';border-radius:12px;min-width:'+W+'px;position:relative;box-shadow:0 2px 8px rgba(0,0,0,.09)">';
+    canvHtml += '<div style="padding:7px 10px 5px;display:flex;align-items:center;gap:5px;border-bottom:1px solid rgba(18,18,18,.07)">';
+    canvHtml += '<span style="font-size:13px">'+n.icon+'</span>';
+    canvHtml += '<span style="font-size:10.5px;font-weight:700">'+n.name+'</span>';
+    canvHtml += '</div><div style="padding:4px 10px 6px;font-size:10px;color:#656565">'+n.status+'</div>';
+    if(n.inp) canvHtml += '<div style="position:absolute;width:12px;height:12px;border-radius:50%;background:#19e68c;border:2.5px solid #19e68c;top:50%;left:-7px;transform:translateY(-50%);z-index:5"></div>';
+    if(n.out) canvHtml += '<div style="position:absolute;width:12px;height:12px;border-radius:50%;background:#19e68c;border:2.5px solid #19e68c;top:50%;right:-7px;transform:translateY(-50%);z-index:5"></div>';
+    canvHtml += '</div>';
+  });
+  canvHtml += '</div></div>';
+  document.getElementById('mCanvas').innerHTML = canvHtml;
+
+  // draw connections on svg
+  setTimeout(function(){
+    var svgEl = document.querySelector('#mCanvas svg');
+    var boxEls = document.querySelectorAll('#mCanvas [style*="border-radius:12px"]');
+    if(!svgEl || boxEls.length<2) return;
+    var containerRect = document.getElementById('mCanvas').getBoundingClientRect();
+    for(var i=0;i<boxEls.length-1;i++){
+      var fromR = boxEls[i].getBoundingClientRect();
+      var toR   = boxEls[i+1].getBoundingClientRect();
+      var x1 = fromR.right  - containerRect.left;
+      var y1 = fromR.top + fromR.height/2 - containerRect.top;
+      var x2 = toR.left     - containerRect.left;
+      var y2 = toR.top  + toR.height/2  - containerRect.top;
+      var cp = (x2-x1)*0.45;
+      var path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d','M'+x1+','+y1+' C'+(x1+cp)+','+y1+' '+(x2-cp)+','+y2+' '+x2+','+y2);
+      path.setAttribute('stroke','#19e68c');
+      path.setAttribute('stroke-width','2.5');
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke-linecap','round');
+      svgEl.appendChild(path);
+    }
+  }, 30);
+
+  // connections
+  var inLabel  = l==='es' ? 'Entradas' : 'Inputs';
+  var outLabel = l==='es' ? 'Salidas'  : 'Outputs';
+  var connTitle = l==='es' ? 'Conexiones' : 'Connections';
+  document.getElementById('mInLabel').textContent  = inLabel;
+  document.getElementById('mOutLabel').textContent = outLabel;
+  document.getElementById('mConnTitle').textContent = connTitle;
+
+  var noInLabel  = l==='es' ? 'Sin entrada (nodo raíz)' : 'No input (root node)';
+  var noOutLabel = l==='es' ? 'Sin salida (nodo hoja)' : 'No output (leaf node)';
+  var inH  = b.ins.length  ? b.ins.map(function(p){return '<span class="conn-chip">'+p+'</span>';}).join('') : '<span class="conn-chip none-chip">'+noInLabel+'</span>';
+  var outH = b.outs.length ? b.outs.map(function(p){return '<span class="conn-chip">'+p+'</span>';}).join('') : '<span class="conn-chip none-chip">'+noOutLabel+'</span>';
+  document.getElementById('mInChips').innerHTML  = inH;
+  document.getElementById('mOutChips').innerHTML = outH;
+
   document.getElementById('blockModal').classList.add('open');
-  document.body.style.overflow='hidden';
-  requestAnimationFrame(function(){ requestAnimationFrame(drawLines); });
-}
-function closeModal(){ document.getElementById('blockModal').classList.remove('open'); document.body.style.overflow=''; }
-function closeModalOutside(e){ if(e.target===document.getElementById('blockModal')) closeModal(); }
-document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeModal(); });
-
-// ── Language switch ───────────────────────────────────────────────
-var _curLang='es';
-function setLang(lang) {
-  var sy=window.scrollY;
-  _curLang=lang;
-  document.getElementById('content-es').classList.toggle('visible',lang==='es');
-  document.getElementById('content-en').classList.toggle('visible',lang==='en');
-  document.querySelectorAll('.lang-btn').forEach(function(b,i){ b.classList.toggle('active',(i===0&&lang==='es')||(i===1&&lang==='en')); });
-  document.getElementById('tocGroupEs').style.display = lang==='es'?'':'none';
-  document.getElementById('tocGroupEn').style.display = lang==='en'?'':'none';
-  document.documentElement.lang=lang;
-  requestAnimationFrame(function(){ window.scrollTo(0,sy); });
+  document.body.style.overflow = 'hidden';
 }
 
-// ── TOC active highlight on scroll ───────────────────────────────
+function closeModal(){
+  document.getElementById('blockModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function closeModalOutside(e){
+  if(e.target===document.getElementById('blockModal')) closeModal();
+}
+document.addEventListener('keydown',function(e){if(e.key==='Escape') closeModal();});
+
+// ─── TOC active link tracking ───────────────────────────────────────────────
 function tocClick(el){
-  document.querySelectorAll('.toc-link').forEach(function(a){ a.classList.remove('active'); });
+  document.querySelectorAll('.toc-link').forEach(function(a){a.classList.remove('active');});
   el.classList.add('active');
 }
-
-var _tocLinks = [];
-function updateTocActive() {
-  var lang = _curLang;
-  var anchors = ['start','setup','blocks','pipelines','shortcuts','more'];
-  var current = anchors[0];
-  anchors.forEach(function(id) {
-    var el = document.getElementById(lang+'-'+id);
-    if (el && el.getBoundingClientRect().top <= 90) current = id;
+window.addEventListener('scroll',function(){
+  var ids = _lang==='es'
+    ? ['es-start','es-setup','es-blocks','es-pipelines','es-rag','es-shortcuts','es-more']
+    : ['en-start','en-setup','en-blocks','en-pipelines','en-rag','en-shortcuts','en-more'];
+  var current = ids[0];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(el && window.scrollY >= el.getBoundingClientRect().top + window.scrollY - 120) current = id;
   });
-  document.querySelectorAll('.toc-link').forEach(function(a) {
-    a.classList.toggle('active', a.getAttribute('href')==='#'+lang+'-'+current);
+  document.querySelectorAll('.toc-link').forEach(function(a){
+    a.classList.remove('active');
+    if(a.getAttribute('href')==='#'+current) a.classList.add('active');
   });
-}
-window.addEventListener('scroll', updateTocActive, {passive:true});
+},{passive:true});
 
-// ── Init ─────────────────────────────────────────────────────────
-renderCards('es');
-renderCards('en');
-fillShortcuts();
-updateTocActive();
+// ─── Init ───────────────────────────────────────────────────────────────────
+renderBlocks('es');
+setShortcutKeys('es');
 </script>
 </body>
 </html>
