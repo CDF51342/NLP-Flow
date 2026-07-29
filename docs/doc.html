@@ -17,117 +17,169 @@
   --font:'Instrument Sans',system-ui,sans-serif;
   --radius:13px;--pill:99px;--fast:140ms ease;
 }
+/* ── reset ── */
 *{box-sizing:border-box;margin:0;padding:0}
+html,body{max-width:100%;overflow-x:hidden}
 body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
 a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
-.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--card);border-bottom:1.5px solid var(--border);height:54px;position:sticky;top:0;z-index:200;flex-wrap:wrap}
+
+/* ── topbar ── */
+.topbar{display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--card);border-bottom:1.5px solid var(--border);height:52px;position:sticky;top:0;z-index:200}
 .logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;flex-shrink:0}
 .logo-grid span{width:9px;height:9px;border-radius:2px;display:block}
-.topbar-name{font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
-.topbar-ver{font-size:12px;color:var(--sec);margin-left:2px;font-weight:400;white-space:nowrap}
-.topbar-spacer{flex:1;min-width:8px}
-.lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden}
-.lang-btn{padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast);white-space:nowrap}
+.topbar-name{font-size:14px;font-weight:700;letter-spacing:-.01em}
+.topbar-ver{font-size:11.5px;color:var(--sec);margin-left:2px;font-weight:400}
+.topbar-spacer{flex:1}
+.lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0}
+.lang-btn{padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast)}
 .lang-btn.active{background:var(--accent-tint);color:var(--ink);border-bottom:2px solid var(--accent)}
 .lang-btn:hover:not(.active){background:var(--bg)}
+
+/* ── layout ── */
 .layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:100vh}
 @media(max-width:760px){.layout{grid-template-columns:1fr}}
-.toc{position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card)}
+.toc{position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card)}
 @media(max-width:760px){.toc{display:none}}
 .toc-group{margin-bottom:4px}
 .toc-group-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);padding:10px 18px 4px}
 .toc-link{display:block;padding:6px 18px;font-size:13px;font-weight:500;color:var(--sec);text-decoration:none;border-left:3px solid transparent;transition:background var(--fast),color var(--fast),border-color var(--fast)}
 .toc-link:hover{background:var(--bg);color:var(--ink)}
 .toc-link.active{color:var(--ink);font-weight:700;border-left-color:var(--accent);background:var(--accent-tint)}
-.main{padding:32px 20px 80px;min-width:0}
+.main{padding:18px 14px 80px;min-width:0;overflow-x:hidden}
+@media(min-width:480px){.main{padding:28px 20px 80px}}
 @media(min-width:760px){.main{padding:44px 36px 100px}}
 .lang-content{display:none}.lang-content.visible{display:block}
-.hero{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:24px 22px;margin-bottom:24px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-@media(min-width:600px){.hero{padding:36px 40px}}
-.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:var(--accent-tint);pointer-events:none}
-.hero h1{font-size:24px;font-weight:700;letter-spacing:-.025em;margin-bottom:10px;position:relative}
+
+/* ── hero ── */
+.hero{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:22px 18px;margin-bottom:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+@media(min-width:600px){.hero{padding:36px 40px;margin-bottom:24px}}
+.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:200px;height:200px;border-radius:50%;background:var(--accent-tint);pointer-events:none}
+.hero h1{font-size:22px;font-weight:700;letter-spacing:-.025em;margin-bottom:8px;position:relative}
 @media(min-width:600px){.hero h1{font-size:30px}}
 .hero h1 span{color:var(--accent)}
-.hero p{font-size:14px;color:var(--sec);max-width:520px;position:relative}
-.hero-badges{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap;position:relative}
-.badge{display:inline-block;font-size:11px;font-weight:700;padding:4px 11px;border-radius:var(--pill)}
+.hero p{font-size:13.5px;color:var(--sec);position:relative}
+@media(min-width:600px){.hero p{font-size:14px;max-width:520px}}
+.hero-badges{display:flex;gap:5px;margin-top:14px;flex-wrap:wrap;position:relative}
+.badge{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:var(--pill)}
 .badge-green{background:var(--accent-tint);color:#0a7a45}
 .badge-gray{background:var(--bg);border:1.5px solid var(--border);color:var(--sec)}
+
+/* ── sections ── */
 .row-2{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
 @media(min-width:640px){.row-2{grid-template-columns:1fr 1fr}}
 .row-2>*{margin-bottom:0}
 .sec-anchor{display:block;height:0;visibility:hidden;margin-top:-80px;padding-top:80px}
-.sec-title{font-size:16px;font-weight:700;margin:36px 0 12px;display:flex;align-items:center;gap:9px}
+.sec-title{font-size:15px;font-weight:700;margin:28px 0 10px;display:flex;align-items:center;gap:8px}
+@media(min-width:480px){.sec-title{font-size:16px;margin:36px 0 12px;gap:9px}}
 .sec-title::before{content:'';display:block;width:4px;height:20px;background:var(--accent);border-radius:var(--pill);flex-shrink:0}
-.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px 18px;box-shadow:var(--shadow);margin-bottom:12px}
+.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
 @media(min-width:600px){.card{padding:22px 26px}}
 .card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-label::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:var(--pill);display:block}
-pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:12px 16px;font-size:12.5px;overflow-x:auto;margin-bottom:12px;line-height:1.5}
+pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:11px 14px;font-size:12px;overflow-x:auto;margin-bottom:12px;line-height:1.5;max-width:100%}
 code{font-family:'SF Mono','Fira Code',monospace}
-p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12px}
-.tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:14px 18px;font-family:'SF Mono','Fira Code',monospace;font-size:12.5px;line-height:1.9;overflow-x:auto}
+p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:11.5px;word-break:break-all}
+.tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:12px 14px;font-family:'SF Mono','Fira Code',monospace;font-size:11.5px;line-height:1.85;overflow-x:auto;max-width:100%}
 .tree .dir{color:var(--accent)}.tree .comment{color:#888}
-.cat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin:20px 0 10px;padding-left:6px;border-left:3px solid var(--accent)}
-.blocks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:4px}
+.cat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin:18px 0 8px;padding-left:6px;border-left:3px solid var(--accent)}
+
+/* ── blocks grid ── */
+.blocks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:4px}
+@media(min-width:480px){.blocks-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}}
 @media(min-width:600px){.blocks-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
-.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow var(--fast),transform var(--fast),border-color var(--fast)}
-.block-card:hover{box-shadow:var(--shadow-h);transform:translateY(-2px);border-color:#bbb}
-.bc-icon{font-size:22px;margin-bottom:8px}
-.bc-name{font-size:13px;font-weight:700;margin-bottom:4px}
-.bc-tagline{font-size:11.5px;color:var(--sec);line-height:1.4;margin-bottom:10px}
-.bc-ports{display:flex;gap:5px;flex-wrap:wrap}
-.pbadge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--pill)}
+.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:11px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow var(--fast),border-color var(--fast);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+@media(min-width:480px){.block-card{padding:14px}}
+.block-card:active{opacity:.8}
+@media(hover:hover){.block-card:hover{box-shadow:var(--shadow-h);border-color:#bbb}}
+.bc-icon{font-size:18px;margin-bottom:5px}
+@media(min-width:480px){.bc-icon{font-size:22px;margin-bottom:8px}}
+.bc-name{font-size:12px;font-weight:700;margin-bottom:3px}
+@media(min-width:480px){.bc-name{font-size:13px;margin-bottom:4px}}
+.bc-tagline{font-size:10.5px;color:var(--sec);line-height:1.35;margin-bottom:7px}
+@media(min-width:480px){.bc-tagline{font-size:11.5px;margin-bottom:10px}}
+.bc-ports{display:flex;gap:3px;flex-wrap:wrap}
+.pbadge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:var(--pill)}
+@media(min-width:480px){.pbadge{font-size:10px;padding:2px 8px}}
 .pb-in{background:#e0f0ff;color:#1a6cf6}
 .pb-out{background:var(--accent-tint);color:#0a7a45}
 .pb-none{background:var(--bg);border:1px solid var(--border);color:var(--ter)}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(18,18,18,.45);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center;padding:16px}
+
+/* ── modal — bottom sheet en móvil, centrado en desktop ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(18,18,18,.5);backdrop-filter:blur(4px);z-index:500;align-items:flex-end;justify-content:center}
+@media(min-width:560px){.modal-overlay{align-items:center;padding:20px}}
 .modal-overlay.open{display:flex}
-.modal{background:var(--card);border-radius:18px;box-shadow:var(--shadow-modal);width:min(700px,100%);max-height:90vh;overflow-y:auto;position:relative}
-.modal-hdr{display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1.5px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2;border-radius:18px 18px 0 0}
-@media(min-width:600px){.modal-hdr{padding:20px 22px 14px}}
-.modal-icon{font-size:24px;flex-shrink:0}
+.modal{background:var(--card);border-radius:20px 20px 0 0;box-shadow:var(--shadow-modal);width:100%;max-height:88vh;overflow-y:auto;overflow-x:hidden;position:relative}
+@media(min-width:560px){.modal{border-radius:18px;width:min(660px,100%);max-height:88vh}}
+/* drag handle en móvil */
+.modal-handle{display:block;width:40px;height:4px;border-radius:4px;background:var(--border);margin:12px auto 0}
+@media(min-width:560px){.modal-handle{display:none}}
+.modal-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px 10px;border-bottom:1.5px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2}
+@media(min-width:560px){.modal-hdr{padding:18px 22px 14px}}
+.modal-icon{font-size:20px;flex-shrink:0}
+@media(min-width:560px){.modal-icon{font-size:24px}}
 .modal-title{font-size:14px;font-weight:700;flex:1;line-height:1.3}
-@media(min-width:600px){.modal-title{font-size:16px}}
-.modal-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--sec);flex-shrink:0}
+@media(min-width:560px){.modal-title{font-size:16px}}
+.modal-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--bg);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--sec);flex-shrink:0;touch-action:manipulation}
 .modal-close:hover{background:var(--border)}
-.modal-body{padding:16px 18px 22px}
-@media(min-width:600px){.modal-body{padding:20px 22px 26px}}
-.modal-desc{font-size:14px;color:var(--sec);margin-bottom:20px;line-height:1.65}
-.mini-canvas{background:#f0f0f0;border-radius:12px;padding:20px 12px;margin-bottom:16px;position:relative;overflow:hidden;min-height:90px}
-.mini-canvas::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#ccc 1px,transparent 1px);background-size:20px 20px;opacity:.5;pointer-events:none}
-.mc-inner{display:flex;align-items:center;justify-content:center;gap:0;position:relative;z-index:1;flex-wrap:wrap;row-gap:10px}
-.mc-node{background:var(--card);border:2px solid var(--border);border-radius:12px;min-width:100px;box-shadow:var(--shadow);position:relative;flex-shrink:0}
-@media(min-width:480px){.mc-node{min-width:120px}}
-.mc-node.active{border-color:var(--accent);box-shadow:0 0 0 3px rgba(25,230,140,.2),var(--shadow-h)}
-.mc-node-hdr{padding:7px 10px 5px;display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--hair)}
-.mc-node-icon{font-size:13px}.mc-node-name{font-size:10.5px;font-weight:700;color:var(--ink)}
-.mc-node-status{padding:4px 10px 6px;font-size:10px;color:var(--sec)}
-.mc-port{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--card);border:2.5px solid #aaa;top:50%;transform:translateY(-50%);z-index:5}
-.mc-port.in{left:-7px}.mc-port.out{right:-7px}
-.mc-port.connected{border-color:var(--accent);background:var(--accent)}
-.mc-gap{width:32px;flex-shrink:0}
-@media(min-width:480px){.mc-gap{width:40px}}
-.mc-svg{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-body{padding:14px 16px 32px;overflow-x:hidden}
+@media(min-width:560px){.modal-body{padding:18px 22px 26px}}
+.modal-desc{font-size:13px;color:var(--sec);margin-bottom:14px;line-height:1.6}
+@media(min-width:560px){.modal-desc{font-size:14px;margin-bottom:18px}}
+
+/* ── mini canvas ── */
+.mini-canvas{background:#f0f0f0;border-radius:11px;padding:14px 12px;margin-bottom:14px;position:relative;overflow:hidden}
+.mini-canvas::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#ccc 1px,transparent 1px);background-size:18px 18px;opacity:.5;pointer-events:none}
+/* SVG ocupa todo el mini-canvas — siempre visible */
+.mc-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2}
+/* fila de nodos — centrada, sin gap (el espacio lo da el SVG / padding del nodo) */
+.mc-inner{display:flex;align-items:center;justify-content:center;gap:28px;position:relative;z-index:3;flex-wrap:wrap;row-gap:12px}
+@media(min-width:560px){.mc-inner{flex-wrap:nowrap;gap:36px}}
+.mc-node{background:var(--card);border:2px solid var(--border);border-radius:10px;min-width:90px;max-width:130px;box-shadow:var(--shadow);position:relative;flex-shrink:0}
+@media(min-width:560px){.mc-node{min-width:100px;max-width:140px}}
+.mc-node.rag-node{border-color:var(--accent);background:#f0fff8}
+.mc-node-hdr{padding:6px 10px 4px;display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--hair)}
+.mc-node-icon{font-size:13px}
+.mc-node-name{font-size:10px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-node-status{padding:3px 10px 6px;font-size:9.5px;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* puertos circulares — siempre visibles */
+.mc-port{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--accent);border:2.5px solid #fff;top:50%;transform:translateY(-50%);z-index:10;box-shadow:0 0 0 1.5px var(--accent)}
+.mc-port.in{left:-6px}
+.mc-port.out{right:-6px}
+
+/* ── conexiones del modal ── */
+.conn-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:8px}
+.conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:380px){.conn-grid{grid-template-columns:1fr}}
 .conn-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px}
-.conn-box-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.conn-box-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:7px;display:flex;align-items:center;gap:5px}
 .conn-chips{display:flex;flex-wrap:wrap;gap:5px}
-.conn-chip{font-size:12px;font-weight:600;padding:3px 10px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--pill)}
+.conn-chip{font-size:11.5px;font-weight:600;padding:3px 9px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--pill)}
 .conn-chip.none-chip{color:var(--ter);font-style:italic;border-style:dashed;background:transparent}
-.conn-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ter);margin-bottom:10px}
-.pipeline-wrap{overflow-x:auto;margin:8px 0;-webkit-overflow-scrolling:touch}
-.pipeline{display:inline-flex;align-items:center;gap:0;padding:10px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);white-space:nowrap;min-width:100%}
-.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:600;white-space:nowrap;flex-shrink:0}
-.pip-arrow{color:var(--accent);font-size:18px;padding:0 4px;font-weight:700;line-height:1;flex-shrink:0}
-.pip-sep{margin:0 8px;color:var(--ter);font-size:13px;flex-shrink:0}
+
+/* ── pipelines — vertical en móvil, horizontal en desktop ── */
+.pipeline-wrap{margin:8px 0 12px}
+/* móvil: columna centrada */
+.pipeline{display:flex;flex-direction:column;align-items:center;gap:0;padding:10px 12px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius)}
+.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:7px;padding:5px 11px;font-size:12.5px;font-weight:600;text-align:center}
+/* la flecha es un elemento vacío en HTML — el símbolo lo pone CSS */
+.pip-arrow{color:var(--accent);font-weight:700;line-height:1;font-size:0}
+.pip-arrow::after{content:'↓';font-size:15px;display:block;padding:3px 0}
+.pip-sep{color:var(--ter);font-size:12px;padding:2px 0;font-weight:600}
 .pip-node.rag{background:#f0fff8;border-color:#19e68c}
-.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{text-align:left;padding:8px 10px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
-td{padding:8px 10px;border-bottom:1px solid var(--hair)}
+/* desktop: fila horizontal */
+@media(min-width:560px){
+  .pipeline{flex-direction:row;align-items:center;flex-wrap:wrap;gap:0;padding:10px 14px}
+  .pip-arrow::after{content:'→';font-size:18px;padding:0 4px;display:inline}
+  .pip-sep{padding:0;margin:0 8px}
+}
+
+/* ── tablas ── */
+.tbl-wrap{width:100%;overflow-x:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:7px 10px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
+td{padding:7px 10px;border-bottom:1px solid var(--hair);word-break:break-word}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:var(--bg)}
+@media(hover:hover){tr:hover td{background:var(--bg)}}
 kbd{background:var(--card);border:1.5px solid var(--border);border-radius:5px;padding:1px 6px;font-size:11.5px;box-shadow:0 1px 0 var(--border)}
 .note{background:var(--accent-tint);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13.5px;color:var(--ink);margin:12px 0 0}
 .note-rag{background:#fff8f0;border-left:3px solid #ff9066;border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin:10px 0 0}
@@ -148,6 +200,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
 <!-- Modal -->
 <div class="modal-overlay" id="blockModal" onclick="closeModalOutside(event)">
   <div class="modal" id="modalBox">
+    <div class="modal-handle"></div>
     <div class="modal-hdr">
       <span class="modal-icon" id="mIcon"></span>
       <span class="modal-title" id="mTitle"></span>
@@ -277,31 +330,31 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
           <div class="card-label">ML tabular</div>
           <h3 style="margin-top:4px">Regresión (OLS / Ridge / Lasso)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
-            <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow">→</div>
-            <div class="pip-node">📋 Evaluación</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+            <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow"></div>
+            <div class="pip-node">📋 Evaluación</div><div class="pip-arrow"></div>
             <div class="pip-node">💾 Guardar</div>
           </div></div>
           <h3>Clasificación tabular (Logística / KNN / RF / SVM)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
             <div class="pip-node">📋 Evaluación</div>
           </div></div>
           <h3>Exploración</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
             <div class="pip-node">🔬 Análisis</div>
             <span class="pip-sep">o</span>
             <div class="pip-node">📊 Plots</div>
           </div></div>
           <h3>NLP — texto</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
             <div class="pip-node">🎯 Clasifica</div>
           </div></div>
         </div>
@@ -332,11 +385,11 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
         <p>RAG (<em>Retrieval-Augmented Generation</em>) combina búsqueda semántica y generación de texto. El LLM recibe los fragmentos más relevantes de tu corpus como contexto en el prompt — la diferencia entre "sin RAG" y "con RAG" es literalmente más texto en el input.</p>
         <h3>Flujo completo</h3>
         <div class="pipeline-wrap"><div class="pipeline">
-          <div class="pip-node rag">📂 Datos</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
           <div class="pip-node rag">💾 Guardar</div>
         </div></div>
       </div>
@@ -489,31 +542,31 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
           <div class="card-label">ML tabular</div>
           <h3 style="margin-top:4px">Regression (OLS / Ridge / Lasso)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
-            <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow">→</div>
-            <div class="pip-node">📋 Evaluation</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+            <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow"></div>
+            <div class="pip-node">📋 Evaluation</div><div class="pip-arrow"></div>
             <div class="pip-node">💾 Save</div>
           </div></div>
           <h3>Tabular classification (Logistic / KNN / RF / SVM)</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🧠 Train</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+            <div class="pip-node">🧠 Train</div><div class="pip-arrow"></div>
             <div class="pip-node">📋 Evaluation</div>
           </div></div>
           <h3>Data exploration</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
             <div class="pip-node">🔬 Analysis</div>
             <span class="pip-sep">or</span>
             <div class="pip-node">📊 Plots</div>
           </div></div>
           <h3>NLP — text</h3>
           <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow">→</div>
-            <div class="pip-node">🧠 Training</div><div class="pip-arrow">→</div>
+            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+            <div class="pip-node">🧠 Training</div><div class="pip-arrow"></div>
             <div class="pip-node">🎯 Classify</div>
           </div></div>
         </div>
@@ -544,11 +597,11 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
         <p>RAG (<em>Retrieval-Augmented Generation</em>) combines semantic search and text generation. The LLM receives the most relevant fragments from your corpus as context in the prompt — the difference between "without RAG" and "with RAG" is literally more text in the input.</p>
         <h3>Full flow</h3>
         <div class="pipeline-wrap"><div class="pipeline">
-          <div class="pip-node rag">📂 Data</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow">→</div>
-          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow">→</div>
+          <div class="pip-node rag">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
           <div class="pip-node rag">💾 Save</div>
         </div></div>
       </div>
@@ -897,51 +950,74 @@ function openModal(l, id){
   document.getElementById('mTitle').textContent = b.name;
   document.getElementById('mDesc').textContent  = b.desc;
 
-  // mini canvas
+  // mini canvas — nodos + puertos + línea SVG estilo app
   var nodes = b.canvas;
-  var W = 120, GAP = 44, R = 10;
-  var totalW = nodes.length * W + (nodes.length-1) * GAP + 32;
-  var canvHtml = '<div style="position:relative;min-height:90px">';
-  canvHtml += '<svg class="mc-svg" style="position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:0" width="'+totalW+'" height="90"></svg>';
-  canvHtml += '<div style="display:flex;align-items:center;justify-content:center;gap:'+GAP+'px;position:relative;z-index:1">';
-  nodes.forEach(function(n,i){
-    var bc = n.rag ? '#f0fff8' : '#fff';
-    var bd = n.rag ? '#19e68c' : '#dedede';
-    canvHtml += '<div style="background:'+bc+';border:2px solid '+bd+';border-radius:12px;min-width:'+W+'px;position:relative;box-shadow:0 2px 8px rgba(0,0,0,.09)">';
-    canvHtml += '<div style="padding:7px 10px 5px;display:flex;align-items:center;gap:5px;border-bottom:1px solid rgba(18,18,18,.07)">';
-    canvHtml += '<span style="font-size:13px">'+n.icon+'</span>';
-    canvHtml += '<span style="font-size:10.5px;font-weight:700">'+n.name+'</span>';
-    canvHtml += '</div><div style="padding:4px 10px 6px;font-size:10px;color:#656565">'+n.status+'</div>';
-    if(n.inp) canvHtml += '<div style="position:absolute;width:12px;height:12px;border-radius:50%;background:#19e68c;border:2.5px solid #19e68c;top:50%;left:-7px;transform:translateY(-50%);z-index:5"></div>';
-    if(n.out) canvHtml += '<div style="position:absolute;width:12px;height:12px;border-radius:50%;background:#19e68c;border:2.5px solid #19e68c;top:50%;right:-7px;transform:translateY(-50%);z-index:5"></div>';
+  // construir HTML: SVG encima de todo, nodos con puertos
+  var canvHtml = '<svg class="mc-svg" id="mcSvg"></svg>';
+  canvHtml += '<div class="mc-inner" id="mcInner">';
+  nodes.forEach(function(n){
+    var ragCls = n.rag ? ' rag-node' : '';
+    canvHtml += '<div class="mc-node'+ragCls+'">';
+    canvHtml += '<div class="mc-node-hdr">';
+    canvHtml += '<span class="mc-node-icon">'+n.icon+'</span>';
+    canvHtml += '<span class="mc-node-name">'+n.name+'</span>';
+    canvHtml += '</div>';
+    canvHtml += '<div class="mc-node-status">'+n.status+'</div>';
+    if(n.inp) canvHtml += '<div class="mc-port in"></div>';
+    if(n.out) canvHtml += '<div class="mc-port out"></div>';
     canvHtml += '</div>';
   });
-  canvHtml += '</div></div>';
+  canvHtml += '</div>';
   document.getElementById('mCanvas').innerHTML = canvHtml;
 
-  // draw connections on svg
+  // dibujar líneas SVG ortogonales estilo app entre nodos consecutivos
   setTimeout(function(){
-    var svgEl = document.querySelector('#mCanvas svg');
-    var boxEls = document.querySelectorAll('#mCanvas [style*="border-radius:12px"]');
-    if(!svgEl || boxEls.length<2) return;
-    var containerRect = document.getElementById('mCanvas').getBoundingClientRect();
-    for(var i=0;i<boxEls.length-1;i++){
-      var fromR = boxEls[i].getBoundingClientRect();
-      var toR   = boxEls[i+1].getBoundingClientRect();
-      var x1 = fromR.right  - containerRect.left;
-      var y1 = fromR.top + fromR.height/2 - containerRect.top;
-      var x2 = toR.left     - containerRect.left;
-      var y2 = toR.top  + toR.height/2  - containerRect.top;
-      var cp = (x2-x1)*0.45;
+    var canvas  = document.getElementById('mCanvas');
+    var svgEl   = document.getElementById('mcSvg');
+    var inner   = document.getElementById('mcInner');
+    if(!svgEl || !inner) return;
+    var nodeEls = inner.querySelectorAll('.mc-node');
+    if(nodeEls.length < 2) return;
+    var canvRect = canvas.getBoundingClientRect();
+    // ajustar tamaño del SVG al contenedor
+    svgEl.setAttribute('width',  canvRect.width);
+    svgEl.setAttribute('height', canvRect.height);
+    svgEl.setAttribute('viewBox','0 0 '+canvRect.width+' '+canvRect.height);
+    for(var i=0; i<nodeEls.length-1; i++){
+      var fromR = nodeEls[i].getBoundingClientRect();
+      var toR   = nodeEls[i+1].getBoundingClientRect();
+      // punto de salida: puerto derecho del nodo origen
+      var x1 = fromR.right  - canvRect.left;
+      var y1 = fromR.top + fromR.height/2 - canvRect.top;
+      // punto de entrada: puerto izquierdo del nodo destino
+      var x2 = toR.left     - canvRect.left;
+      var y2 = toR.top  + toR.height/2  - canvRect.top;
       var path = document.createElementNS('http://www.w3.org/2000/svg','path');
-      path.setAttribute('d','M'+x1+','+y1+' C'+(x1+cp)+','+y1+' '+(x2-cp)+','+y2+' '+x2+','+y2);
+      var d;
+      if(Math.abs(y1 - y2) < 6){
+        // misma altura — línea recta horizontal
+        d = 'M'+x1+','+y1+' L'+x2+','+y2;
+      } else {
+        // línea ortogonal: sale horizontal, dobla, baja/sube, entra horizontal
+        var mx = (x1+x2)/2;
+        var r  = 6; // radio de esquina redondeada
+        var dy = y2 > y1 ? r : -r;
+        d  = 'M'+x1+','+y1;
+        d += ' L'+(mx-r)+','+y1;
+        d += ' Q'+mx+','+y1+' '+mx+','+(y1+dy);
+        d += ' L'+mx+','+(y2-dy);
+        d += ' Q'+mx+','+y2+' '+(mx+r)+','+y2;
+        d += ' L'+x2+','+y2;
+      }
+      path.setAttribute('d', d);
       path.setAttribute('stroke','#19e68c');
-      path.setAttribute('stroke-width','2.5');
+      path.setAttribute('stroke-width','2');
       path.setAttribute('fill','none');
       path.setAttribute('stroke-linecap','round');
+      path.setAttribute('stroke-linejoin','round');
       svgEl.appendChild(path);
     }
-  }, 30);
+  }, 50);
 
   // connections
   var inLabel  = l==='es' ? 'Entradas' : 'Inputs';
