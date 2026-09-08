@@ -19,7 +19,7 @@
 }
 /* ── reset ── */
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{max-width:100%;overflow-x:hidden}
+html,body{max-width:100%;overflow-x:clip}
 body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
 a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
 
@@ -30,6 +30,11 @@ a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
 .topbar-name{font-size:14px;font-weight:700;letter-spacing:-.01em}
 .topbar-ver{font-size:11.5px;color:var(--sec);margin-left:2px;font-weight:400}
 .topbar-spacer{flex:1}
+.topbar-divider{width:1.5px;height:24px;background:var(--border);flex-shrink:0;margin:0 10px}
+.topbar-nav{display:flex;gap:2px;flex-shrink:0}
+.topbar-nav-link{padding:5px 13px;font-size:12.5px;font-weight:600;color:var(--sec);text-decoration:none;border-radius:8px;transition:background var(--fast),color var(--fast);white-space:nowrap}
+.topbar-nav-link:hover{background:var(--bg);color:var(--ink)}
+.topbar-nav-link.active{background:var(--accent-tint);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 .lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0}
 .lang-btn{padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast)}
 .lang-btn.active{background:var(--accent-tint);color:var(--ink);border-bottom:2px solid var(--accent)}
@@ -38,14 +43,14 @@ a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
 /* ── layout ── */
 .layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:100vh}
 @media(max-width:760px){.layout{grid-template-columns:1fr}}
-.toc{position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card)}
+.toc{position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card);z-index:100}
 @media(max-width:760px){.toc{display:none}}
 .toc-group{margin-bottom:4px}
 .toc-group-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);padding:10px 18px 4px}
 .toc-link{display:block;padding:6px 18px;font-size:13px;font-weight:500;color:var(--sec);text-decoration:none;border-left:3px solid transparent;transition:background var(--fast),color var(--fast),border-color var(--fast)}
 .toc-link:hover{background:var(--bg);color:var(--ink)}
 .toc-link.active{color:var(--ink);font-weight:700;border-left-color:var(--accent);background:var(--accent-tint)}
-.main{padding:18px 14px 80px;min-width:0;overflow-x:hidden}
+.main{padding:18px 14px 80px;min-width:0;overflow-x:clip;background:var(--bg)}
 @media(min-width:480px){.main{padding:28px 20px 80px}}
 @media(min-width:760px){.main{padding:44px 36px 100px}}
 .lang-content{display:none}.lang-content.visible{display:block}
@@ -81,28 +86,27 @@ code{font-family:'SF Mono','Fira Code',monospace}
 p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:11.5px;word-break:break-all}
 .tree{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:12px 14px;font-family:'SF Mono','Fira Code',monospace;font-size:11.5px;line-height:1.85;overflow-x:auto;max-width:100%}
 .tree .dir{color:var(--accent)}.tree .comment{color:#888}
-.cat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin:18px 0 8px;padding-left:6px;border-left:3px solid var(--accent)}
+.cat-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--sec);margin:20px 0 9px;padding-left:8px;border-left:3px solid var(--accent)}
 
 /* ── blocks grid ── */
 .blocks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:4px}
 @media(min-width:480px){.blocks-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}}
 @media(min-width:600px){.blocks-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
-.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:11px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow var(--fast),border-color var(--fast);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.block-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:11px;box-shadow:var(--shadow);cursor:pointer;transition:box-shadow 180ms ease,border-color 180ms ease,transform 180ms ease;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 @media(min-width:480px){.block-card{padding:14px}}
-.block-card:active{opacity:.8}
-@media(hover:hover){.block-card:hover{box-shadow:var(--shadow-h);border-color:#bbb}}
-.bc-icon{font-size:18px;margin-bottom:5px}
-@media(min-width:480px){.bc-icon{font-size:22px;margin-bottom:8px}}
-.bc-name{font-size:12px;font-weight:700;margin-bottom:3px}
-@media(min-width:480px){.bc-name{font-size:13px;margin-bottom:4px}}
-.bc-tagline{font-size:10.5px;color:var(--sec);line-height:1.35;margin-bottom:7px}
-@media(min-width:480px){.bc-tagline{font-size:11.5px;margin-bottom:10px}}
-.bc-ports{display:flex;gap:3px;flex-wrap:wrap}
-.pbadge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:var(--pill)}
-@media(min-width:480px){.pbadge{font-size:10px;padding:2px 8px}}
-.pb-in{background:#e0f0ff;color:#1a6cf6}
-.pb-out{background:var(--accent-tint);color:#0a7a45}
-.pb-none{background:var(--bg);border:1px solid var(--border);color:var(--ter)}
+.block-card:active{transform:translateY(1px);box-shadow:var(--shadow);border-color:var(--accent);opacity:1}
+@media(hover:hover){.block-card:hover{box-shadow:0 2px 10px rgba(10,122,69,.15),0 8px 24px -4px rgba(10,122,69,.18);border-color:var(--accent);transform:translateY(-2px)}}
+.bc-icon{font-size:22px;margin-bottom:6px}
+@media(min-width:480px){.bc-icon{font-size:26px;margin-bottom:9px}}
+.bc-name{font-size:13px;font-weight:700;margin-bottom:4px;color:var(--ink)}
+@media(min-width:480px){.bc-name{font-size:14px}}
+.bc-tagline{font-size:11px;color:var(--sec);line-height:1.4;margin-bottom:9px}
+@media(min-width:480px){.bc-tagline{font-size:12px;margin-bottom:11px}}
+.bc-ports{display:flex;gap:4px;flex-wrap:wrap}
+.pbadge{font-size:10px;font-weight:600;padding:3px 7px;border-radius:var(--pill)}
+.pb-in{background:#e8f0fe;color:#1a56db;border:1px solid #c3d4fc}
+.pb-out{background:#e6faf2;color:#0a7a45;border:1px solid #a8dfc5}
+.pb-none{background:transparent;border:1px solid var(--border);color:var(--ter)}
 
 /* ── modal — bottom sheet en móvil, centrado en desktop ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(18,18,18,.5);backdrop-filter:blur(4px);z-index:500;align-items:flex-end;justify-content:center}
@@ -166,6 +170,9 @@ p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-
 .pip-arrow::after{content:'↓';font-size:15px;display:block;padding:3px 0}
 .pip-sep{color:var(--ter);font-size:12px;padding:2px 0;font-weight:600}
 .pip-node.rag{background:#f0fff8;border-color:#19e68c}
+.pip-node.topic{background:#f5f0ff;border-color:#a259f7}
+.mc-node.topic-node{border-color:#a259f7;background:#f5f0ff}
+.note-topic{background:#fdf5ff;border-left:3px solid #a259f7;border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin:10px 0 0}
 /* desktop: fila horizontal */
 @media(min-width:560px){
   .pipeline{flex-direction:row;align-items:center;flex-wrap:wrap;gap:0;padding:10px 14px}
@@ -230,34 +237,35 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
     <span style="background:#121212"></span><span style="background:#19e68c"></span>
     <span style="background:#19e68c"></span><span style="background:#121212"></span>
   </div>
-  <span class="topbar-name">NLP Flow</span><span class="topbar-ver">v4 · docs</span>
+  <span class="topbar-name">NLP Flow</span><span class="topbar-ver">v4</span>
+  <div class="topbar-divider"></div>
+  <nav class="topbar-nav">
+    <a class="topbar-nav-link active" href="doc.html" id="nav-home">Home</a>
+    <a class="topbar-nav-link" href="pipelines.html">Pipelines</a>
+  </nav>
   <div class="topbar-spacer"></div>
   <div class="lang-bar">
-    <button class="lang-btn active" onclick="setLang('es')">🇪🇸 ES</button>
-    <button class="lang-btn" onclick="setLang('en')">🇬🇧 EN</button>
+    <button class="lang-btn" onclick="setLang('es')">🇪🇸 ES</button>
+    <button class="lang-btn active" onclick="setLang('en')">🇬🇧 EN</button>
   </div>
 </div>
 
 <div class="layout">
   <!-- TOC sidebar -->
   <nav class="toc" id="tocNav">
-    <div class="toc-group" id="tocGroupEs">
+    <div class="toc-group" id="tocGroupEs" style="display:none">
       <div class="toc-group-label">NLP Flow v4</div>
       <a class="toc-link" href="#es-start"     onclick="tocClick(this)">Inicio</a>
       <a class="toc-link" href="#es-setup"     onclick="tocClick(this)">Arranque</a>
       <a class="toc-link" href="#es-blocks"    onclick="tocClick(this)">Bloques</a>
-      <a class="toc-link" href="#es-pipelines" onclick="tocClick(this)">Pipelines</a>
-      <a class="toc-link" href="#es-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#es-shortcuts" onclick="tocClick(this)">Atajos</a>
       <a class="toc-link" href="#es-more"      onclick="tocClick(this)">Más info</a>
     </div>
-    <div class="toc-group" id="tocGroupEn" style="display:none">
+    <div class="toc-group" id="tocGroupEn">
       <div class="toc-group-label">NLP Flow v4</div>
       <a class="toc-link" href="#en-start"     onclick="tocClick(this)">Start</a>
       <a class="toc-link" href="#en-setup"     onclick="tocClick(this)">Setup</a>
       <a class="toc-link" href="#en-blocks"    onclick="tocClick(this)">Blocks</a>
-      <a class="toc-link" href="#en-pipelines" onclick="tocClick(this)">Pipelines</a>
-      <a class="toc-link" href="#en-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#en-shortcuts" onclick="tocClick(this)">Shortcuts</a>
       <a class="toc-link" href="#en-more"      onclick="tocClick(this)">More</a>
     </div>
@@ -265,7 +273,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
 
   <main class="main">
     <!-- ══════════ ESPAÑOL ══════════ -->
-    <div class="lang-content visible" id="content-es">
+    <div class="lang-content" id="content-es">
 
       <span class="sec-anchor" id="es-start"></span>
       <div class="hero">
@@ -323,107 +331,6 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <div class="cat-label">🔍 RAG — recuperación con LLM</div>
       <div class="blocks-grid" id="es-grid-rag"></div>
 
-      <span class="sec-anchor" id="es-pipelines"></span>
-      <div class="sec-title">Pipelines típicas</div>
-      <div class="row-2">
-        <div class="card">
-          <div class="card-label">ML tabular</div>
-          <h3 style="margin-top:4px">Regresión (OLS / Ridge / Lasso)</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
-            <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow"></div>
-            <div class="pip-node">📋 Evaluación</div><div class="pip-arrow"></div>
-            <div class="pip-node">💾 Guardar</div>
-          </div></div>
-          <h3>Clasificación tabular (Logística / KNN / RF / SVM)</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
-            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
-            <div class="pip-node">📋 Evaluación</div>
-          </div></div>
-          <h3>Exploración</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔬 Análisis</div>
-            <span class="pip-sep">o</span>
-            <div class="pip-node">📊 Plots</div>
-          </div></div>
-          <h3>NLP — texto</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
-            <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
-            <div class="pip-node">🎯 Clasifica</div>
-          </div></div>
-        </div>
-        <div class="card">
-          <div class="card-label">Datasets incluidos</div>
-          <h3 style="margin-top:4px">Texto</h3>
-          <div class="tbl-wrap"><table>
-            <tr><th>Dataset</th><th>Tarea</th></tr>
-            <tr><td>🎬 Movie Reviews</td><td>Clasificación</td></tr>
-            <tr><td>📧 Spam vs Ham</td><td>Clasificación</td></tr>
-            <tr><td>😊 Twitter Sentiment</td><td>Clasificación</td></tr>
-            <tr><td>📰 News</td><td>Topic model</td></tr>
-          </table></div>
-          <h3>Tabulares</h3>
-          <div class="tbl-wrap"><table>
-            <tr><th>Dataset</th><th>Tarea</th></tr>
-            <tr><td>🏥 Patient Health Risk</td><td>Clasificación</td></tr>
-            <tr><td>🏠 California Housing</td><td>Regresión</td></tr>
-          </table></div>
-          <div class="note">También puedes subir tu propio CSV desde el bloque <strong>Datos</strong>.</div>
-        </div>
-      </div>
-
-      <span class="sec-anchor" id="es-rag"></span>
-      <div class="sec-title">Pipeline RAG</div>
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-label">¿Qué es RAG?</div>
-        <p>RAG (<em>Retrieval-Augmented Generation</em>) combina búsqueda semántica y generación de texto. El LLM recibe los fragmentos más relevantes de tu corpus como contexto en el prompt — la diferencia entre "sin RAG" y "con RAG" es literalmente más texto en el input.</p>
-        <h3>Flujo completo</h3>
-        <div class="pipeline-wrap"><div class="pipeline">
-          <div class="pip-node rag">📂 Datos</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">💾 Guardar</div>
-        </div></div>
-      </div>
-      <div class="row-2">
-        <div class="card">
-          <div class="card-label">Configuración necesaria</div>
-          <p>El bloque LLM requiere un token de Hugging Face. Crea un fichero <code>.env</code> en la raíz del proyecto:</p>
-          <pre><code>HF_TOKEN=hf_tutoken
-HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
-          <p>Los embeddings funcionan sin token (modelo <code>all-MiniLM-L6-v2</code>).</p>
-          <div class="note-rag">⚠️ Sin <code>HF_TOKEN</code> el bloque LLM no generará respuestas. Los demás bloques RAG funcionan sin él.</div>
-        </div>
-        <div class="card">
-          <div class="card-label">Qué ve el estudiante</div>
-          <ul>
-            <li><strong>Sin RAG:</strong> el LLM responde solo con su conocimiento preentrenado</li>
-            <li><strong>Con RAG:</strong> el LLM recibe los N fragmentos más similares del corpus como contexto</li>
-            <li>Las dos respuestas aparecen en paralelo para comparar</li>
-            <li>El bloque <strong>Guardar</strong> exporta un informe HTML con toda la sesión</li>
-          </ul>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-label">Parámetros clave</div>
-        <div class="tbl-wrap"><table>
-          <tr><th>Parámetro</th><th>Bloque</th><th>Descripción</th></tr>
-          <tr><td>Modo chunking</td><td>✂️ Chunking</td><td>Automático (por tamaño) o 1 chunk por documento</td></tr>
-          <tr><td>Tamaño chunk</td><td>✂️ Chunking</td><td>Nº de caracteres por fragmento (modo automático)</td></tr>
-          <tr><td>Top-K</td><td>🔎 Retriever</td><td>Cuántos fragmentos recuperar por consulta</td></tr>
-          <tr><td>System prompt</td><td>🤖 LLM</td><td>Instrucciones base del modelo, editable en el bloque</td></tr>
-          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>Modelo LLM usado (por defecto Qwen2.5-7B-Instruct)</td></tr>
-        </table></div>
-      </div>
-
       <span class="sec-anchor" id="es-shortcuts"></span>
       <div class="sec-title">Atajos de teclado</div>
       <div class="card">
@@ -445,9 +352,10 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
         <div class="card">
           <div class="card-label">Guardar y cargar</div>
           <ul>
-            <li><strong>💾 Guardar sesión (.zip)</strong> — canvas + configuración</li>
+            <li><strong>💾 Guardar sesión (.zip)</strong> — canvas + configuración del servidor</li>
             <li><strong>📂 Cargar sesión (.zip)</strong> — restaura un canvas guardado</li>
-            <li><strong>🗺 Exportar (.json)</strong> — estructura y conexiones</li>
+            <li><strong>🗺 Exportar canvas (.json)</strong> — abre diálogo nativo del sistema para elegir ruta</li>
+            <li><strong>📥 Importar canvas (.json)</strong> — restaura bloques, conexiones y estado visual</li>
             <li><strong>📄 Informe RAG (.html)</strong> — consulta, fragmentos y respuestas</li>
           </ul>
           <div class="note">Los datos no se persisten entre sesiones. Al restaurar, recarga el dataset en el bloque Datos.</div>
@@ -458,9 +366,10 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
             <li>Servidor en <code>localhost:5053</code>, sin puertos externos</li>
             <li>Embeddings: <code>all-MiniLM-L6-v2</code> vía HF Inference API</li>
             <li>LLM: <code>Qwen/Qwen2.5-7B-Instruct</code> vía HF router</li>
-            <li>Estado RAG en <code>_RAG[chunk_node_id]</code></li>
+            <li>Stemming con <code>SnowballStemmer</code> — detecta ES/EN automáticamente</li>
+            <li>Lemmatización con spaCy (<code>en_core_web_sm</code> + <code>es_core_news_sm</code>)</li>
             <li>Gráficas con matplotlib → PNG en base64</li>
-            <li>SPA sin frameworks — estado en memoria JS</li>
+            <li>SPA sin frameworks — estado en memoria JS + <code>node.data</code></li>
           </ul>
         </div>
       </div>
@@ -477,7 +386,7 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
       </div>
     </div><!-- /es -->
     <!-- ══════════ ENGLISH ══════════ -->
-    <div class="lang-content" id="content-en">
+    <div class="lang-content visible" id="content-en">
 
       <span class="sec-anchor" id="en-start"></span>
       <div class="hero">
@@ -535,107 +444,6 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
       <div class="cat-label">🔍 RAG — retrieval with LLM</div>
       <div class="blocks-grid" id="en-grid-rag"></div>
 
-      <span class="sec-anchor" id="en-pipelines"></span>
-      <div class="sec-title">Typical pipelines</div>
-      <div class="row-2">
-        <div class="card">
-          <div class="card-label">ML tabular</div>
-          <h3 style="margin-top:4px">Regression (OLS / Ridge / Lasso)</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
-            <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow"></div>
-            <div class="pip-node">📋 Evaluation</div><div class="pip-arrow"></div>
-            <div class="pip-node">💾 Save</div>
-          </div></div>
-          <h3>Tabular classification (Logistic / KNN / RF / SVM)</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
-            <div class="pip-node">🧠 Train</div><div class="pip-arrow"></div>
-            <div class="pip-node">📋 Evaluation</div>
-          </div></div>
-          <h3>Data exploration</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔬 Analysis</div>
-            <span class="pip-sep">or</span>
-            <div class="pip-node">📊 Plots</div>
-          </div></div>
-          <h3>NLP — text</h3>
-          <div class="pipeline-wrap"><div class="pipeline">
-            <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
-            <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
-            <div class="pip-node">🧠 Training</div><div class="pip-arrow"></div>
-            <div class="pip-node">🎯 Classify</div>
-          </div></div>
-        </div>
-        <div class="card">
-          <div class="card-label">Included datasets</div>
-          <h3 style="margin-top:4px">Text</h3>
-          <div class="tbl-wrap"><table>
-            <tr><th>Dataset</th><th>Task</th></tr>
-            <tr><td>🎬 Movie Reviews</td><td>Classification</td></tr>
-            <tr><td>📧 Spam vs Ham</td><td>Classification</td></tr>
-            <tr><td>😊 Twitter Sentiment</td><td>Classification</td></tr>
-            <tr><td>📰 News</td><td>Topic model</td></tr>
-          </table></div>
-          <h3>Tabular</h3>
-          <div class="tbl-wrap"><table>
-            <tr><th>Dataset</th><th>Task</th></tr>
-            <tr><td>🏥 Patient Health Risk</td><td>Classification</td></tr>
-            <tr><td>🏠 California Housing</td><td>Regression</td></tr>
-          </table></div>
-          <div class="note">You can also upload your own CSV from the <strong>Data</strong> block.</div>
-        </div>
-      </div>
-
-      <span class="sec-anchor" id="en-rag"></span>
-      <div class="sec-title">RAG Pipeline</div>
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-label">What is RAG?</div>
-        <p>RAG (<em>Retrieval-Augmented Generation</em>) combines semantic search and text generation. The LLM receives the most relevant fragments from your corpus as context in the prompt — the difference between "without RAG" and "with RAG" is literally more text in the input.</p>
-        <h3>Full flow</h3>
-        <div class="pipeline-wrap"><div class="pipeline">
-          <div class="pip-node rag">📂 Data</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
-          <div class="pip-node rag">💾 Save</div>
-        </div></div>
-      </div>
-      <div class="row-2">
-        <div class="card">
-          <div class="card-label">Required configuration</div>
-          <p>The LLM block requires a Hugging Face token. Create a <code>.env</code> file in the project root:</p>
-          <pre><code>HF_TOKEN=hf_yourtoken
-HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
-          <p>Embeddings work without a token (model <code>all-MiniLM-L6-v2</code>).</p>
-          <div class="note-rag">⚠️ Without <code>HF_TOKEN</code> the LLM block will not generate responses. All other RAG blocks work without it.</div>
-        </div>
-        <div class="card">
-          <div class="card-label">What the student sees</div>
-          <ul>
-            <li><strong>Without RAG:</strong> the LLM answers using only its pre-trained knowledge</li>
-            <li><strong>With RAG:</strong> the LLM receives the N most similar fragments from the corpus as context</li>
-            <li>Both responses are shown side by side for comparison</li>
-            <li>The <strong>Save</strong> block exports an HTML report with the full session</li>
-          </ul>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-label">Key parameters</div>
-        <div class="tbl-wrap"><table>
-          <tr><th>Parameter</th><th>Block</th><th>Description</th></tr>
-          <tr><td>Chunking mode</td><td>✂️ Chunking</td><td>Automatic (by size) or 1 chunk per document</td></tr>
-          <tr><td>Chunk size</td><td>✂️ Chunking</td><td>Number of characters per fragment (automatic mode)</td></tr>
-          <tr><td>Top-K</td><td>🔎 Retriever</td><td>How many fragments to retrieve per query</td></tr>
-          <tr><td>System prompt</td><td>🤖 LLM</td><td>Base instructions for the model, editable in the block</td></tr>
-          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>LLM model used (default: Qwen2.5-7B-Instruct)</td></tr>
-        </table></div>
-      </div>
-
       <span class="sec-anchor" id="en-shortcuts"></span>
       <div class="sec-title">Keyboard shortcuts</div>
       <div class="card">
@@ -657,9 +465,10 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
         <div class="card">
           <div class="card-label">Saving and loading</div>
           <ul>
-            <li><strong>💾 Save session (.zip)</strong> — canvas + full configuration</li>
+            <li><strong>💾 Save session (.zip)</strong> — canvas + full server configuration</li>
             <li><strong>📂 Load session (.zip)</strong> — restores a saved canvas</li>
-            <li><strong>🗺 Export (.json)</strong> — block structure and connections</li>
+            <li><strong>🗺 Export canvas (.json)</strong> — opens the native OS file dialog to choose the path</li>
+            <li><strong>📥 Import canvas (.json)</strong> — restores blocks, connections and visual state</li>
             <li><strong>📄 RAG Report (.html)</strong> — query, fragments and responses</li>
           </ul>
           <div class="note">Data is not persisted between sessions. When restoring, reload the dataset in the Data block.</div>
@@ -670,9 +479,10 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
             <li>Server on <code>localhost:5053</code>, no external ports</li>
             <li>Embeddings: <code>all-MiniLM-L6-v2</code> via HF Inference API</li>
             <li>LLM: <code>Qwen/Qwen2.5-7B-Instruct</code> via HF router</li>
-            <li>RAG state in <code>_RAG[chunk_node_id]</code></li>
+            <li>Stemming via <code>SnowballStemmer</code> — auto-detects ES/EN language</li>
+            <li>Lemmatisation via spaCy (<code>en_core_web_sm</code> + <code>es_core_news_sm</code>)</li>
             <li>Plots via matplotlib → base64 PNG</li>
-            <li>Framework-free SPA — canvas state in JS memory</li>
+            <li>Framework-free SPA — canvas state in JS memory + <code>node.data</code></li>
           </ul>
         </div>
       </div>
@@ -693,7 +503,7 @@ HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct</code></pre>
 </div><!-- /layout -->
 <script>
 // ─── Lang switch ────────────────────────────────────────────────────────────
-var _lang = 'es';
+var _lang = 'en';
 function setLang(l){
   _lang = l;
   document.querySelectorAll('.lang-content').forEach(function(el){
@@ -706,6 +516,7 @@ function setLang(l){
   });
   document.getElementById('tocGroupEs').style.display = l==='es'?'':'none';
   document.getElementById('tocGroupEn').style.display = l==='en'?'':'none';
+  document.getElementById('nav-home').textContent = l==='es' ? 'Inicio' : 'Home';
   renderBlocks(l);
   setShortcutKeys(l);
 }
@@ -1054,8 +865,8 @@ function tocClick(el){
 }
 window.addEventListener('scroll',function(){
   var ids = _lang==='es'
-    ? ['es-start','es-setup','es-blocks','es-pipelines','es-rag','es-shortcuts','es-more']
-    : ['en-start','en-setup','en-blocks','en-pipelines','en-rag','en-shortcuts','en-more'];
+    ? ['es-start','es-setup','es-blocks','es-shortcuts','es-more']
+    : ['en-start','en-setup','en-blocks','en-shortcuts','en-more'];
   var current = ids[0];
   ids.forEach(function(id){
     var el = document.getElementById(id);
@@ -1068,8 +879,8 @@ window.addEventListener('scroll',function(){
 },{passive:true});
 
 // ─── Init ───────────────────────────────────────────────────────────────────
-renderBlocks('es');
-setShortcutKeys('es');
+renderBlocks('en');
+setShortcutKeys('en');
 </script>
 </body>
 </html>

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NLP Flow v4 — Pipelines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f5f5;--card:#fff;--ink:#121212;--sec:#656565;--ter:#909090;
+  --border:#dedede;--hair:rgba(18,18,18,.07);
+  --accent:#19e68c;--accent-tint:rgba(25,230,140,.13);
+  --shadow:0 2px 4px rgba(0,0,0,.04),0 8px 20px -8px rgba(0,0,0,.12);
+  --shadow-h:0 2px 6px rgba(0,0,0,.06),0 12px 28px -8px rgba(0,0,0,.16);
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --radius:13px;--pill:99px;--fast:140ms ease;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{max-width:100%;overflow-x:clip}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
+a{color:#1a6cf6;text-decoration:none}a:hover{text-decoration:underline}
+
+/* ── topbar ── */
+.topbar{display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--card);border-bottom:1.5px solid var(--border);height:52px;position:sticky;top:0;z-index:200}
+.logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;flex-shrink:0}
+.logo-grid span{width:9px;height:9px;border-radius:2px;display:block}
+.topbar-name{font-size:14px;font-weight:700;letter-spacing:-.01em}
+.topbar-ver{font-size:11.5px;color:var(--sec);margin-left:2px;font-weight:400}
+.topbar-spacer{flex:1}
+.topbar-divider{width:1.5px;height:24px;background:var(--border);flex-shrink:0;margin:0 10px}
+.topbar-nav{display:flex;gap:2px;flex-shrink:0}
+.topbar-nav-link{padding:5px 13px;font-size:12.5px;font-weight:600;color:var(--sec);text-decoration:none;border-radius:8px;transition:background var(--fast),color var(--fast);white-space:nowrap}
+.topbar-nav-link:hover{background:var(--bg);color:var(--ink)}
+.topbar-nav-link.active{background:var(--accent-tint);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
+.lang-bar{display:flex;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0}
+.lang-btn{padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--card);border:none;color:var(--sec);font-family:var(--font);transition:background var(--fast),color var(--fast)}
+.lang-btn.active{background:var(--accent-tint);color:var(--ink);border-bottom:2px solid var(--accent)}
+.lang-btn:hover:not(.active){background:var(--bg)}
+
+/* ── layout ── */
+.layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:100vh}
+@media(max-width:760px){.layout{grid-template-columns:1fr}}
+.toc{position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;padding:28px 0 40px;border-right:1.5px solid var(--border);background:var(--card);z-index:100}
+@media(max-width:760px){.toc{display:none}}
+.toc-group{margin-bottom:4px}
+.toc-group-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);padding:10px 18px 4px}
+.toc-link{display:block;padding:6px 18px;font-size:13px;font-weight:500;color:var(--sec);text-decoration:none;border-left:3px solid transparent;transition:background var(--fast),color var(--fast),border-color var(--fast)}
+.toc-link:hover{background:var(--bg);color:var(--ink)}
+.toc-link.active{color:var(--ink);font-weight:700;border-left-color:var(--accent);background:var(--accent-tint)}
+.toc-link.ext{color:var(--ter);font-style:italic}
+.toc-link.toc-sub{padding-left:28px;font-size:12px;font-weight:400}
+.toc-link.toc-sub.active{font-weight:700}
+.main{padding:18px 14px 80px;min-width:0;overflow-x:clip}
+@media(min-width:480px){.main{padding:28px 20px 80px}}
+@media(min-width:760px){.main{padding:44px 36px 100px}}
+.lang-content{display:none}.lang-content.visible{display:block}
+
+/* ── sections ── */
+.row-2{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+@media(min-width:640px){.row-2{grid-template-columns:1fr 1fr}}
+.row-2>*{margin-bottom:0}
+.sec-anchor{display:block;height:0;visibility:hidden;margin-top:-80px;padding-top:80px}
+.sec-title{font-size:15px;font-weight:700;margin:28px 0 10px;display:flex;align-items:center;gap:8px}
+@media(min-width:480px){.sec-title{font-size:16px;margin:36px 0 12px;gap:9px}}
+.sec-title::before{content:'';display:block;width:4px;height:20px;background:var(--accent);border-radius:var(--pill);flex-shrink:0}
+.card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
+@media(min-width:600px){.card{padding:22px 26px}}
+.card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ter);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.card-label::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:var(--pill);display:block}
+pre{background:#1a1a1a;color:#e8e8e8;border-radius:10px;padding:11px 14px;font-size:12px;overflow-x:auto;margin-bottom:12px;line-height:1.5;max-width:100%}
+code{font-family:'SF Mono','Fira Code',monospace}
+p code,li code,td code{background:#f0f0f0;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:11.5px;word-break:break-all}
+.tbl-wrap{width:100%;overflow-x:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:7px 10px;background:var(--bg);border-bottom:2px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--sec)}
+td{padding:7px 10px;border-bottom:1px solid var(--hair);word-break:break-word}
+tr:last-child td{border-bottom:none}
+@media(hover:hover){tr:hover td{background:var(--bg)}}
+.note{background:var(--accent-tint);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13.5px;color:var(--ink);margin:12px 0 0}
+.note-rag{background:#fff8f0;border-left:3px solid #ff9066;border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin:10px 0 0}
+.note-topic{background:#fdf5ff;border-left:3px solid #a259f7;border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin:10px 0 0}
+p{font-size:14px;margin-bottom:10px}
+ul,ol{padding-left:20px;margin-bottom:10px}
+li{font-size:14px;margin-bottom:5px}
+h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
+
+/* ── pipelines ── */
+.pipeline-wrap{margin:8px 0 12px}
+.pipeline{display:flex;flex-direction:column;align-items:center;gap:0;padding:10px 12px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius)}
+.pip-node{background:var(--bg);border:1.5px solid var(--border);border-radius:7px;padding:5px 11px;font-size:12.5px;font-weight:600;text-align:center}
+.pip-arrow{color:var(--accent);font-weight:700;line-height:1;font-size:0}
+.pip-arrow::after{content:'↓';font-size:15px;display:block;padding:3px 0}
+.pip-sep{color:var(--ter);font-size:12px;padding:2px 0;font-weight:600}
+.pip-node.rag{background:#f0fff8;border-color:#19e68c}
+.pip-node.topic{background:#f5f0ff;border-color:#a259f7}
+@media(min-width:560px){
+  .pipeline{flex-direction:row;align-items:center;flex-wrap:wrap;gap:0;padding:10px 14px}
+  .pip-arrow::after{content:'→';font-size:18px;padding:0 4px;display:inline}
+  .pip-sep{padding:0;margin:0 8px}
+}
+
+/* ── footer ── */
+.footer{margin-top:48px;padding-top:20px;border-top:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.footer-credits{font-size:13px;color:var(--sec)}
+.footer-credits strong{color:var(--ink)}
+.footer-credits a{color:var(--accent);font-weight:600}
+.footer-logo{display:flex;align-items:center;gap:8px;opacity:.45}
+.footer-logo-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.footer-logo-grid span{width:7px;height:7px;border-radius:2px;display:block}
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <div class="logo-grid">
+    <span style="background:#121212"></span><span style="background:#19e68c"></span>
+    <span style="background:#19e68c"></span><span style="background:#121212"></span>
+  </div>
+  <span class="topbar-name">NLP Flow</span><span class="topbar-ver">v4</span>
+  <div class="topbar-divider"></div>
+  <nav class="topbar-nav">
+    <a class="topbar-nav-link" href="doc.html" id="nav-home">Home</a>
+    <a class="topbar-nav-link active" href="pipelines.html">Pipelines</a>
+  </nav>
+  <div class="topbar-spacer"></div>
+  <div class="lang-bar">
+    <button class="lang-btn" onclick="setLang('es')">🇪🇸 ES</button>
+    <button class="lang-btn active" onclick="setLang('en')">🇬🇧 EN</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- TOC sidebar -->
+  <nav class="toc" id="tocNav">
+    <div class="toc-group" id="tocGroupEs" style="display:none">
+      <div class="toc-group-label">Típicas</div>
+      <a class="toc-link toc-sub" href="#es-regression"   onclick="tocClick(this)">📉 Regresión</a>
+      <a class="toc-link toc-sub" href="#es-classification" onclick="tocClick(this)">🏷 Clasificación tabular</a>
+      <a class="toc-link toc-sub" href="#es-exploration"  onclick="tocClick(this)">🔬 Exploración</a>
+      <a class="toc-link toc-sub" href="#es-nlp"          onclick="tocClick(this)">🧠 Clasificación NLP</a>
+      <div class="toc-group-label" style="margin-top:10px">Avanzadas</div>
+      <a class="toc-link" href="#es-topic"     onclick="tocClick(this)">Topic Model</a>
+      <a class="toc-link" href="#es-rag"       onclick="tocClick(this)">RAG</a>
+    </div>
+    <div class="toc-group" id="tocGroupEn">
+      <div class="toc-group-label">Typical</div>
+      <a class="toc-link toc-sub" href="#en-regression"   onclick="tocClick(this)">📉 Regression</a>
+      <a class="toc-link toc-sub" href="#en-classification" onclick="tocClick(this)">🏷 Tabular classification</a>
+      <a class="toc-link toc-sub" href="#en-exploration"  onclick="tocClick(this)">🔬 Exploration</a>
+      <a class="toc-link toc-sub" href="#en-nlp"          onclick="tocClick(this)">🧠 NLP classification</a>
+      <div class="toc-group-label" style="margin-top:10px">Advanced</div>
+      <a class="toc-link" href="#en-topic"     onclick="tocClick(this)">Topic Model</a>
+      <a class="toc-link" href="#en-rag"       onclick="tocClick(this)">RAG</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <!-- ══════════ ESPAÑOL ══════════ -->
+    <div class="lang-content" id="content-es">
+
+      <span class="sec-anchor" id="es-pipelines"></span>
+      <div class="sec-title">Pipelines típicas</div>
+
+      <span class="sec-anchor" id="es-regression"></span>
+      <div class="card">
+        <div class="card-label">📉 Regresión (OLS / Ridge / Lasso)</div>
+        <p>Predice un valor numérico continuo — por ejemplo el precio de una vivienda o el consumo energético — a partir de variables numéricas y categóricas. El bloque Reg. Lineal ofrece OLS, Ridge y Lasso con selección automática del mejor λ por validación cruzada.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node">📉 Reg. Lineal</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluación</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Guardar</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Bloque</th><th>Qué hace</th></tr>
+          <tr><td>📂 Datos</td><td>Carga el CSV o dataset demo (ej. California Housing)</td></tr>
+          <tr><td>🔧 Preprocesado</td><td>Imputa nulos, escala con StandardScaler, codifica categóricas</td></tr>
+          <tr><td>📉 Reg. Lineal</td><td>Entrena OLS / Ridge / Lasso; muestra RMSE, MAE, R² y gráficas de residuos</td></tr>
+          <tr><td>📋 Evaluación</td><td>Métricas detalladas sobre el split de test</td></tr>
+          <tr><td>💾 Guardar</td><td>Exporta el modelo .pkl y los plots .zip</td></tr>
+        </table></div>
+      </div>
+
+      <span class="sec-anchor" id="es-classification"></span>
+      <div class="card">
+        <div class="card-label">🏷 Clasificación tabular (Logística / KNN / RF / SVM)</div>
+        <p>Asigna cada fila a una categoría — por ejemplo riesgo de paciente o tipo de cliente. El bloque Entrena vectoriza con TF-IDF para texto o usa directamente las columnas numéricas para datos tabulares, y entrena el clasificador seleccionado.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluación</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Bloque</th><th>Qué hace</th></tr>
+          <tr><td>📂 Datos</td><td>Carga el dataset y selecciona la columna objetivo (label)</td></tr>
+          <tr><td>🔧 Preprocesado</td><td>Normaliza, imputa y codifica; detecta modo tabular automáticamente</td></tr>
+          <tr><td>🧠 Entrena</td><td>Logística, KNN, Random Forest o SVM — configurable con hiperparámetros</td></tr>
+          <tr><td>📋 Evaluación</td><td>Accuracy, F1, AUC-ROC, matriz de confusión</td></tr>
+        </table></div>
+        <div class="note">Puedes añadir un bloque 💾 Guardar al final para exportar el modelo entrenado como .pkl.</div>
+      </div>
+
+      <span class="sec-anchor" id="es-exploration"></span>
+      <div class="card">
+        <div class="card-label">🔬 Exploración de datos</div>
+        <p>Antes de entrenar cualquier modelo, conviene entender el dataset: distribuciones, valores ausentes, correlaciones y desbalanceo de clases. Esta pipeline no genera un modelo — su objetivo es dar contexto para decidir qué preprocesado y qué algoritmo aplicar.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔬 Análisis</div>
+          <span class="pip-sep">o</span>
+          <div class="pip-node">📊 Plots</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Bloque</th><th>Qué hace</th></tr>
+          <tr><td>📂 Datos</td><td>Carga cualquier CSV tabular o dataset demo</td></tr>
+          <tr><td>🔬 Análisis</td><td>Estadísticas descriptivas, tipos de columna, nulos y correlación</td></tr>
+          <tr><td>📊 Plots</td><td>Histogramas, boxplots, dispersión y distribución de la variable objetivo</td></tr>
+        </table></div>
+        <div class="note">Ambos bloques pueden usarse a la vez conectados al mismo nodo Datos.</div>
+      </div>
+
+      <span class="sec-anchor" id="es-nlp"></span>
+      <div class="card">
+        <div class="card-label">🧠 Clasificación NLP (texto)</div>
+        <p>Clasifica documentos o frases en categorías predefinidas — por ejemplo detección de spam, análisis de sentimiento o clasificación de noticias. El preprocesado detecta automáticamente que la entrada es texto y aplica limpieza, stemming o lematización según lo configurado.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 Entrena</div><div class="pip-arrow"></div>
+          <div class="pip-node">🎯 Clasifica</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Bloque</th><th>Qué hace</th></tr>
+          <tr><td>📂 Datos</td><td>Carga un CSV NLP indicando columna de texto y etiqueta</td></tr>
+          <tr><td>🔧 Preprocesado</td><td>Limpieza, normalización, remove punctuation, stopwords, stemming / lemmatización (ES/EN)</td></tr>
+          <tr><td>🧠 Entrena</td><td>Vectoriza con TF-IDF y entrena Naive Bayes, Logística, KNN, RF o SVM</td></tr>
+          <tr><td>🎯 Clasifica</td><td>Predice en tiempo real sobre texto libre; muestra clase y distribución de probabilidades</td></tr>
+        </table></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Datasets incluidos</div>
+        <div class="row-2" style="margin-top:10px;margin-bottom:0">
+          <div>
+            <h3 style="margin-top:0;margin-bottom:8px">Texto</h3>
+            <div class="tbl-wrap"><table>
+              <tr><th>Dataset</th><th>Tarea</th></tr>
+              <tr><td>🎬 Movie Reviews</td><td>Clasificación</td></tr>
+              <tr><td>📧 Spam vs Ham</td><td>Clasificación</td></tr>
+              <tr><td>😊 Twitter Sentiment</td><td>Clasificación</td></tr>
+              <tr><td>📰 News</td><td>Topic model</td></tr>
+            </table></div>
+          </div>
+          <div>
+            <h3 style="margin-top:0;margin-bottom:8px">Tabulares</h3>
+            <div class="tbl-wrap"><table>
+              <tr><th>Dataset</th><th>Tarea</th></tr>
+              <tr><td>🏥 Patient Health Risk</td><td>Clasificación</td></tr>
+              <tr><td>🏠 California Housing</td><td>Regresión</td></tr>
+            </table></div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:12px">También puedes subir tu propio CSV desde el bloque <strong>Datos</strong>.</div>
+      </div>
+
+      <span class="sec-anchor" id="es-topic"></span>
+      <div class="sec-title">Pipeline Topic Model</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">¿Qué es Topic Modeling?</div>
+        <p>El <em>topic modeling</em> es aprendizaje no supervisado: el modelo descubre automáticamente los temas latentes de un corpus de texto <strong>sin necesitar etiquetas</strong>. A diferencia de clasificación, no hay variable objetivo — el algoritmo agrupa palabras y documentos por co-ocurrencia estadística.</p>
+        <h3>Flujo completo</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node topic">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">🗂 Topic Model</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">💾 Guardar</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Algoritmos disponibles</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Algoritmo</th><th>Base matemática</th><th>Mejor para</th></tr>
+            <tr><td><strong>LDA</strong></td><td>Probabilístico (Dirichlet)</td><td>Texto general, muchos documentos</td></tr>
+            <tr><td><strong>NMF</strong></td><td>Factorización matricial no negativa</td><td>Tópicos más limpios, corpus pequeños</td></tr>
+            <tr><td><strong>LSA</strong></td><td>Álgebra lineal (SVD)</td><td>Semántica latente, sinónimos</td></tr>
+          </table></div>
+          <div class="note-topic">💡 El bloque vectoriza internamente con <code>CountVectorizer</code> (LDA) o <code>TfidfVectorizer</code> (NMF/LSA). No hace falta un bloque BoW previo.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Lo que ve el estudiante</div>
+          <ul>
+            <li><strong>Tópicos con palabras clave</strong> — tabla con las N palabras más relevantes por tópico</li>
+            <li><strong>Word clouds</strong> — una nube de palabras por tópico, generada automáticamente</li>
+            <li><strong>Topic diversity</strong> — métrica 0–1 de cuán distintos son los tópicos entre sí</li>
+            <li><strong>Coherencia</strong> — puntuación de coherencia (LDA) que mejora con iteraciones</li>
+            <li><strong>Distribución de documentos</strong> — qué porcentaje de cada documento pertenece a cada tópico</li>
+          </ul>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Parámetros clave</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Parámetro</th><th>Descripción</th></tr>
+            <tr><td>Nº tópicos</td><td>Cuántos temas extraer del corpus</td></tr>
+            <tr><td>Palabras por tópico</td><td>Cuántas palabras clave mostrar por tópico</td></tr>
+            <tr><td>Iteraciones</td><td>Pasadas de optimización (hasta 2 000); más = mayor coherencia para LDA</td></tr>
+            <tr><td>Algoritmo</td><td>LDA, NMF o LSA — selector en el panel lateral</td></tr>
+            <tr><td>Etiquetado automático</td><td>Opcional: etiqueta cada tópico con un nombre generado por el LLM</td></tr>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Guardar resultados</div>
+          <ul>
+            <li>Conecta el bloque <strong>Topic Model → Guardar</strong></li>
+            <li>El bloque Guardar detecta que la entrada es un topic model y ofrece exportar:</li>
+            <li>📁 <strong>Carpeta de word clouds</strong> — una imagen PNG por tópico</li>
+            <li>📄 <strong>Informe HTML</strong> — topic keys, coherencia, topic diversity y word clouds en un HTML autónomo</li>
+            <li>El informe se genera en ES o EN según el idioma activo de la app</li>
+          </ul>
+          <div class="note-topic">⚠️ El etiquetado automático de tópicos requiere <code>HF_TOKEN</code> en <code>.env</code>. Sin él el modelo muestra las palabras clave sin etiqueta.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Diferencias clave respecto a clasificación NLP</div>
+        <div class="tbl-wrap"><table>
+          <tr><th></th><th>Clasificación NLP</th><th>Topic Model</th></tr>
+          <tr><td>Supervisión</td><td>Supervisado (necesita etiquetas)</td><td>No supervisado (sin etiquetas)</td></tr>
+          <tr><td>Variable objetivo</td><td>Sí — <em>Label column</em></td><td>No — el bloque Datos no la muestra</td></tr>
+          <tr><td>Pipeline previo</td><td>Preprocesado NLP → Entrena</td><td>Preprocesado NLP → Topic Model</td></tr>
+          <tr><td>Salida</td><td>Clase predicha + probabilidades</td><td>Tópicos + palabras clave + coherencia</td></tr>
+          <tr><td>Evaluación</td><td>Accuracy, F1, matriz de confusión</td><td>Topic diversity, coherencia (C_v)</td></tr>
+        </table></div>
+      </div>
+
+      <span class="sec-anchor" id="es-rag"></span>
+      <div class="sec-title">Pipeline RAG</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">¿Qué es RAG?</div>
+        <p>RAG (<em>Retrieval-Augmented Generation</em>) combina búsqueda semántica y generación de texto. El LLM recibe los fragmentos más relevantes de tu corpus como contexto en el prompt — la diferencia entre "sin RAG" y "con RAG" es literalmente más texto en el input.</p>
+        <h3>Flujo completo</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node rag">📂 Datos</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">💾 Guardar</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Configuración necesaria</div>
+          <p>El bloque LLM usa la API de Hugging Face. Crea un fichero <code>.env</code> en la raíz del proyecto:</p>
+          <pre><code>HF_TOKEN=hf_tutoken
+HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
+          <p>Los embeddings funcionan sin token (modelo <code>all-MiniLM-L6-v2</code>).</p>
+          <div class="note-rag">⚠️ Sin <code>HF_TOKEN</code> el bloque LLM no generará respuestas. Los demás bloques RAG (Chunking, Embeddings, Retriever) funcionan sin él.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Qué ve el estudiante</div>
+          <ul>
+            <li><strong>Sin RAG:</strong> el LLM responde solo con su conocimiento preentrenado</li>
+            <li><strong>Con RAG:</strong> el LLM recibe los N fragmentos más similares del corpus como contexto</li>
+            <li>Las dos respuestas aparecen en paralelo para comparar</li>
+            <li>El bloque <strong>Guardar</strong> exporta un informe HTML con toda la sesión</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Parámetros clave</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parámetro</th><th>Bloque</th><th>Descripción</th></tr>
+          <tr><td>Modo chunking</td><td>✂️ Chunking</td><td>Automático (por tamaño) o 1 chunk por documento</td></tr>
+          <tr><td>Tamaño chunk</td><td>✂️ Chunking</td><td>Nº de caracteres por fragmento (modo automático)</td></tr>
+          <tr><td>Top-K</td><td>🔎 Retriever</td><td>Cuántos fragmentos recuperar por consulta</td></tr>
+          <tr><td>System prompt</td><td>🤖 LLM</td><td>Instrucciones base del modelo, editable en el bloque</td></tr>
+          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>Modelo LLM usado (por defecto <code>meta-llama/Llama-3.1-8B-Instruct</code>)</td></tr>
+        </table></div>
+      </div>
+
+      <div class="footer">
+        <div class="footer-credits">Desarrollado por <strong>Carlos Díez-Fenoy</strong> · <a href="https://github.com/cdf51342" target="_blank" rel="noopener">@CDF51342 en GitHub ↗</a></div>
+        <div class="footer-logo">
+          <div class="footer-logo-grid">
+            <span style="background:#121212"></span><span style="background:#19e68c"></span>
+            <span style="background:#19e68c"></span><span style="background:#121212"></span>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+        </div>
+      </div>
+    </div><!-- /es -->
+
+    <!-- ══════════ ENGLISH ══════════ -->
+    <div class="lang-content visible" id="content-en">
+
+      <span class="sec-anchor" id="en-pipelines"></span>
+      <div class="sec-title">Typical pipelines</div>
+
+      <span class="sec-anchor" id="en-regression"></span>
+      <div class="card">
+        <div class="card-label">📉 Regression (OLS / Ridge / Lasso)</div>
+        <p>Predicts a continuous numeric value — such as house price or energy consumption — from numeric and categorical features. The Linear Reg. block supports OLS, Ridge and Lasso with automatic λ selection via cross-validation.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node">📉 Lin. Reg.</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluation</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Save</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Block</th><th>What it does</th></tr>
+          <tr><td>📂 Data</td><td>Loads the CSV or demo dataset (e.g. California Housing)</td></tr>
+          <tr><td>🔧 Preprocessing</td><td>Imputes nulls, scales with StandardScaler, encodes categoricals</td></tr>
+          <tr><td>📉 Lin. Reg.</td><td>Trains OLS / Ridge / Lasso; shows RMSE, MAE, R² and residual plots</td></tr>
+          <tr><td>📋 Evaluation</td><td>Detailed metrics on the test split</td></tr>
+          <tr><td>💾 Save</td><td>Exports the model as .pkl and plots as .zip</td></tr>
+        </table></div>
+      </div>
+
+      <span class="sec-anchor" id="en-classification"></span>
+      <div class="card">
+        <div class="card-label">🏷 Tabular classification (Logistic / KNN / RF / SVM)</div>
+        <p>Assigns each row to a category — for example patient risk level or customer type. The Train block uses the preprocessed numeric columns directly and trains the selected classifier.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 Train</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluation</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Block</th><th>What it does</th></tr>
+          <tr><td>📂 Data</td><td>Loads the dataset and selects the target (label) column</td></tr>
+          <tr><td>🔧 Preprocessing</td><td>Normalises, imputes and encodes; auto-detects tabular mode</td></tr>
+          <tr><td>🧠 Train</td><td>Logistic, KNN, Random Forest or SVM — configurable with hyperparameters</td></tr>
+          <tr><td>📋 Evaluation</td><td>Accuracy, F1, AUC-ROC, confusion matrix</td></tr>
+        </table></div>
+        <div class="note">You can append a 💾 Save block at the end to export the trained model as .pkl.</div>
+      </div>
+
+      <span class="sec-anchor" id="en-exploration"></span>
+      <div class="card">
+        <div class="card-label">🔬 Data exploration</div>
+        <p>Before training any model it is worth understanding the dataset: distributions, missing values, correlations and class imbalance. This pipeline produces no model — its goal is to provide context for choosing the right preprocessing and algorithm.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔬 Analysis</div>
+          <span class="pip-sep">or</span>
+          <div class="pip-node">📊 Plots</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Block</th><th>What it does</th></tr>
+          <tr><td>📂 Data</td><td>Loads any tabular CSV or demo dataset</td></tr>
+          <tr><td>🔬 Analysis</td><td>Descriptive stats, column types, null values and correlation matrix</td></tr>
+          <tr><td>📊 Plots</td><td>Histograms, boxplots, scatter plots and target variable distribution</td></tr>
+        </table></div>
+        <div class="note">Both blocks can be connected to the same Data node at the same time.</div>
+      </div>
+
+      <span class="sec-anchor" id="en-nlp"></span>
+      <div class="card">
+        <div class="card-label">🧠 NLP text classification</div>
+        <p>Classifies documents or sentences into predefined categories — spam detection, sentiment analysis, news classification, etc. The Preprocessing block auto-detects that the input is text and applies cleaning, stemming or lemmatisation as configured.</p>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 Train</div><div class="pip-arrow"></div>
+          <div class="pip-node">🎯 Classify</div>
+        </div></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Block</th><th>What it does</th></tr>
+          <tr><td>📂 Data</td><td>Loads an NLP CSV specifying the text and label columns</td></tr>
+          <tr><td>🔧 Preprocessing</td><td>Cleaning, normalisation, remove punctuation (preserves accents), stopwords, stemming / lemmatisation (ES/EN auto-detect)</td></tr>
+          <tr><td>🧠 Train</td><td>Vectorises with TF-IDF and trains Naive Bayes, Logistic, KNN, RF or SVM</td></tr>
+          <tr><td>🎯 Classify</td><td>Real-time prediction on free text; shows predicted class and probability distribution</td></tr>
+        </table></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Included datasets</div>
+        <div class="row-2" style="margin-top:10px;margin-bottom:0">
+          <div>
+            <h3 style="margin-top:0;margin-bottom:8px">Text</h3>
+            <div class="tbl-wrap"><table>
+              <tr><th>Dataset</th><th>Task</th></tr>
+              <tr><td>🎬 Movie Reviews</td><td>Classification</td></tr>
+              <tr><td>📧 Spam vs Ham</td><td>Classification</td></tr>
+              <tr><td>😊 Twitter Sentiment</td><td>Classification</td></tr>
+              <tr><td>📰 News</td><td>Topic model</td></tr>
+            </table></div>
+          </div>
+          <div>
+            <h3 style="margin-top:0;margin-bottom:8px">Tabular</h3>
+            <div class="tbl-wrap"><table>
+              <tr><th>Dataset</th><th>Task</th></tr>
+              <tr><td>🏥 Patient Health Risk</td><td>Classification</td></tr>
+              <tr><td>🏠 California Housing</td><td>Regression</td></tr>
+            </table></div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:12px">You can also upload your own CSV from the <strong>Data</strong> block.</div>
+      </div>
+
+      <span class="sec-anchor" id="en-topic"></span>
+      <div class="sec-title">Topic Model Pipeline</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">What is Topic Modeling?</div>
+        <p>Topic modeling is unsupervised learning: the model automatically discovers latent themes in a text corpus <strong>without needing labels</strong>. Unlike classification, there is no target variable — the algorithm groups words and documents by statistical co-occurrence.</p>
+        <h3>Full flow</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node topic">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">🗂 Topic Model</div><div class="pip-arrow"></div>
+          <div class="pip-node topic">💾 Save</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Available algorithms</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Algorithm</th><th>Mathematical basis</th><th>Best for</th></tr>
+            <tr><td><strong>LDA</strong></td><td>Probabilistic (Dirichlet)</td><td>General text, large corpora</td></tr>
+            <tr><td><strong>NMF</strong></td><td>Non-negative matrix factorisation</td><td>Cleaner topics, smaller corpora</td></tr>
+            <tr><td><strong>LSA</strong></td><td>Linear algebra (SVD)</td><td>Latent semantics, synonyms</td></tr>
+          </table></div>
+          <div class="note-topic">💡 The block vectorises internally with <code>CountVectorizer</code> (LDA) or <code>TfidfVectorizer</code> (NMF/LSA). No separate BoW block is needed.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">What the student sees</div>
+          <ul>
+            <li><strong>Topics with keywords</strong> — table with the N most relevant words per topic</li>
+            <li><strong>Word clouds</strong> — one word cloud per topic, generated automatically</li>
+            <li><strong>Topic diversity</strong> — 0–1 metric of how distinct the topics are from each other</li>
+            <li><strong>Coherence</strong> — coherence score (LDA) that improves with more iterations</li>
+            <li><strong>Document distribution</strong> — what percentage of each document belongs to each topic</li>
+          </ul>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Key parameters</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Parameter</th><th>Description</th></tr>
+            <tr><td>No. of topics</td><td>How many themes to extract from the corpus</td></tr>
+            <tr><td>Words per topic</td><td>How many keywords to show per topic</td></tr>
+            <tr><td>Iterations</td><td>Optimisation passes (up to 2,000); more = higher coherence for LDA</td></tr>
+            <tr><td>Algorithm</td><td>LDA, NMF or LSA — selector in the side panel</td></tr>
+            <tr><td>Auto-labelling</td><td>Optional: labels each topic with a name generated by the LLM</td></tr>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Saving results</div>
+          <ul>
+            <li>Connect the <strong>Topic Model → Save</strong> block</li>
+            <li>The Save block detects that the input is a topic model and offers to export:</li>
+            <li>📁 <strong>Word cloud folder</strong> — one PNG image per topic</li>
+            <li>📄 <strong>HTML report</strong> — topic keys, coherence, topic diversity and word clouds in a self-contained HTML file</li>
+            <li>The report is generated in ES or EN according to the app's active language</li>
+          </ul>
+          <div class="note-topic">⚠️ Automatic topic labelling requires <code>HF_TOKEN</code> in <code>.env</code>. Without it the model shows keywords only, with no label.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Key differences vs NLP classification</div>
+        <div class="tbl-wrap"><table>
+          <tr><th></th><th>NLP Classification</th><th>Topic Model</th></tr>
+          <tr><td>Supervision</td><td>Supervised (requires labels)</td><td>Unsupervised (no labels)</td></tr>
+          <tr><td>Target variable</td><td>Yes — <em>Label column</em></td><td>No — Data block does not show it</td></tr>
+          <tr><td>Preceding pipeline</td><td>Preprocessing NLP → Train</td><td>Preprocessing NLP → Topic Model</td></tr>
+          <tr><td>Output</td><td>Predicted class + probabilities</td><td>Topics + keywords + coherence</td></tr>
+          <tr><td>Evaluation</td><td>Accuracy, F1, confusion matrix</td><td>Topic diversity, coherence (C_v)</td></tr>
+        </table></div>
+      </div>
+
+      <span class="sec-anchor" id="en-rag"></span>
+      <div class="sec-title">RAG Pipeline</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">What is RAG?</div>
+        <p>RAG (<em>Retrieval-Augmented Generation</em>) combines semantic search and text generation. The LLM receives the most relevant fragments from your corpus as context in the prompt — the difference between "without RAG" and "with RAG" is literally more text in the input.</p>
+        <h3>Full flow</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node rag">📂 Data</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">✂️ Chunking</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🧬 Embeddings</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🔎 Retriever</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">🤖 LLM (RAG)</div><div class="pip-arrow"></div>
+          <div class="pip-node rag">💾 Save</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Required configuration</div>
+          <p>The LLM block uses the Hugging Face API. Create a <code>.env</code> file in the project root:</p>
+          <pre><code>HF_TOKEN=hf_yourtoken
+HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
+          <p>Embeddings work without a token (model <code>all-MiniLM-L6-v2</code>).</p>
+          <div class="note-rag">⚠️ Without <code>HF_TOKEN</code> the LLM block will not generate responses. The other RAG blocks (Chunking, Embeddings, Retriever) work without it.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">What the student sees</div>
+          <ul>
+            <li><strong>Without RAG:</strong> the LLM answers using only its pre-trained knowledge</li>
+            <li><strong>With RAG:</strong> the LLM receives the N most similar fragments from the corpus as context</li>
+            <li>Both responses are shown side by side for comparison</li>
+            <li>The <strong>Save</strong> block exports an HTML report with the full session</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Key parameters</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parameter</th><th>Block</th><th>Description</th></tr>
+          <tr><td>Chunking mode</td><td>✂️ Chunking</td><td>Automatic (by size) or 1 chunk per document</td></tr>
+          <tr><td>Chunk size</td><td>✂️ Chunking</td><td>Number of characters per fragment (automatic mode)</td></tr>
+          <tr><td>Top-K</td><td>🔎 Retriever</td><td>How many fragments to retrieve per query</td></tr>
+          <tr><td>System prompt</td><td>🤖 LLM</td><td>Base instructions for the model, editable in the block</td></tr>
+          <tr><td>HF_LLM_MODEL</td><td>.env</td><td>LLM model used (default: <code>meta-llama/Llama-3.1-8B-Instruct</code>)</td></tr>
+        </table></div>
+      </div>
+
+      <div class="footer">
+        <div class="footer-credits">Developed by <strong>Carlos Díez-Fenoy</strong> · <a href="https://github.com/cdf51342" target="_blank" rel="noopener">@CDF51342 on GitHub ↗</a></div>
+        <div class="footer-logo">
+          <div class="footer-logo-grid">
+            <span style="background:#121212"></span><span style="background:#19e68c"></span>
+            <span style="background:#19e68c"></span><span style="background:#121212"></span>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+        </div>
+      </div>
+    </div><!-- /en -->
+  </main>
+</div><!-- /layout -->
+
+<script>
+var _lang = 'en';
+function setLang(l){
+  _lang = l;
+  document.querySelectorAll('.lang-content').forEach(function(el){ el.classList.remove('visible'); });
+  document.getElementById('content-'+l).classList.add('visible');
+  document.querySelectorAll('.lang-btn').forEach(function(b){
+    b.classList.remove('active');
+    if(b.textContent.toLowerCase().indexOf(l)>-1) b.classList.add('active');
+  });
+  document.getElementById('tocGroupEs').style.display = l==='es'?'':'none';
+  document.getElementById('tocGroupEn').style.display = l==='en'?'':'none';
+  document.getElementById('nav-home').textContent = l==='es' ? 'Inicio' : 'Home';
+}
+
+function tocClick(el){
+  document.querySelectorAll('.toc-link').forEach(function(a){ a.classList.remove('active'); });
+  el.classList.add('active');
+}
+
+window.addEventListener('scroll', function(){
+  var ids = _lang==='es'
+    ? ['es-pipelines','es-regression','es-classification','es-exploration','es-nlp','es-topic','es-rag']
+    : ['en-pipelines','en-regression','en-classification','en-exploration','en-nlp','en-topic','en-rag'];
+  var current = ids[0];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(el && window.scrollY >= el.getBoundingClientRect().top + window.scrollY - 120) current = id;
+  });
+  document.querySelectorAll('.toc-link').forEach(function(a){
+    a.classList.remove('active');
+    if(a.getAttribute('href')==='#'+current) a.classList.add('active');
+  });
+},{passive:true});
+</script>
+</body>
+</html>
