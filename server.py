@@ -1,7 +1,32 @@
 """NLP Flow 4 — Flask API with SSE progress streaming + session persistence"""
+import threading, queue as _queue_mod  # needed by module-level locks below (full imports follow later)
+
+# ── Native dialog queue (must run on the main thread / Cocoa thread) ──────────
+# Flask threads post requests here; main.py drains them via a pywebview hook.
+_DIALOG_REQ: "_queue_mod.Queue" = _queue_mod.Queue()   # (req_id, kwargs) → main thread
+_DIALOG_RES: "_queue_mod.Queue" = _queue_mod.Queue()   # (req_id, path|None) ← main thread
+_DIALOG_LOCK = threading.Lock()   # serialise concurrent callers
+_DIALOG_CTR  = 0
 # ── MODEL STORE: trained model objects keyed by node_id ──────────────────────
 _MODEL_STORE: dict = {}    # { node_id: result_dict }
-_NODE_MODELS: dict = {}   # { node_id: sklearn model object }
+_NODE_MODELS: dict = {}    # { node_id: sklearn model object }
+
+# ── CV background thread state ────────────────────────────────────────────────
+_cv_thread   = None
+_cv_progress: list = []       # list of {"pct", "msg"} events
+_cv_result:   dict = {}       # final result keyed by node_id
+_cv_lock   = threading.Lock()
+_cv_cancel = threading.Event()  # set() to request cancellation
+
+def _cv_push(pct, msg):
+    with _cv_lock:
+        _cv_progress.append({"pct": pct, "msg": msg})
+
+def _cv_drain():
+    with _cv_lock:
+        out = list(_cv_progress)
+        _cv_progress.clear()
+    return out
 
 # ── UI language (set by /api/set_lang) ───────────────────────────────────────
 _UI_LANG: str = "es"   # default Spanish
@@ -109,7 +134,7 @@ import joblib
 try:
     import nltk
     from nltk.corpus import stopwords
-    from nltk.stem import PorterStemmer
+    from nltk.stem import PorterStemmer, SnowballStemmer
     try:
         STOP_EN = set(stopwords.words("english"))
         STOP_ES = set(stopwords.words("spanish"))
@@ -117,10 +142,65 @@ try:
         nltk.download("stopwords", quiet=True)
         STOP_EN = set(stopwords.words("english"))
         STOP_ES = set(stopwords.words("spanish"))
-    STEMMER = PorterStemmer()
+    STEMMER    = PorterStemmer()
+    STEMMER_EN = SnowballStemmer("english")
+    STEMMER_ES = SnowballStemmer("spanish")
     NLTK_OK = True
 except Exception:
     STOP_EN, STOP_ES, STEMMER, NLTK_OK = set(), set(), None, False
+    STEMMER_EN = STEMMER_ES = None
+
+# ── Lemmatizer (spaCy if available, else nltk WordNetLemmatizer) ───────────
+# Supports EN and ES. Language is auto-detected at call time.
+LEMMATIZER = None
+_LEMMATIZE_FN = None
+_nlp_spacy_en = None
+_nlp_spacy_es = None
+
+def _spacy_load_model(name):
+    import spacy as _spacy
+    try:
+        return _spacy.load(name, disable=["parser", "ner"])
+    except OSError:
+        from spacy.cli import download as _dl
+        _dl(name)
+        return _spacy.load(name, disable=["parser", "ner"])
+
+try:
+    import spacy as _spacy
+    _nlp_spacy_en = _spacy_load_model("en_core_web_sm")
+    print("[LEMMA] spaCy en_core_web_sm OK", flush=True)
+    try:
+        _nlp_spacy_es = _spacy_load_model("es_core_news_sm")
+        print("[LEMMA] spaCy es_core_news_sm OK", flush=True)
+    except Exception as _ese:
+        print(f"[LEMMA] es_core_news_sm no disponible: {_ese}", flush=True)
+
+    def _lemmatize_spacy(text):
+        # Detect language by Spanish stopword overlap
+        words = text.split()
+        es_hits = sum(1 for w in words if w.lower() in STOP_ES)
+        if _nlp_spacy_es and es_hits >= max(1, len(words) * 0.05):
+            return " ".join(tok.lemma_ for tok in _nlp_spacy_es(text))
+        return " ".join(tok.lemma_ for tok in _nlp_spacy_en(text))
+
+    _LEMMATIZE_FN = _lemmatize_spacy
+except Exception:
+    try:
+        from nltk.stem import WordNetLemmatizer as _WNL
+        import nltk as _nltk2
+        try:
+            from nltk.corpus import wordnet as _wn; _wn.synsets("test")
+        except LookupError:
+            _nltk2.download("wordnet", quiet=True)
+            _nltk2.download("omw-1.4", quiet=True)
+        _wn_lemmatizer = _WNL()
+        def _lemmatize_nltk(text):
+            return " ".join(_wn_lemmatizer.lemmatize(w) for w in text.split())
+        _LEMMATIZE_FN = _lemmatize_nltk
+        print("[LEMMA] usando nltk WordNetLemmatizer", flush=True)
+    except Exception as _le:
+        print(f"[LEMMA] no disponible: {_le}", flush=True)
 
 PORT = 5053
 app  = Flask(__name__, static_folder="static")
@@ -476,17 +556,50 @@ _TAB = dict(
 # _make_synthetic_dataset removed — data now served from TAB_DATASETS
 
 # ── Preprocessing ────────────────────────────────────────────────────────────
+def _remove_punctuation(t):
+    """Remove punctuation but preserve accented letters, ñ, ü and other Unicode word chars."""
+    import unicodedata
+    # Keep: Unicode letters (including á é í ó ú ñ ü), digits, whitespace
+    return re.sub(r'[^\w\s]', '', t, flags=re.UNICODE).strip()
+
+def _smart_stem(t):
+    """Stem with language-aware Snowball stemmer.
+    Detects Spanish by checking overlap with Spanish stopwords; falls back to English."""
+    if not STEMMER_EN:
+        return t
+    words = t.split()
+    es_hits = sum(1 for w in words if w.lower() in STOP_ES)
+    stemmer = STEMMER_ES if (STEMMER_ES and es_hits >= max(1, len(words) * 0.05)) else STEMMER_EN
+    return ' '.join(stemmer.stem(w) for w in words)
+
 STEPS = {
-    "lowercase":    lambda t: t.lower(),
-    "punctuation":  lambda t: re.sub(r'[^a-zA-Z0-9\s]', '', t),
-    "numbers":      lambda t: re.sub(r'\d+', '', t),
-    "stopwords_en": lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_EN),
-    "stopwords_es": lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_ES),
-    "stemming":     lambda t: ' '.join(STEMMER.stem(w) for w in t.split()) if STEMMER else t,
-    "whitespace":   lambda t: re.sub(r'\s+', ' ', t).strip(),
+    "lowercase":      lambda t: t.lower(),
+    "punctuation":    _remove_punctuation,
+    "numbers":        lambda t: re.sub(r'\d+', '', t),
+    "stopwords_en":   lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_EN),
+    "stopwords_es":   lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_ES),
+    "stemming":       _smart_stem,
+    "lemmatization":  lambda t: _LEMMATIZE_FN(t) if _LEMMATIZE_FN else t,
+    "whitespace":     lambda t: re.sub(r'\s+', ' ', t).strip(),
 }
 
+# Mutually exclusive steps: if both arrive (shouldn't happen after UI fix),
+# keep only the first one in the list.
+_EXCLUSIVE_PAIRS = [{"stemming", "lemmatization"}]
+
+def _sanitize_steps(steps):
+    """Remove the second member of any exclusive pair if both are present."""
+    steps = list(steps)
+    for pair in _EXCLUSIVE_PAIRS:
+        present = [s for s in steps if s in pair]
+        if len(present) > 1:
+            # keep the first one that appears, drop the rest
+            for drop in present[1:]:
+                steps.remove(drop)
+    return steps
+
 def preprocess(text, steps):
+    steps = _sanitize_steps(steps)
     for s in steps:
         if s in STEPS:
             text = STEPS[s](text)
@@ -562,6 +675,7 @@ def _dataset_summary():
     return {
         "loaded": True, "name": S["dataset_name"], "task": S["task"],
         "is_tabular": is_tab,
+        "target": (S.get("nlp_label_col", "") or "") if S.get("task") != "topic_model" else "",
         "n": len(texts), "label_names": S["label_names"],
         "label_counts": {S["label_names"][k]: v for k,v in c.items()} if S["label_names"] else {},
         "avg_words": round(float(np.mean(wc)), 1),
@@ -606,17 +720,19 @@ def load_dataset():
 def upload_csv():
     f = request.files.get("file")
     if not f: return jsonify({"error":"No file"}), 400
-    text_col  = request.form.get("text_col","text")
-    label_col = request.form.get("label_col","")
-    task      = request.form.get("task","classification")
-    node_id   = request.form.get("node_id","")
+    mode       = request.form.get("mode","nlp")       # "nlp" | "tab"
+    text_col   = request.form.get("text_col","text")
+    label_col  = request.form.get("label_col","")
+    target_col = request.form.get("target_col","")
+    task       = request.form.get("task","classification")
+    node_id    = request.form.get("node_id","")
 
-    # ── Read with pandas — no field_size_limit issues, handles encoding cleanly ──
+    # ── Read with pandas ─────────────────────────────────────────────────────
     try:
         content = f.read()
         df = pd.read_csv(
             io.BytesIO(content),
-            dtype=str,          # keep everything as strings initially
+            dtype=str,
             keep_default_na=False,
         )
     except Exception as e:
@@ -624,37 +740,88 @@ def upload_csv():
 
     if df.empty: return jsonify({"error": "Empty CSV"}), 400
     df = df.fillna("")
-
     cols = list(df.columns)
-    if text_col not in cols:
-        return jsonify({"error": f"Column '{text_col}' not found. Available: {cols}"}), 400
 
-    # Build raw_rows from DataFrame (list[dict] — keeps legacy endpoints working)
-    raw_rows = df.to_dict(orient="records")
-    texts    = [str(r.get(text_col,"")).strip() for r in raw_rows if str(r.get(text_col,"")).strip()]
-    raw_rows = [r for r in raw_rows if str(r.get(text_col,"")).strip()]
-
-    labels, label_names = [], []
-    if label_col and label_col in cols and task=="classification":
-        raw_lbl = [str(r.get(label_col,"")).strip() for r in raw_rows]
-        uniq    = sorted(set(raw_lbl))
-        m       = {v: i for i, v in enumerate(uniq)}
-        labels, label_names = [m[l] for l in raw_lbl], uniq
-
-    S.update(texts=texts, labels=labels, label_names=label_names, task=task,
-             dataset_name=f.filename, processed_texts=list(texts),
-             results={}, model=None, vectorizer=None, columns=cols, raw_rows=raw_rows,
-             csv_source="external")
-
-    # ── Store DataFrame (new layer) ──────────────────────────────────────────
+    # ── Store DataFrame (shared layer) ───────────────────────────────────────
     _store_df(node_id if node_id else None, df)
+    raw_rows = df.to_dict(orient="records")
 
-    if node_id:
-        slot = _node_slot(node_id)
-        slot.update(columns=cols, raw_rows=raw_rows, dataset_name=f.filename,
-                    task=task, csv_source="external")
+    if mode == "tab":
+        # ── Modo tabular ─────────────────────────────────────────────────────
+        # Convertir columnas numéricas de str a float donde sea posible
+        df_num = df.copy()
+        for col in cols:
+            try:
+                df_num[col] = pd.to_numeric(df_num[col])
+            except (ValueError, TypeError):
+                pass
+        _store_df(node_id if node_id else None, df_num)
+        raw_rows = df_num.to_dict(orient="records")
 
-    return jsonify({**_dataset_summary(), "columns": cols, "node_id": node_id})
+        tgt = target_col if target_col in cols else (cols[-1] if cols else "")
+        S.update(
+            texts=[], labels=[], label_names=[], task=task,
+            dataset_name=f.filename, processed_texts=[],
+            results={}, model=None, vectorizer=None,
+            columns=cols, raw_rows=raw_rows, csv_source="external",
+        )
+        if node_id:
+            slot = _node_slot(node_id)
+            slot.update(columns=cols, raw_rows=raw_rows, dataset_name=f.filename,
+                        task=task, csv_source="external", target=tgt,
+                        is_tabular=True)
+
+        # Construir resumen tabular (mismo formato que load_tab_dataset)
+        n_rows = len(raw_rows)
+        col_info = []
+        for c in cols:
+            vals = df_num[c].dropna()
+            try:
+                pd.to_numeric(vals)
+                ctype = "numeric"
+            except (ValueError, TypeError):
+                ctype = "categorical"
+            col_info.append({"name": c, "type": ctype})
+
+        return jsonify({
+            "ok": True,
+            "n": n_rows,
+            "task": task,
+            "dataset_name": f.filename,
+            "columns": col_info,
+            "target": tgt,
+            "is_tabular": True,
+            "node_id": node_id,
+        })
+
+    else:
+        # ── Modo NLP ──────────────────────────────────────────────────────────
+        if text_col not in cols:
+            return jsonify({"error": f"Column '{text_col}' not found. Available: {cols}"}), 400
+
+        texts    = [str(r.get(text_col,"")).strip() for r in raw_rows if str(r.get(text_col,"")).strip()]
+        raw_rows = [r for r in raw_rows if str(r.get(text_col,"")).strip()]
+
+        labels, label_names = [], []
+        if label_col and label_col in cols and task == "classification":
+            raw_lbl = [str(r.get(label_col,"")).strip() for r in raw_rows]
+            uniq    = sorted(set(raw_lbl))
+            m       = {v: i for i, v in enumerate(uniq)}
+            labels, label_names = [m[l] for l in raw_lbl], uniq
+
+        S.update(texts=texts, labels=labels, label_names=label_names, task=task,
+                 dataset_name=f.filename, processed_texts=list(texts),
+                 results={}, model=None, vectorizer=None, columns=cols, raw_rows=raw_rows,
+                 csv_source="external", nlp_text_col=text_col, nlp_label_col=label_col)
+
+        if node_id:
+            slot = _node_slot(node_id)
+            slot.update(columns=cols, raw_rows=raw_rows, dataset_name=f.filename,
+                        task=task, csv_source="external")
+
+        return jsonify({**_dataset_summary(), "columns": cols, "node_id": node_id,
+                        "target": label_col if label_col and label_col in cols else "",
+                        "nlp_mode": True, "is_tabular": False})
 
 @app.route("/api/dataset_info")
 def dataset_info(): return jsonify(_dataset_summary())
@@ -1630,29 +1797,71 @@ def regression_cv():
     """Legacy alias — delegates to model_cv."""
     return model_cv()
 
+@app.route("/api/model_cv_poll")
+def model_cv_poll():
+    """Poll CV background thread progress."""
+    global _cv_thread
+    running = _cv_thread is not None and _cv_thread.is_alive()
+    events  = _cv_drain()
+    return jsonify({"running": running, "events": events})
+
+@app.route("/api/model_cv_result")
+def model_cv_result():
+    """Retrieve the final CV result once the thread is done."""
+    node_id = request.args.get("node_id","")
+    if node_id in _cv_result:
+        return jsonify(_cv_result[node_id])
+    return jsonify({"error": "CV result not ready"}), 404
+
+@app.route("/api/model_cv_cancel", methods=["POST"])
+def model_cv_cancel():
+    _cv_cancel.set()
+    _cv_push(100, "__error__:Cancelado por el usuario")
+    return jsonify({"ok": True})
+
 @app.route("/api/model_cv", methods=["POST"])
 def model_cv():
-    """Grid Search + K-fold CV across hyperparameter × normalization combinations.
-
-    For models with a main hyperparameter (ridge λ, lasso λ, logistic C, knn k):
-      - Sweeps all param_vals × all normalizations → 2-D grid
-      - Returns one curve per normalization, best combo overall
-      - Trains final model with best combo and stores in _MODEL_STORE[node_id]
-
-    For OLS (no hyperparameter):
-      - Sweeps normalizations only → single bar chart
-      - Trains final model with best normalization
+    """Grid Search + K-fold CV — arranca en background y devuelve {started:true}.
+    El cliente hace polling a /api/model_cv_poll y recoge el resultado en /api/model_cv_result.
     """
-    from sklearn.pipeline import Pipeline
-    from sklearn.preprocessing import StandardScaler, MinMaxScaler
-
+    global _cv_thread
     body        = request.get_json(force=True, silent=True) or {}
     upstream_id = str(body.get("upstream_id", "")) or None
     node_id     = str(body.get("node_id", "")) or None
     target_col  = str(body.get("target_col", "")) or _TAB.get("target_col", "")
     method      = str(body.get("method", "ridge"))
-    param_vals  = body.get("param_vals", None)   # explicit list from UI or None
+    param_vals  = body.get("param_vals", None)
     k_folds     = int(body.get("k_folds", 5))
+
+    # Limpiar resultado y flags anteriores
+    if node_id and node_id in _cv_result:
+        del _cv_result[node_id]
+    _cv_cancel.clear()
+    with _cv_lock:
+        _cv_progress.clear()
+
+    def _worker():
+        try:
+            result = _run_model_cv(upstream_id, node_id, target_col, method, param_vals, k_folds)
+            if node_id:
+                _cv_result[node_id] = result
+            _cv_push(100, "__done__")
+        except Exception as e:
+            _cv_push(100, f"__error__:{str(e)}")
+
+    _cv_thread = threading.Thread(target=_worker, daemon=True)
+    _cv_thread.start()
+    return jsonify({"started": True, "node_id": node_id})
+
+
+def _run_model_cv(upstream_id, node_id, target_col, method, param_vals, k_folds):
+    """Cuerpo real del Grid Search + CV. Llamado desde hilo background."""
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+    # normalizations to sweep (always all three for grid search)
+    norm_sweep  = ["none", "zscore", "minmax"]
+    norm_labels = {"none": "Sin norm.", "zscore": "Z-score", "minmax": "Min-Max"}
     # normalizations to sweep (always all three for grid search)
     norm_sweep  = ["none", "zscore", "minmax"]
     norm_labels = {"none": "Sin norm.", "zscore": "Z-score", "minmax": "Min-Max"}
@@ -1662,14 +1871,16 @@ def model_cv():
     rows = (D["raw_rows"] if D else None) or S["raw_rows"]
     cols = (D["columns"]  if D else None) or S["columns"]
     if not rows:
-        return jsonify({"error": "No hay datos cargados"}), 400
+        raise ValueError("No hay datos cargados")
     if not target_col:
         target_col = (D["target"] if D else None) or _TAB.get("target_col","") or (cols[-1] if cols else "")
+
+    _cv_push(5, "Preparando datos…")
 
     # Build raw X, y (no scaler — Pipeline handles per fold)
     result_xy = _build_Xy(rows, cols, target_col, normalize="none")
     if result_xy[0] is None:
-        return jsonify({"error": result_xy[1]}), 400
+        raise ValueError(result_xy[1])
     X, y_raw, feat_names = result_xy
 
     # ── Detect problem type — always driven by the target, regardless of method ──
@@ -1699,7 +1910,7 @@ def model_cv():
         y = y_raw.astype(float)
 
     if len(X) < k_folds * 2:
-        return jsonify({"error": f"Pocos datos para {k_folds}-fold CV. Necesitas al menos {k_folds*2} filas."}), 400
+        raise ValueError(f"Pocos datos para {k_folds}-fold CV. Necesitas al menos {k_folds*2} filas.")
 
     # ── CV config per model ───────────────────────────────────────────────
     MODEL_CV_CFG = {
@@ -1771,6 +1982,10 @@ def model_cv():
     all_combos      = []   # flat list for finding global best
 
     effective_pvals = pvals if has_param else [None]
+    total_combos = len(norm_sweep) * len(effective_pvals)
+    done_combos  = 0
+
+    _cv_push(10, f"Grid search: {total_combos} combinaciones × {k_folds} folds…")
 
     for norm in norm_sweep:
         scaler_step = _make_scaler_step(norm)
@@ -1786,6 +2001,11 @@ def model_cv():
             }
             norm_results.append(entry)
             all_combos.append(entry)
+            done_combos += 1
+            pct = 10 + int(done_combos / total_combos * 65)
+            norm_lbl = norm_labels.get(norm, norm)
+            pv_lbl = f" λ={round(pv,4)}" if pv is not None else ""
+            _cv_push(pct, f"{norm_lbl}{pv_lbl} — {done_combos}/{total_combos}")
         results_by_norm[norm] = norm_results
 
     # Global best combo
@@ -1798,6 +2018,7 @@ def model_cv():
     best_pv    = best_combo["param_val"]
     best_score = best_combo["score_mean"]
 
+    _cv_push(75, f"Mejor: {norm_labels.get(best_norm, best_norm)} — entrenando modelo final…")
     # ── Train final model with best combo (full train set) ────────────────
     # Use the same split as model_train would use (from preprocess or 70/30)
     split_info = D.get("split") if D else None
@@ -1890,6 +2111,7 @@ def model_cv():
             "best_pv_display":  None,   # filled below after formatting
         }
 
+    _cv_push(88, "Generando gráfica…")
     # ── Plot: one curve per normalization ─────────────────────────────────
     use_log = cfg["log"] and has_param and len(set(float(p) for p in pvals if p)) > 1 and min(float(p) for p in pvals if p) > 0
 
@@ -1978,7 +2200,8 @@ def model_cv():
         _MODEL_STORE[node_id]["best_pv_display"] = best_pv_display
         _MODEL_STORE[node_id]["param_label"]     = _display_label
 
-    return jsonify({
+    _cv_push(98, "Finalizando…")
+    return {
         "results_by_norm": results_by_norm,
         "best":            best_combo,
         "best_pv_display": best_pv_display,
@@ -1994,7 +2217,7 @@ def model_cv():
         "n_train":         int(len(X_tr)),
         "n_test":          int(len(X_te)),
         "norm_labels":     norm_labels,
-    })
+    }
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LAB 4 — TABULAR CLASSIFICATION
@@ -3094,6 +3317,7 @@ def train_results():
     res = S["results"]
     # Topic model results have a flat structure (not nested by mode)
     if res.get("task") == "topic_model" or "topics" in res:
+        tl = res.get("topic_labels", {})
         return jsonify({
             "ready": True,
             "task": "topic_model",
@@ -3105,6 +3329,7 @@ def train_results():
                 "algorithm":        res.get("algorithm", "lda"),
                 "doc_topics":       res.get("doc_topics", []),
                 "label_result":     res.get("label_result"),
+                "topic_labels":     tl,
             }
         })
     return jsonify({"ready":True,"results":{k:{
@@ -3271,6 +3496,7 @@ def topic_model():
     n_topics   = int(body.get("n_topics",  5))
     max_vocab  = int(body.get("max_vocab", 500))
     top_n_words= int(body.get("top_words", 15))
+    user_max_iter = min(int(body.get("max_iter", 0)), 2000)  # 0 = auto, máx 2000
     # Labeling params (optional — if label_classes provided, run weak labeling too)
     label_classes   = body.get("label_classes", [])    # [{name, keywords}]
     label_strategy  = body.get("label_strategy", "most")
@@ -3294,37 +3520,129 @@ def topic_model():
                 vec = CountVectorizer(max_features=max_vocab, min_df=min_df)
                 X   = vec.fit_transform(proc)
                 push_progress(20, "Ajustando LDA…")
-                n_iter = min(40, max(10, len(proc) // 8))
-                model  = LatentDirichletAllocation(
+                n_docs = len(proc)
+                if user_max_iter > 0:
+                    n_iter = user_max_iter
+                elif n_docs < 500:
+                    n_iter = 100
+                elif n_docs < 5000:
+                    n_iter = 200
+                else:
+                    n_iter = 300
+                print(f"[LDA] n_docs={n_docs}, n_topics={n_topics}, max_iter={n_iter}", flush=True)
+
+                # ── Iterative fit with per-iteration progress + ETA ──────────
+                _lda_iter_times = []
+                _lda_converged  = False
+                _lda_prev_perp  = None
+                # Minimum iterations before allowing early stop — avoids stopping
+                # in the steep initial drop (corpus with many words converges fast
+                # in perplexity terms but topics are still forming)
+                _lda_min_iter   = max(50, n_iter // 4)
+
+                lda_partial = LatentDirichletAllocation(
                     n_components=n_topics, random_state=42,
-                    max_iter=n_iter, learning_method="batch", evaluate_every=5)
-                model.fit(X)
-                components = model.components_
+                    max_iter=1, learning_method="batch",
+                    evaluate_every=-1, perp_tol=0)
+
+                for _it in range(1, n_iter + 1):
+                    _t0 = time.time()
+                    if _it == 1:
+                        lda_partial.fit(X)
+                    else:
+                        lda_partial.partial_fit(X)
+                    _iter_t = time.time() - _t0
+                    _lda_iter_times.append(_iter_t)
+
+                    # ETA based on rolling average of last 5 iterations
+                    _recent = _lda_iter_times[-5:]
+                    _avg_t  = sum(_recent) / len(_recent)
+                    _remaining = int(_avg_t * (n_iter - _it))
+                    if _remaining >= 60:
+                        _eta_str = f"{_remaining // 60}m {_remaining % 60}s"
+                    else:
+                        _eta_str = f"{_remaining}s"
+
+                    # Convergence check: delta < 0.01% AND past minimum iterations
+                    _perp_now = float(lda_partial.perplexity(X))
+                    _converged_str = ""
+                    if _lda_prev_perp is not None and _it >= _lda_min_iter:
+                        _delta = abs(_lda_prev_perp - _perp_now) / max(abs(_lda_prev_perp), 1)
+                        if _delta < 1e-4:   # 0.01% — much stricter than before
+                            _lda_converged = True
+                            _converged_str = " ✓ convergido"
+                    _lda_prev_perp = _perp_now
+
+                    # Progress: iter range mapped 20→58%
+                    _pct = 20 + int(38 * _it / n_iter)
+                    _msg = f"LDA iter {_it}/{n_iter} · perp {_perp_now:.1f} · ETA {_eta_str}{_converged_str}"
+                    push_progress(_pct, _msg)
+                    print(f"[LDA] {_msg}", flush=True)
+
+                    if _lda_converged:
+                        print(f"[LDA] convergencia alcanzada en iteración {_it} (mín={_lda_min_iter})", flush=True)
+                        push_progress(58, f"LDA convergido en iter {_it}/{n_iter} ✓")
+                        break
+
+                model        = lda_partial
+                components   = model.components_
                 doc_topic_matrix = model.transform(X)
-                perplexity = round(float(model.perplexity(X)), 1)
+                perplexity   = round(float(model.perplexity(X)), 1)
 
             elif algorithm == "nmf":
                 vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
                 X   = vec.fit_transform(proc)
-                push_progress(20, "Ajustando NMF…")
-                model = NMF(n_components=n_topics, random_state=42, max_iter=400,
-                            init="nndsvda", l1_ratio=0.5)
-                W = model.fit_transform(X)
+                nmf_iter = user_max_iter if user_max_iter > 0 else 400
+                print(f"[NMF] n_docs={len(proc)}, n_topics={n_topics}, max_iter={nmf_iter}", flush=True)
+
+                # NMF no tiene partial_fit, pero sí reportamos progreso por bloques
+                push_progress(20, f"Ajustando NMF (max {nmf_iter} iter)…")
+                _nmf_block = max(1, nmf_iter // 10)
+                _nmf_done  = 0
+                _nmf_t0    = time.time()
+                _nmf_converged = False
+
+                while _nmf_done < nmf_iter and not _nmf_converged:
+                    _block = min(_nmf_block, nmf_iter - _nmf_done)
+                    _nmf_model_tmp = NMF(n_components=n_topics, random_state=42,
+                                         max_iter=_nmf_done + _block,
+                                         init="nndsvda", l1_ratio=0.5)
+                    _W_tmp = _nmf_model_tmp.fit_transform(X)
+                    _nmf_done += _block
+
+                    _elapsed = time.time() - _nmf_t0
+                    _iter_rate = _nmf_done / max(_elapsed, 0.001)
+                    _remaining_i = nmf_iter - _nmf_done
+                    _eta_s = int(_remaining_i / max(_iter_rate, 0.001))
+                    _eta_str = f"{_eta_s // 60}m {_eta_s % 60}s" if _eta_s >= 60 else f"{_eta_s}s"
+
+                    _recon_err = _nmf_model_tmp.reconstruction_err_
+                    _pct = 20 + int(38 * _nmf_done / nmf_iter)
+                    _msg = f"NMF iter {_nmf_done}/{nmf_iter} · err {_recon_err:.4f} · ETA {_eta_str}"
+                    push_progress(_pct, _msg)
+                    print(f"[NMF] {_msg}", flush=True)
+
+                    if _nmf_model_tmp.n_iter_ < _nmf_done:
+                        _nmf_converged = True
+                        push_progress(58, f"NMF convergido en iter {_nmf_done}/{nmf_iter} ✓")
+                        print(f"[NMF] convergencia alcanzada", flush=True)
+
+                model = _nmf_model_tmp
+                W     = _W_tmp
                 components = model.components_
-                # Normalise rows for soft assignment
-                row_sums = W.sum(axis=1, keepdims=True)
+                row_sums   = W.sum(axis=1, keepdims=True)
                 row_sums[row_sums == 0] = 1
                 doc_topic_matrix = W / row_sums
-                perplexity = None  # NMF has no perplexity
+                perplexity = None
 
             else:  # lsa / svd
                 vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
                 X   = vec.fit_transform(proc)
                 push_progress(20, "Ajustando LSA (SVD)…")
+                print(f"[LSA] n_docs={len(proc)}, n_topics={n_topics} (SVD exacto, sin iteraciones)", flush=True)
                 model = TruncatedSVD(n_components=n_topics, random_state=42)
                 W = model.fit_transform(X)
                 components = model.components_
-                # For LSA, take abs value for topic word importance
                 components = np.abs(components)
                 doc_topic_matrix = np.abs(W)
                 row_sums = doc_topic_matrix.sum(axis=1, keepdims=True)
@@ -3386,29 +3704,38 @@ def topic_model():
                 _pending_labels["classes"] = [c["name"] for c in class_kws]
 
             S["results"] = {
-                "topics":      topics,
-                "doc_topics":  doc_topics,
-                "perplexity":  perplexity,
+                "topics":          topics,
+                "doc_topics":      doc_topics,
+                "perplexity":      perplexity,
                 "coherence_cv":    cv_scores,
                 "coherence_cnpmi": cnpmi_scores,
-                "algorithm":   algorithm,
-                "label_result": label_result,
+                "topic_diversity": _topic_diversity(topics),
+                "algorithm":       algorithm,
+                "label_result":    label_result,
                 "task": "topic_model"
             }
 
-            # ── Auto-label topics via HF if toggle is active ──────────────
+            # ── Auto-label topics via Groq if toggle is active ───────────
             if HF_LABELING_ACTIVE:
-                push_progress(95, "Etiquetando tópicos con IA (HF)…")
+                push_progress(95, "Etiquetando tópicos con IA…")
                 topic_list_str = "\n".join(
-                    f"Topic {tp['id']+1}: {', '.join(tp['words'][:10])}"
+                    f"Tópico {tp['id']+1} (id={tp['id']}): {', '.join(tp['words'][:10])}"
                     for tp in topics
                 )
                 prompt_lbl = (
-                    "You are an expert in text analysis. Given the following topics discovered by a topic model, "
-                    "propose a short descriptive label (2-4 words in Spanish) for each topic that captures its main theme.\n\n"
-                    f"Topics:\n{topic_list_str}\n\n"
-                    "Reply ONLY with a valid JSON object (no explanation):\n"
-                    '{"labels": [{"id": 0, "label": "..."}, {"id": 1, "label": "..."}, ...]}'
+                    "Eres un experto en análisis de tópicos. Tu tarea es asignar una etiqueta temática a cada tópico.\n\n"
+                    "REGLAS ESTRICTAS para la etiqueta:\n"
+                    "- Entre 2 y 4 palabras como máximo.\n"
+                    "- Debe ser una expresión coherente y natural, como un titular o categoría temática. "
+                    "Ejemplos correctos: 'Política exterior', 'Salud pública', 'Mercados financieros', 'Cine europeo'.\n"
+                    "- NO es una lista de palabras sueltas separadas por espacios. "
+                    "Incorrecto: 'gobierno ley España pp'. Correcto: 'Política española'.\n"
+                    "- Usa sustantivos con adjetivos o preposición cuando ayude al sentido.\n"
+                    "- Idioma: español.\n\n"
+                    "Tópicos a etiquetar:\n"
+                    f"{topic_list_str}\n\n"
+                    "Responde ÚNICAMENTE con este JSON (sin texto antes ni después):\n"
+                    '{"labels":[{"id":0,"label":"Ejemplo etiqueta"},{"id":1,"label":"Otra etiqueta"}]}'
                 )
                 raw_lbl = _call_llm(prompt_lbl)
                 auto_labels = {}
@@ -3418,7 +3745,7 @@ def topic_model():
                         try:
                             parsed_lbl = json.loads(jm.group())
                             for item in parsed_lbl.get("labels", []):
-                                auto_labels[str(item["id"])] = item["label"]
+                                auto_labels[str(item["id"])] = _sanitize_label(item["label"])
                         except Exception:
                             pass
                 # fallback for any missing
@@ -5007,24 +5334,17 @@ def save_status():
 # LLM TOPIC LABELING  — Hugging Face Inference API (free, no key needed)
 # ════════════════════════════════════════════════════════════════════════════
 
-# ── Hugging Face InferenceClient (lazy init) ─────────────────────────────────
+# ── Groq client (lazy init) ───────────────────────────────────────────────────
 try:
-    from huggingface_hub import InferenceClient as _HFClient
-    _HF_AVAILABLE = True
+    from groq import Groq as _GroqClient
+    _GROQ_AVAILABLE = True
 except ImportError:
-    _HFClient     = None
-    _HF_AVAILABLE = False
+    _GroqClient     = None
+    _GROQ_AVAILABLE = False
 
-_HF_MODEL  = "mistralai/Mistral-7B-Instruct-v0.3"
-_hf_client = None   # created on first use
+_GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
-def _get_hf_client():
-    global _hf_client
-    if _hf_client is None and _HF_AVAILABLE:
-        _hf_client = _HFClient(_HF_MODEL)
-    return _hf_client
-
-# Toggle: True = auto-label topics via HF when topic model runs
+# Toggle: True = auto-label topics via LLM when topic model runs
 HF_LABELING_ACTIVE = False
 
 @app.route("/api/labeling_toggle", methods=["POST"])
@@ -5040,24 +5360,44 @@ def labeling_status():
 
 def _call_llm(prompt: str) -> str:
     """
-    Call Hugging Face Inference API via huggingface_hub InferenceClient.
-    Uses the free serverless endpoint (no API key required for public models).
-    Returns the generated text or empty string on failure.
+    Call Groq API with model openai/gpt-oss-20b (configurable via GROQ_MODEL env var).
+    Requires GROQ_API_KEY in .env. Returns generated text or empty string on failure.
     """
-    client = _get_hf_client()
-    if client is None:
+    if not _GROQ_AVAILABLE:
+        print("[LLM] groq no instalado — ejecuta: pip install groq", flush=True)
         return ""
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        print("[LLM] GROQ_API_KEY no definida en .env", flush=True)
+        return ""
+    model = os.environ.get("GROQ_MODEL", _GROQ_MODEL)
     try:
-        result = client.text_generation(
-            prompt,
-            max_new_tokens=512,
+        print(f"[LLM] Groq → modelo={model}", flush=True)
+        client = _GroqClient(api_key=api_key)
+        resp   = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
             temperature=0.3,
-            do_sample=True,
-            return_full_text=False,
         )
-        # result is a string when return_full_text=False
-        return result.strip() if isinstance(result, str) else ""
-    except Exception:
+        choice  = resp.choices[0]
+        content = (choice.message.content or "").strip()
+        # Modelos de razonamiento (gpt-oss-*) ponen el output en 'reasoning', no en 'content'
+        if not content and hasattr(choice.message, "reasoning") and choice.message.reasoning:
+            reasoning_text = choice.message.reasoning.strip()
+            print(f"[LLM] content vacío, extrayendo JSON de reasoning ({len(reasoning_text)} chars)", flush=True)
+            # Buscar el bloque JSON con "labels" lo más cerca del final (donde el modelo suele concluir)
+            matches = list(re.finditer(r'\{\s*"labels"\s*:\s*\[[\s\S]*?\]\s*\}', reasoning_text))
+            if matches:
+                content = matches[-1].group()  # último match = conclusión final
+                print(f"[LLM] JSON extraído de reasoning: {repr(content[:200])}", flush=True)
+            else:
+                # fallback: intentar extraer cualquier JSON con id+label del final
+                content = reasoning_text
+        print(f"[LLM] Groq OK ({len(content)} chars): {repr(content[:120])}", flush=True)
+        return content
+    except Exception as e:
+        print(f"[LLM] Groq error: {e}", flush=True)
         return ""
 
 def cleanup_hf_cache() -> None:
@@ -5081,6 +5421,29 @@ def _rule_label(words: list[str]) -> str:
     return " / ".join(w.capitalize() for w in words[:3])
 
 
+def _sanitize_label(label: str) -> str:
+    """
+    Post-process LLM label to ensure it's a coherent short phrase (2-4 words).
+    - Strips quotes, trailing punctuation.
+    - If the result has more than 5 words, keeps only the first 4.
+    - Capitalises the first letter.
+    """
+    if not label:
+        return label
+    # Strip surrounding quotes and whitespace
+    label = label.strip().strip('"\'').strip()
+    # Remove trailing punctuation
+    label = re.sub(r'[.,;:!?]+$', '', label).strip()
+    # If too many words (likely a list dump), keep first 4
+    words = label.split()
+    if len(words) > 5:
+        label = " ".join(words[:4])
+    # Capitalise first letter, leave rest as-is
+    if label:
+        label = label[0].upper() + label[1:]
+    return label
+
+
 @app.route("/api/llm_label_topics", methods=["POST"])
 def llm_label_topics():
     res = S.get("results", {})
@@ -5089,62 +5452,67 @@ def llm_label_topics():
         return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
 
     topic_list = "\n".join(
-        f"Tópico {tp['id']+1}: {', '.join(tp['words'][:10])}"
+        f"Tópico {tp['id']+1} (id={tp['id']}): {', '.join(tp['words'][:10])}"
         for tp in topics
     )
-    prompt = f"""Eres un experto en análisis de texto. Se te dan los tópicos descubiertos por un modelo LDA/NMF/LSA.
-Para cada tópico, propón una etiqueta descriptiva corta (2-4 palabras en español) que capture el tema principal.
-
-Tópicos:
-{topic_list}
-
-Responde ÚNICAMENTE con un JSON válido con esta estructura exacta (sin explicación extra):
-{{
-  "labels": [
-    {{"id": 0, "label": "Etiqueta del tópico 1"}},
-    {{"id": 1, "label": "Etiqueta del tópico 2"}}
-  ],
-  "reasoning": "Una frase breve explicando el criterio de etiquetado"
-}}"""
+    prompt = (
+        "Eres un experto en análisis de tópicos. Tu tarea es asignar una etiqueta temática a cada tópico.\n\n"
+        "REGLAS ESTRICTAS para la etiqueta:\n"
+        "- Entre 2 y 4 palabras como máximo.\n"
+        "- Debe ser una expresión coherente y natural, como un titular o categoría temática. "
+        "Ejemplos correctos: 'Política exterior', 'Salud pública', 'Mercados financieros', 'Cine europeo'.\n"
+        "- NO es una lista de palabras sueltas separadas por espacios. "
+        "Incorrecto: 'gobierno ley España pp'. Correcto: 'Política española'.\n"
+        "- Usa sustantivos con adjetivos o preposición cuando ayude al sentido.\n"
+        "- Idioma: español.\n\n"
+        "Tópicos a etiquetar:\n"
+        f"{topic_list}\n\n"
+        "Responde ÚNICAMENTE con este JSON (sin texto antes ni después):\n"
+        '{"labels":[{"id":0,"label":"Ejemplo etiqueta"},{"id":1,"label":"Otra etiqueta"}]}'
+    )
 
     raw = _call_llm(prompt)
 
-    # Parse JSON from LLM response
     labels_out = []
     reasoning  = ""
     llm_ok     = False
 
     if raw:
-        # Extract first JSON block from response
         json_match = re.search(r'\{[\s\S]*\}', raw)
         if json_match:
             try:
-                parsed    = json.loads(json_match.group())
+                parsed     = json.loads(json_match.group())
                 llm_labels = parsed.get("labels", [])
                 reasoning  = parsed.get("reasoning", "")
                 if llm_labels:
                     for tp in topics:
                         match = next((l for l in llm_labels if l.get("id") == tp["id"]), None)
-                        lbl   = match["label"] if match else _rule_label(tp["words"])
+                        raw_lbl = match["label"] if match else None
+                        lbl = _sanitize_label(raw_lbl) if raw_lbl else _rule_label(tp["words"])
                         labels_out.append({"id": tp["id"], "label": lbl, "words": tp["words"]})
                     llm_ok = True
             except Exception:
                 pass
 
     if not llm_ok:
-        # Fallback: rule-based labels (first 3 words, capitalised)
         for tp in topics:
             labels_out.append({
                 "id":    tp["id"],
                 "label": _rule_label(tp["words"]),
                 "words": tp["words"]
             })
-        reasoning = "Etiquetado automático por reglas (Hugging Face no disponible o sin respuesta)."
+        reasoning = "Etiquetado automático por reglas (Groq no disponible o sin respuesta)."
 
-    # Store labels in results for later reference
     S["results"]["topic_labels"] = {str(item["id"]): item["label"] for item in labels_out}
-
     return jsonify({"labels": labels_out, "reasoning": reasoning, "llm_used": llm_ok})
+
+
+@app.route("/api/clear_topic_labels", methods=["POST"])
+def clear_topic_labels():
+    """Remove topic labels from current results (called when toggle is deactivated)."""
+    if S.get("results"):
+        S["results"].pop("topic_labels", None)
+    return jsonify({"ok": True})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -5232,27 +5600,59 @@ Trained : {'yes' if S['model'] else 'no'}
 
 def _native_save_dialog(default_name: str, file_types_wv: tuple, filetypes_tk: list) -> str | None:
     """Open a native Save dialog. Returns chosen path or None if cancelled.
-    Tries pywebview first; falls back to tkinter (always available on macOS/Win/Linux).
-    Raises RuntimeError only if both methods are unavailable.
+    Routes the dialog request through the main-thread queue when running inside
+    pywebview (Cocoa/GTK dialogs must run on the main thread).
+    Falls back to tkinter when pywebview is not present.
     """
-    # ── 1. Try pywebview ──────────────────────────────────────────────────────
+    global _DIALOG_CTR
+
+    # ── 1. Try via main-thread queue (pywebview) ──────────────────────────────
     try:
-        import webview
-        windows = webview.windows
-        if windows:
-            win = windows[0]
-            result = win.create_file_dialog(
-                webview.SAVE_DIALOG,
-                directory    = os.path.expanduser("~"),
-                save_filename= default_name,
-                file_types   = file_types_wv
-            )
-            if result is None:
-                return None          # user cancelled
-            path = result[0] if isinstance(result, (list, tuple)) else result
-            return path or None
+        import webview  # only available when running inside pywebview
+        with _DIALOG_LOCK:
+            _DIALOG_CTR += 1
+            req_id = _DIALOG_CTR
+        # Normalise file_types_wv to a tuple of strings "Desc (*.ext)" as
+        # pywebview expects.  Callers sometimes pass a plain string, a tuple of
+        # strings, or a tuple of (desc, pattern) pairs — handle all three.
+        def _norm_ft(ft):
+            if isinstance(ft, str):
+                return (ft,)
+            result = []
+            for item in ft:
+                if isinstance(item, str):
+                    result.append(item)
+                elif isinstance(item, (list, tuple)) and len(item) == 2:
+                    desc, pat = item
+                    # build "Desc (*.ext)" from ("Desc", "*.ext")
+                    result.append(f"{desc} ({pat})")
+            return tuple(result) if result else ("All files (*.*)",)
+
+        ft_normalised = _norm_ft(file_types_wv)
+        print(f"[DIALOG] Enviando req_id={req_id} default_name={default_name!r} file_types={ft_normalised}", flush=True)
+        _DIALOG_REQ.put((req_id, {
+            "default_name": default_name,
+            "file_types_wv": ft_normalised,
+        }))
+        # Block until main thread processes it (timeout 120 s)
+        deadline = 120
+        while deadline > 0:
+            try:
+                rid, path = _DIALOG_RES.get(timeout=1)
+                print(f"[DIALOG] Respuesta recibida req_id={rid} path={path!r}", flush=True)
+                if rid == req_id:
+                    return path   # may be None if user cancelled
+                # wrong id — put it back and keep waiting
+                _DIALOG_RES.put((rid, path))
+            except _queue_mod.Empty:
+                pass
+            deadline -= 1
+        print(f"[DIALOG] TIMEOUT esperando req_id={req_id}", flush=True)
+        raise RuntimeError("Dialog timed out")
+    except ImportError:
+        pass   # not inside pywebview, fall through to tkinter
     except Exception:
-        pass
+        pass   # queue failed for any reason, try tkinter
 
     # ── 2. Fallback: tkinter ──────────────────────────────────────────────────
     try:
@@ -5262,15 +5662,38 @@ def _native_save_dialog(default_name: str, file_types_wv: tuple, filetypes_tk: l
         root.withdraw()
         root.attributes("-topmost", True)
         path = filedialog.asksaveasfilename(
-            initialfile   = default_name,
+            initialfile      = default_name,
             defaultextension = os.path.splitext(default_name)[1] or "",
-            filetypes     = filetypes_tk,
-            parent        = root,
+            filetypes        = filetypes_tk,
+            parent           = root,
         )
         root.destroy()
         return path or None
     except Exception as tk_err:
         raise RuntimeError(f"No native dialog available: {tk_err}")
+
+
+@app.route("/api/save_canvas_json", methods=["POST"])
+def save_canvas_json():
+    """Open a native Save dialog and write the canvas JSON to the chosen path."""
+    body        = request.json or {}
+    canvas_json = body.get("canvas", "{}")
+    default_name = body.get("default_name", "canvas.json")
+    try:
+        path = _native_save_dialog(
+            default_name,
+            ("JSON file (*.json)", "All files (*.*)"),
+            [("JSON file", "*.json"), ("All files", "*.*")]
+        )
+        if not path:
+            return jsonify({"cancelled": True})
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(canvas_json)
+        return jsonify({"path": path})
+    except Exception as e:
+        return jsonify({"error": str(e), "fallback": True})
 
 
 @app.route("/api/pick_save_path", methods=["POST"])
@@ -5327,6 +5750,756 @@ def pick_export_img():
         return jsonify({"path": path})
     except Exception as e:
         return jsonify({"error": str(e), "fallback": True})
+
+
+@app.route("/api/export_topic_bundle", methods=["POST"])
+def export_topic_bundle():
+    """
+    Genera un ZIP con:
+      - wordclouds/topico_XX.png  → word cloud de cada tópico
+      - plots/topics_chart.png    → gráfica de barras de palabras clave
+      - informe_es.html           → informe completo en español
+      - informe_en.html           → informe completo en inglés
+      - topic_config.json         → configuración de entrenamiento
+    """
+    import html as _html
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
+
+    topic_labels  = res.get("topic_labels", {})
+    algorithm     = res.get("algorithm", "lda").upper()
+    perplexity    = res.get("perplexity")
+    cv_scores     = res.get("coherence_cv", [])
+    cnpmi_scores  = res.get("coherence_cnpmi", [])
+    active_steps  = S.get("active_steps", [])
+    dataset_name  = S.get("dataset_name", "—")
+    n_docs        = len(S.get("texts", []))
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def safe_lbl(tid):
+        return topic_labels.get(str(tid), "")
+
+    def topic_title(tid, lang="es"):
+        lbl = safe_lbl(tid)
+        prefix = "Tópico" if lang == "es" else "Topic"
+        return f"{prefix} {tid+1}" + (f" — {lbl}" if lbl else "")
+
+    def make_wc_png(tp):
+        words  = tp.get("words", [])
+        scores = tp.get("weights", tp.get("scores", []))
+        freq   = {w: float(s) for w, s in zip(words, scores)} if scores else {w: 1.0/(i+1) for i, w in enumerate(words)}
+        wc = WordCloud(width=900, height=420, background_color="white",
+                       max_words=40, colormap="viridis").generate_from_frequencies(freq)
+        fig, ax = plt.subplots(figsize=(9, 4.2))
+        ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
+        lbl = safe_lbl(tp["id"])
+        ax.set_title(f"Tópico {tp['id']+1}" + (f" — {lbl}" if lbl else ""),
+                     fontsize=13, pad=10, color="#1a1a2e")
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=130, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.read()
+
+    def make_bar_chart():
+        n   = len(topics)
+        cols = min(n, 4); rows = max(1, (n + cols - 1) // cols)
+        fig, axes = plt.subplots(rows, cols, figsize=(4.5*cols, 4.5*rows))
+        fig.patch.set_facecolor("#f8f8f8")
+        axes_flat = list(np.array(axes).flatten()) if n > 1 else [axes]
+        for idx, (ax, tp) in enumerate(zip(axes_flat, topics)):
+            words   = tp["words"][:10]; weights = tp["weights"][:10]
+            color   = PALETTE[idx % len(PALETTE)]
+            ax.barh(list(reversed(words)), list(reversed(weights)),
+                    color=color, edgecolor="none", alpha=0.85)
+            ax.set_title(topic_title(tp["id"]), fontsize=11, fontweight="bold", color="#1a1a2e")
+            ax.tick_params(axis="y", labelsize=9)
+            ax.set_facecolor("#f8f8f8")
+        for ax in axes_flat[n:]: ax.set_visible(False)
+        plt.tight_layout(pad=2)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=130, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.read()
+
+    def avg(arr):
+        return round(sum(arr)/len(arr), 4) if arr else None
+
+    def make_html(lang="es"):
+        _ = {
+            "es": {
+                "title": "Informe de Topic Model",
+                "dataset": "Dataset",
+                "algorithm": "Algoritmo",
+                "n_docs": "Documentos",
+                "prepro": "Preprocesado",
+                "n_topics": "Nº tópicos",
+                "perplexity": "Perplejidad",
+                "coherence_cv": "Coherencia C_V (media)",
+                "coherence_cnpmi": "Coherencia C_NPMI (media)",
+                "top_words": "Palabras clave",
+                "wc_section": "Nubes de palabras",
+                "bar_section": "Gráfica de palabras clave",
+                "topics_section": "Resumen de tópicos",
+                "label_col": "Etiqueta IA",
+                "generated": "Generado con NLP Flow",
+                "topic": "Tópico",
+                "none": "(ninguno)",
+            },
+            "en": {
+                "title": "Topic Model Report",
+                "dataset": "Dataset",
+                "algorithm": "Algorithm",
+                "n_docs": "Documents",
+                "prepro": "Preprocessing",
+                "n_topics": "Nº topics",
+                "perplexity": "Perplexity",
+                "coherence_cv": "Coherence C_V (avg)",
+                "coherence_cnpmi": "Coherence C_NPMI (avg)",
+                "top_words": "Top words",
+                "wc_section": "Word clouds",
+                "bar_section": "Top-words chart",
+                "topics_section": "Topics summary",
+                "label_col": "AI label",
+                "generated": "Generated with NLP Flow",
+                "topic": "Topic",
+                "none": "(none)",
+            },
+        }[lang]
+
+        steps_str = ", ".join(active_steps) if active_steps else _.get("none")
+
+        # embed images as base64
+        def img_b64(png_bytes):
+            return "data:image/png;base64," + base64.b64encode(png_bytes).decode()
+
+        wc_imgs   = [(tp, img_b64(make_wc_png(tp))) for tp in topics]
+        bar_bytes = make_bar_chart()
+        bar_img   = img_b64(bar_bytes)
+
+        topic_rows = ""
+        for i, tp in enumerate(topics):
+            lbl  = safe_lbl(tp["id"]) or "—"
+            cv   = cv_scores[i] if i < len(cv_scores) else "—"
+            cnpm = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+            words_str = ", ".join(tp["words"][:10])
+            topic_rows += f"""
+            <tr>
+              <td><strong>{_['topic']} {tp['id']+1}</strong></td>
+              <td>{_html.escape(lbl)}</td>
+              <td>{words_str}</td>
+              <td>{cv}</td>
+              <td>{cnpm}</td>
+            </tr>"""
+
+        wc_cards = ""
+        for tp, img in wc_imgs:
+            title = _html.escape(topic_title(tp["id"], lang))
+            wc_cards += f"""
+            <div class="wc-card">
+              <div class="wc-title">{title}</div>
+              <img src="{img}" alt="{title}">
+            </div>"""
+
+        perp_str = str(round(perplexity, 2)) if perplexity is not None else "—"
+        cv_avg   = avg(cv_scores) if cv_scores else "—"
+        cnpm_avg = avg(cnpmi_scores) if cnpmi_scores else "—"
+
+        return f"""<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_['title']} — {_html.escape(dataset_name)}</title>
+<style>
+  :root {{
+    --bg:#f4f4f8; --card:#ffffff; --accent:#6c63ff;
+    --ink:#1a1a2e; --sec:#4a4a6a; --border:#e0e0f0;
+    --radius:12px; --shadow:0 2px 12px rgba(0,0,0,.08);
+  }}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--ink); padding:32px 16px; }}
+  .container {{ max-width:960px; margin:0 auto; }}
+  h1 {{ font-size:2rem; color:var(--accent); margin-bottom:6px; }}
+  h2 {{ font-size:1.25rem; color:var(--ink); margin:32px 0 14px; border-left:4px solid var(--accent); padding-left:10px; }}
+  .subtitle {{ color:var(--sec); font-size:.95rem; margin-bottom:28px; }}
+  .meta-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-bottom:8px; }}
+  .meta-card {{ background:var(--card); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); }}
+  .meta-card .val {{ font-size:1.4rem; font-weight:700; color:var(--accent); }}
+  .meta-card .lbl {{ font-size:.78rem; color:var(--sec); margin-top:3px; }}
+  table {{ width:100%; border-collapse:collapse; background:var(--card); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }}
+  th {{ background:var(--accent); color:#fff; padding:10px 14px; text-align:left; font-size:.85rem; }}
+  td {{ padding:9px 14px; border-bottom:1px solid var(--border); font-size:.875rem; vertical-align:top; }}
+  tr:last-child td {{ border-bottom:none; }}
+  tr:hover td {{ background:#f0efff; }}
+  .wc-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:20px; }}
+  .wc-card {{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }}
+  .wc-card img {{ width:100%; display:block; }}
+  .wc-title {{ padding:10px 14px; font-weight:600; font-size:.9rem; color:var(--ink); background:var(--bg); }}
+  .bar-wrap img {{ width:100%; border-radius:var(--radius); box-shadow:var(--shadow); }}
+  footer {{ margin-top:48px; text-align:center; color:var(--sec); font-size:.8rem; }}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>{_['title']}</h1>
+  <p class="subtitle">{_html.escape(dataset_name)}</p>
+
+  <div class="meta-grid">
+    <div class="meta-card"><div class="val">{algorithm}</div><div class="lbl">{_['algorithm']}</div></div>
+    <div class="meta-card"><div class="val">{len(topics)}</div><div class="lbl">{_['n_topics']}</div></div>
+    <div class="meta-card"><div class="val">{n_docs}</div><div class="lbl">{_['n_docs']}</div></div>
+    <div class="meta-card"><div class="val">{perp_str}</div><div class="lbl">{_['perplexity']}</div></div>
+    <div class="meta-card"><div class="val">{cv_avg}</div><div class="lbl">{_['coherence_cv']}</div></div>
+    <div class="meta-card"><div class="val">{cnpm_avg}</div><div class="lbl">{_['coherence_cnpmi']}</div></div>
+    <div class="meta-card" style="grid-column:1/-1"><div class="val" style="font-size:1rem">{_html.escape(steps_str)}</div><div class="lbl">{_['prepro']}</div></div>
+  </div>
+
+  <h2>{_['topics_section']}</h2>
+  <table>
+    <thead><tr>
+      <th>{_['topic']}</th><th>{_['label_col']}</th>
+      <th>{_['top_words']}</th><th>C_V</th><th>C_NPMI</th>
+    </tr></thead>
+    <tbody>{topic_rows}</tbody>
+  </table>
+
+  <h2>{_['bar_section']}</h2>
+  <div class="bar-wrap"><img src="{bar_img}" alt="bar chart"></div>
+
+  <h2>{_['wc_section']}</h2>
+  <div class="wc-grid">{wc_cards}</div>
+
+  <footer>{_['generated']} · {dataset_name}</footer>
+</div>
+</body>
+</html>"""
+
+    # ── Build ZIP ─────────────────────────────────────────────────────────────
+    try:
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Word clouds
+            for tp in topics:
+                png = make_wc_png(tp)
+                lbl = safe_lbl(tp["id"]).replace(" ", "_").replace("/", "-")
+                fname = f"wordclouds/topico_{tp['id']+1:02d}" + (f"_{lbl}" if lbl else "") + ".png"
+                zf.writestr(fname, png)
+
+            # Bar chart
+            zf.writestr("plots/topics_chart.png", make_bar_chart())
+
+            # HTML reports
+            zf.writestr("informe_es.html", make_html("es").encode("utf-8"))
+            zf.writestr("informe_en.html", make_html("en").encode("utf-8"))
+
+            # JSON config
+            config = {
+                "dataset":      dataset_name,
+                "algorithm":    algorithm,
+                "n_topics":     len(topics),
+                "n_documents":  n_docs,
+                "active_steps": active_steps,
+                "perplexity":   perplexity,
+                "coherence_cv_avg":    avg(cv_scores),
+                "coherence_cnpmi_avg": avg(cnpmi_scores),
+                "topics": [
+                    {
+                        "id":      tp["id"],
+                        "label":   safe_lbl(tp["id"]),
+                        "words":   tp["words"][:15],
+                        "weights": tp.get("weights", [])[:15],
+                        "coherence_cv":    cv_scores[i] if i < len(cv_scores) else None,
+                        "coherence_cnpmi": cnpmi_scores[i] if i < len(cnpmi_scores) else None,
+                    }
+                    for i, tp in enumerate(topics)
+                ]
+            }
+            zf.writestr("topic_config.json", json.dumps(config, ensure_ascii=False, indent=2))
+
+        zip_buf.seek(0)
+        zip_bytes = zip_buf.read()
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+    # ── Save via native dialog or fallback download ───────────────────────────
+    try:
+        safe_name = re.sub(r"[^\w\-]", "_", dataset_name or "topicos")
+        default_name = f"topic_report_{safe_name}.zip"
+        path = _native_save_dialog(
+            default_name,
+            ("ZIP Archive (*.zip)", "All files (*.*)"),
+            [("ZIP Archive", "*.zip"), ("All files", "*.*")]
+        )
+        if not path:
+            return jsonify({"cancelled": True})
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        with open(path, "wb") as f:
+            f.write(zip_bytes)
+        return jsonify({"path": path})
+    except Exception:
+        # Fallback: send as download
+        safe_name = re.sub(r"[^\w\-]", "_", dataset_name or "topicos")
+        return send_file(
+            io.BytesIO(zip_bytes),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"topic_report_{safe_name}.zip"
+        )
+
+
+@app.route("/api/export_topic_bundle_download", methods=["GET"])
+def export_topic_bundle_download():
+    """Fallback GET: streams the topic bundle ZIP directly as a download."""
+    return export_topic_bundle()
+
+
+# ── Topic diversity metric ────────────────────────────────────────────────────
+def _topic_diversity(topics, top_n=10):
+    """
+    Topic Diversity (TD): fraction of unique words across all top-N words of all topics.
+    TD = |unique top-N words across all topics| / (N * num_topics)
+    Range [0, 1]. 1 = all topics use completely different vocabulary.
+    """
+    all_words  = [w for tp in topics for w in tp.get("words", [])[:top_n]]
+    if not all_words:
+        return 0.0
+    unique = len(set(all_words))
+    total  = len(all_words)
+    return round(unique / total, 4)
+
+
+# ── Shared HTML builder for topic report ─────────────────────────────────────
+def _build_topic_html(lang="es"):
+    import html as _html
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return None, "Sin resultados de Topic Model"
+
+    topic_labels  = res.get("topic_labels", {})
+    algorithm     = res.get("algorithm", "lda").upper()
+    perplexity    = res.get("perplexity")
+    cv_scores     = res.get("coherence_cv", [])
+    cnpmi_scores  = res.get("coherence_cnpmi", [])
+    active_steps  = S.get("active_steps", [])
+    dataset_name  = S.get("dataset_name", "—")
+    n_docs        = len(S.get("texts", []))
+    td            = _topic_diversity(topics)
+
+    def safe_lbl(tid):
+        return topic_labels.get(str(tid), "")
+
+    def topic_title_h(tid):
+        lbl    = safe_lbl(tid)
+        prefix = "Tópico" if lang == "es" else "Topic"
+        return f"{prefix} {tid+1}" + (f" — {lbl}" if lbl else "")
+
+    def make_wc_b64(tp):
+        words  = tp.get("words", [])
+        scores = tp.get("weights", tp.get("scores", []))
+        freq   = {w: float(s) for w, s in zip(words, scores)} if scores else {w: 1.0/(i+1) for i, w in enumerate(words)}
+        wc  = WordCloud(width=900, height=420, background_color="white",
+                        max_words=40, colormap="viridis").generate_from_frequencies(freq)
+        fig, ax = plt.subplots(figsize=(9, 4.2))
+        ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
+        lbl = safe_lbl(tp["id"])
+        ax.set_title(f"{'Tópico' if lang=='es' else 'Topic'} {tp['id']+1}" + (f" — {lbl}" if lbl else ""),
+                     fontsize=13, pad=10)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return "data:image/png;base64," + base64.b64encode(buf.read()).decode()
+
+    def make_bar_b64():
+        n    = len(topics)
+        cols = min(n, 4); rows = max(1, (n + cols - 1) // cols)
+        fig, axes = plt.subplots(rows, cols, figsize=(4.5*cols, 4.5*rows))
+        fig.patch.set_facecolor("#f8f8f8")
+        axes_flat = list(np.array(axes).flatten()) if n > 1 else [axes]
+        for idx, (ax, tp) in enumerate(zip(axes_flat, topics)):
+            words   = tp["words"][:10]; weights = tp["weights"][:10]
+            ax.barh(list(reversed(words)), list(reversed(weights)),
+                    color=PALETTE[idx % len(PALETTE)], edgecolor="none", alpha=0.85)
+            ax.set_title(topic_title_h(tp["id"]), fontsize=11, fontweight="bold")
+            ax.tick_params(axis="y", labelsize=9)
+            ax.set_facecolor("#f8f8f8")
+        for ax in axes_flat[n:]: ax.set_visible(False)
+        plt.tight_layout(pad=2)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return "data:image/png;base64," + base64.b64encode(buf.read()).decode()
+
+    def avg(arr):
+        return round(sum(arr)/len(arr), 4) if arr else None
+
+    _ = {
+        "es": dict(
+            title="Informe de Topic Model", dataset="Dataset", algorithm="Algoritmo",
+            n_docs="Documentos", prepro="Preprocesado aplicado", n_topics="Nº tópicos",
+            perplexity="Perplejidad ↓", coherence_cv="C_V media ↑",
+            coherence_cnpmi="C_NPMI media ↑", topic_div="Topic Diversity ↑",
+            top_words="Palabras clave", wc_section="Nubes de palabras",
+            bar_section="Palabras clave por tópico", topics_section="Resumen de tópicos",
+            label_col="Etiqueta IA", generated="Generado con NLP Flow",
+            topic="Tópico", none="(ninguno)",
+            td_explain="Fracción de palabras únicas entre todos los tópicos (1=máxima diversidad)",
+        ),
+        "en": dict(
+            title="Topic Model Report", dataset="Dataset", algorithm="Algorithm",
+            n_docs="Documents", prepro="Applied preprocessing", n_topics="Nº topics",
+            perplexity="Perplexity ↓", coherence_cv="C_V avg ↑",
+            coherence_cnpmi="C_NPMI avg ↑", topic_div="Topic Diversity ↑",
+            top_words="Top words", wc_section="Word clouds",
+            bar_section="Top words per topic", topics_section="Topics summary",
+            label_col="AI label", generated="Generated with NLP Flow",
+            topic="Topic", none="(none)",
+            td_explain="Fraction of unique words across all topics (1=maximum diversity)",
+        ),
+    }[lang]
+
+    steps_str = ", ".join(active_steps) if active_steps else _.get("none")
+    perp_str  = str(round(perplexity, 2)) if perplexity is not None else "—"
+    cv_avg    = str(avg(cv_scores))    if cv_scores    else "—"
+    cnpm_avg  = str(avg(cnpmi_scores)) if cnpmi_scores else "—"
+
+    topic_rows = ""
+    for i, tp in enumerate(topics):
+        lbl       = safe_lbl(tp["id"]) or "—"
+        cv_val    = cv_scores[i]    if i < len(cv_scores)    else "—"
+        cnpm_val  = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+        words_str = ", ".join(tp["words"][:10])
+        topic_rows += (
+            f"<tr><td><strong>{_['topic']} {tp['id']+1}</strong></td>"
+            f"<td>{_html.escape(lbl)}</td><td>{words_str}</td>"
+            f"<td>{cv_val}</td><td>{cnpm_val}</td></tr>"
+        )
+
+    wc_cards  = "".join(
+        f'<div class="wc-card"><div class="wc-title">{_html.escape(topic_title_h(tp["id"]))}</div>'
+        f'<img src="{make_wc_b64(tp)}" alt="{_html.escape(topic_title_h(tp["id"]))}"></div>'
+        for tp in topics
+    )
+    bar_img   = make_bar_b64()
+
+    html_out = f"""<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_['title']} — {_html.escape(dataset_name)}</title>
+<style>
+  :root{{--bg:#f4f4f8;--card:#fff;--accent:#6c63ff;--ink:#1a1a2e;--sec:#4a4a6a;--border:#e0e0f0;--r:12px;--sh:0 2px 12px rgba(0,0,0,.08);}}
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px 16px;}}
+  .wrap{{max-width:980px;margin:0 auto;}}
+  h1{{font-size:2rem;color:var(--accent);margin-bottom:4px;}}
+  h2{{font-size:1.2rem;color:var(--ink);margin:32px 0 12px;border-left:4px solid var(--accent);padding-left:10px;}}
+  .sub{{color:var(--sec);font-size:.93rem;margin-bottom:26px;}}
+  .mgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:6px;}}
+  .mcard{{background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);}}
+  .mcard .val{{font-size:1.35rem;font-weight:700;color:var(--accent);}}
+  .mcard .lbl{{font-size:.75rem;color:var(--sec);margin-top:3px;}}
+  .mcard .tip{{font-size:.68rem;color:var(--sec);margin-top:4px;font-style:italic;}}
+  table{{width:100%;border-collapse:collapse;background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}}
+  th{{background:var(--accent);color:#fff;padding:9px 13px;text-align:left;font-size:.83rem;}}
+  td{{padding:8px 13px;border-bottom:1px solid var(--border);font-size:.85rem;vertical-align:top;}}
+  tr:last-child td{{border-bottom:none;}}tr:hover td{{background:#f0efff;}}
+  .wc-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}}
+  .wc-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;}}
+  .wc-card img{{width:100%;display:block;}}.wc-title{{padding:9px 13px;font-weight:600;font-size:.88rem;}}
+  .bar-wrap img{{width:100%;border-radius:var(--r);box-shadow:var(--sh);}}
+  footer{{margin-top:48px;text-align:center;color:var(--sec);font-size:.78rem;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{_['title']}</h1>
+  <p class="sub">{_html.escape(dataset_name)}</p>
+
+  <div class="mgrid">
+    <div class="mcard"><div class="val">{algorithm}</div><div class="lbl">{_['algorithm']}</div></div>
+    <div class="mcard"><div class="val">{len(topics)}</div><div class="lbl">{_['n_topics']}</div></div>
+    <div class="mcard"><div class="val">{n_docs}</div><div class="lbl">{_['n_docs']}</div></div>
+    <div class="mcard"><div class="val">{perp_str}</div><div class="lbl">{_['perplexity']}</div></div>
+    <div class="mcard"><div class="val">{cv_avg}</div><div class="lbl">{_['coherence_cv']}</div></div>
+    <div class="mcard"><div class="val">{cnpm_avg}</div><div class="lbl">{_['coherence_cnpmi']}</div></div>
+    <div class="mcard"><div class="val">{td}</div><div class="lbl">{_['topic_div']}</div><div class="tip">{_['td_explain']}</div></div>
+    <div class="mcard" style="grid-column:1/-1"><div class="val" style="font-size:.95rem">{_html.escape(steps_str)}</div><div class="lbl">{_['prepro']}</div></div>
+  </div>
+
+  <h2>{_['topics_section']}</h2>
+  <table>
+    <thead><tr><th>{_['topic']}</th><th>{_['label_col']}</th><th>{_['top_words']}</th><th>C_V</th><th>C_NPMI</th></tr></thead>
+    <tbody>{topic_rows}</tbody>
+  </table>
+
+  <h2>{_['bar_section']}</h2>
+  <div class="bar-wrap"><img src="{bar_img}" alt="bar chart"></div>
+
+  <h2>{_['wc_section']}</h2>
+  <div class="wc-grid">{wc_cards}</div>
+
+  <footer>{_['generated']} · {_html.escape(dataset_name)}</footer>
+</div>
+</body>
+</html>"""
+    return html_out, None
+
+
+@app.route("/api/export_topic_selection", methods=["POST"])
+def export_topic_selection():
+    """
+    Recibe items=["tm__bundle_es","tm__wordclouds",...].
+    Si es un único ítem, devuelve el fichero directamente.
+    Si son varios, los empaqueta en un ZIP y lo devuelve.
+    """
+    body  = request.get_json(force=True, silent=True) or {}
+    items = body.get("items", [])
+    print(f"[SAVE] export_topic_selection llamado → items={items}", flush=True)
+    if not items:
+        return jsonify({"error": "Sin ítems seleccionados"}), 400
+
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    print(f"[SAVE] topics en S['results']: {len(topics)}", flush=True)
+    if not topics:
+        return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
+
+    files = []   # list of (filename, bytes)
+
+    for item in items:
+        try:
+            if item in ("tm__bundle_es", "tm__bundle_en"):
+                lg        = "es" if item == "tm__bundle_es" else "en"
+                html_out, err = _build_topic_html(lg)
+                if err: continue
+                files.append((f"informe_topicos_{lg}.html", html_out.encode("utf-8")))
+
+            elif item == "tm__wordclouds":
+                topic_labels = res.get("topic_labels", {})
+                for tp in topics:
+                    words  = tp.get("words", [])
+                    scores = tp.get("weights", tp.get("scores", []))
+                    freq   = {w: float(s) for w, s in zip(words, scores)} if scores else {w: 1.0/(i+1) for i, w in enumerate(words)}
+                    wc  = WordCloud(width=900, height=420, background_color="white",
+                                    max_words=40, colormap="viridis").generate_from_frequencies(freq)
+                    fig, ax = plt.subplots(figsize=(9, 4.2))
+                    ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
+                    lbl = topic_labels.get(str(tp["id"]), "")
+                    ax.set_title(f"Tópico {tp['id']+1}" + (f" — {lbl}" if lbl else ""), fontsize=13, pad=10)
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+                    plt.close(fig); buf.seek(0)
+                    safe = lbl.replace(" ", "_").replace("/", "-") if lbl else ""
+                    fname_wc = "wordclouds/" + f"topico_{tp['id']+1:02d}" + (f"_{safe}" if safe else "") + ".png"
+                    files.append((fname_wc, buf.read()))
+
+            elif item == "tm__chart":
+                n    = len(topics)
+                cols = min(n, 4); rows = max(1, (n + cols - 1) // cols)
+                fig, axes = plt.subplots(rows, cols, figsize=(4.5*cols, 4.5*rows))
+                fig.patch.set_facecolor("#f8f8f8")
+                axes_flat = list(np.array(axes).flatten()) if n > 1 else [axes]
+                topic_labels = res.get("topic_labels", {})
+                for idx, (ax, tp) in enumerate(zip(axes_flat, topics)):
+                    words   = tp["words"][:10]; weights = tp["weights"][:10]
+                    ax.barh(list(reversed(words)), list(reversed(weights)),
+                            color=PALETTE[idx % len(PALETTE)], edgecolor="none", alpha=0.85)
+                    lbl = topic_labels.get(str(tp["id"]), "")
+                    ax.set_title(f"Tópico {tp['id']+1}" + (f" — {lbl}" if lbl else ""), fontsize=11, fontweight="bold")
+                    ax.tick_params(axis="y", labelsize=9)
+                for ax in axes_flat[n:]: ax.set_visible(False)
+                plt.tight_layout(pad=2)
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+                plt.close(fig); buf.seek(0)
+                files.append(("topics_chart.png", buf.read()))
+
+            elif item == "tm__json":
+                cv_scores    = res.get("coherence_cv", [])
+                cnpmi_scores = res.get("coherence_cnpmi", [])
+                topic_labels = res.get("topic_labels", {})
+                def _avg(arr): return round(sum(arr)/len(arr), 4) if arr else None
+                config = {
+                    "dataset": S.get("dataset_name", "—"),
+                    "algorithm": res.get("algorithm", "lda").upper(),
+                    "n_topics": len(topics), "n_documents": len(S.get("texts", [])),
+                    "active_steps": S.get("active_steps", []),
+                    "perplexity": res.get("perplexity"),
+                    "coherence_cv_avg": _avg(cv_scores),
+                    "coherence_cnpmi_avg": _avg(cnpmi_scores),
+                    "topic_diversity": _topic_diversity(topics),
+                    "topics": [
+                        {"id": tp["id"], "label": topic_labels.get(str(tp["id"]), ""),
+                         "words": tp["words"][:15], "weights": tp.get("weights", [])[:15],
+                         "coherence_cv": cv_scores[ix] if ix < len(cv_scores) else None,
+                         "coherence_cnpmi": cnpmi_scores[ix] if ix < len(cnpmi_scores) else None}
+                        for ix, tp in enumerate(topics)
+                    ]
+                }
+                files.append(("topic_config.json", json.dumps(config, ensure_ascii=False, indent=2).encode("utf-8")))
+        except Exception as e:
+            import traceback
+            print(f"[SAVE] ERROR en item={item}: {e}", flush=True)
+            traceback.print_exc()
+            continue
+
+    print(f"[SAVE] ficheros generados: {[f[0] for f in files]}", flush=True)
+    if not files:
+        return jsonify({"error": "No se pudo generar ningún fichero"}), 500
+
+    safe_ds = re.sub(r"[^\w\-]", "_", S.get("dataset_name", "topicos"))
+
+    # Un fichero → diálogo nativo para ese fichero (solo si es un único archivo sin subcarpeta)
+    if len(files) == 1 and "/" not in files[0][0]:
+        fname, data = files[0]
+        ext = fname.rsplit(".", 1)[-1].lower()
+        type_map = {
+            "html": ("HTML File (*.html)", [("HTML File", "*.html"), ("All files", "*.*")]),
+            "json": ("JSON File (*.json)", [("JSON File", "*.json"), ("All files", "*.*")]),
+            "png":  ("PNG Image (*.png)",  [("PNG Image", "*.png"),  ("All files", "*.*")]),
+            "zip":  ("ZIP Archive (*.zip)",[("ZIP Archive","*.zip"), ("All files", "*.*")]),
+        }
+        ft_wv, ft_tk = type_map.get(ext, ("All files (*.*)", [("All files", "*.*")]))
+        print(f"[SAVE] 1 fichero → abriendo diálogo para {fname!r}", flush=True)
+        try:
+            path = _native_save_dialog(fname, ft_wv, ft_tk)
+            print(f"[SAVE] diálogo devuelve path={path!r}", flush=True)
+            if not path:
+                print("[SAVE] usuario canceló o path vacío", flush=True)
+                return jsonify({"cancelled": True})
+            if not path.lower().endswith("." + ext):
+                path += "." + ext
+            with open(path, "wb") as f:
+                f.write(data)
+            print(f"[SAVE] fichero escrito OK en {path!r}", flush=True)
+            return jsonify({"path": path, "name": fname})
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    # Varios ficheros → ZIP con diálogo nativo
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname, data in files:
+            zf.writestr(fname, data)
+    zip_bytes = zip_buf.getvalue()
+    zip_name  = f"topic_export_{safe_ds}.zip"
+    print(f"[SAVE] {len(files)} ficheros → ZIP {zip_name!r} ({len(zip_bytes)} bytes) → abriendo diálogo", flush=True)
+    try:
+        path = _native_save_dialog(
+            zip_name,
+            "ZIP Archive (*.zip)",
+            [("ZIP Archive", "*.zip"), ("All files", "*.*")]
+        )
+        print(f"[SAVE] diálogo devuelve path={path!r}", flush=True)
+        if not path:
+            print("[SAVE] usuario canceló o path vacío", flush=True)
+            return jsonify({"cancelled": True})
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        with open(path, "wb") as f:
+            f.write(zip_bytes)
+        print(f"[SAVE] ZIP escrito OK en {path!r}", flush=True)
+        return jsonify({"path": path, "name": zip_name})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/export_topic_html", methods=["POST"])
+def export_topic_html():
+    body = request.get_json(force=True, silent=True) or {}
+    lang = body.get("lang", "es")
+    html_out, err = _build_topic_html(lang)
+    if err:
+        return jsonify({"error": err}), 400
+    fname = f"informe_topicos_{lang}.html"
+    return send_file(
+        io.BytesIO(html_out.encode("utf-8")),
+        mimetype="text/html",
+        as_attachment=True,
+        download_name=fname
+    )
+
+
+@app.route("/api/export_topic_wc_zip", methods=["POST"])
+def export_topic_wc_zip():
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return jsonify({"error": "Sin resultados de Topic Model"}), 400
+    topic_labels = res.get("topic_labels", {})
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for tp in topics:
+            words  = tp.get("words", [])
+            scores = tp.get("weights", tp.get("scores", []))
+            freq   = {w: float(s) for w, s in zip(words, scores)} if scores else {w: 1.0/(i+1) for i, w in enumerate(words)}
+            wc  = WordCloud(width=900, height=420, background_color="white",
+                            max_words=40, colormap="viridis").generate_from_frequencies(freq)
+            fig, ax = plt.subplots(figsize=(9, 4.2))
+            ax.imshow(wc, interpolation="bilinear"); ax.axis("off")
+            lbl = topic_labels.get(str(tp["id"]), "")
+            ax.set_title(f"Tópico {tp['id']+1}" + (f" — {lbl}" if lbl else ""), fontsize=13, pad=10)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+            plt.close(fig); buf.seek(0)
+            safe = lbl.replace(" ", "_").replace("/", "-") if lbl else ""
+            fname = f"topico_{tp['id']+1:02d}" + (f"_{safe}" if safe else "") + ".png"
+            zf.writestr(fname, buf.read())
+    zip_buf.seek(0)
+    return send_file(zip_buf, mimetype="application/zip",
+                     as_attachment=True, download_name="wordclouds_topicos.zip")
+
+
+@app.route("/api/export_topic_json", methods=["POST"])
+def export_topic_json():
+    res    = S.get("results", {})
+    topics = res.get("topics", [])
+    if not topics:
+        return jsonify({"error": "Sin resultados de Topic Model"}), 400
+    cv_scores    = res.get("coherence_cv", [])
+    cnpmi_scores = res.get("coherence_cnpmi", [])
+    topic_labels = res.get("topic_labels", {})
+    def avg(arr): return round(sum(arr)/len(arr), 4) if arr else None
+    config = {
+        "dataset":             S.get("dataset_name", "—"),
+        "algorithm":           res.get("algorithm", "lda").upper(),
+        "n_topics":            len(topics),
+        "n_documents":         len(S.get("texts", [])),
+        "active_steps":        S.get("active_steps", []),
+        "perplexity":          res.get("perplexity"),
+        "coherence_cv_avg":    avg(cv_scores),
+        "coherence_cnpmi_avg": avg(cnpmi_scores),
+        "topic_diversity":     _topic_diversity(topics),
+        "topics": [
+            {
+                "id":              tp["id"],
+                "label":           topic_labels.get(str(tp["id"]), ""),
+                "words":           tp["words"][:15],
+                "weights":         tp.get("weights", [])[:15],
+                "coherence_cv":    cv_scores[i]    if i < len(cv_scores)    else None,
+                "coherence_cnpmi": cnpmi_scores[i] if i < len(cnpmi_scores) else None,
+            }
+            for i, tp in enumerate(topics)
+        ]
+    }
+    return send_file(
+        io.BytesIO(json.dumps(config, ensure_ascii=False, indent=2).encode("utf-8")),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name="topic_config.json"
+    )
 
 
 @app.route("/api/pick_export_wc_all", methods=["POST"])
@@ -5668,6 +6841,34 @@ def pick_export_path():
             _en2         = extra.get("lang", "es") == "en"
             default_name = "rag_report.html" if _en2 else "informe_rag.html"
             file_types   = ("HTML File (*.html)", "All files (*.*)")
+
+        elif endpoint == "/api/export_topic_html":
+            extra      = body.get("extra", {})
+            _lang      = extra.get("lang", "es")
+            html_out, _err = _build_topic_html(_lang)
+            if _err:
+                return jsonify({"error": _err}), 400
+            content_bytes = html_out.encode("utf-8")
+            default_name  = f"informe_topicos_{_lang}.html"
+            file_types    = ("HTML File (*.html)", "All files (*.*)")
+
+        elif endpoint == "/api/export_topic_wc_zip":
+            with app.test_client() as _tc:
+                _r = _tc.post("/api/export_topic_wc_zip", content_type="application/json", data="{}")
+                if _r.status_code != 200:
+                    return jsonify({"error": "Error generando wordclouds"}), 500
+                content_bytes = _r.data
+            default_name = "wordclouds_topicos.zip"
+            file_types   = ("ZIP Archive (*.zip)", "All files (*.*)")
+
+        elif endpoint == "/api/export_topic_json":
+            with app.test_client() as _tc:
+                _r = _tc.post("/api/export_topic_json", content_type="application/json", data="{}")
+                if _r.status_code != 200:
+                    return jsonify({"error": "Error generando JSON"}), 500
+                content_bytes = _r.data
+            default_name = "topic_config.json"
+            file_types   = ("JSON File (*.json)", "All files (*.*)")
 
         else:
             return jsonify({"error": "Unknown endpoint"}), 400
@@ -6274,6 +7475,7 @@ def _coef_bar_b64(coefs_sorted, title="Coeficientes"):
 _mtrain_progress: list = []   # [{pct, msg}]
 _mtrain_lock = threading.Lock()
 _mtrain_result: dict = {}     # last train result stored here
+_mtrain_cancel = threading.Event()  # set() to request cancellation
 
 @app.route("/api/model_train", methods=["POST"])
 def model_train():
@@ -6506,6 +7708,7 @@ def model_train():
             import traceback
             _push(100, f"__error__:{exc} | {traceback.format_exc().splitlines()[-1]}")
 
+    _mtrain_cancel.clear()
     with _mtrain_lock:
         _mtrain_progress.clear()
 
@@ -6520,6 +7723,13 @@ def model_train_poll():
         events = list(_mtrain_progress)
         _mtrain_progress.clear()
     return jsonify({"events": events})
+
+@app.route("/api/model_train_cancel", methods=["POST"])
+def model_train_cancel():
+    _mtrain_cancel.set()
+    with _mtrain_lock:
+        _mtrain_progress.append({"pct": 100, "msg": "__done__:cancelled"})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/model_result")
@@ -6839,6 +8049,13 @@ _EMBED_MAX_CHUNKS = 5000  # default cap to avoid runaway embed jobs
 
 _rag_thread  = None   # single background thread for embedding
 
+try:
+    from huggingface_hub import InferenceClient as _HFClient
+    _HF_AVAILABLE = True
+except ImportError:
+    _HFClient     = None
+    _HF_AVAILABLE = False
+
 def _rag_slot(node_id: str) -> dict:
     if node_id not in _RAG:
         _RAG[node_id] = {}
@@ -6994,8 +8211,7 @@ def rag_embed():
                 _push_rag(-1, "ERROR")
                 return
 
-            from huggingface_hub import InferenceClient
-            client = InferenceClient()
+            client = _HFClient()
 
             texts = [c["text"] for c in chunks_to_embed]
             total = len(texts)
@@ -7103,9 +8319,11 @@ def rag_retrieve():
     if not query:
         return jsonify({"error": "Escribe una consulta."}), 400
 
+    if not _HF_AVAILABLE:
+        return jsonify({"error": "huggingface_hub no está instalado. Ejecuta: pip install huggingface_hub"}), 500
+
     try:
-        from huggingface_hub import InferenceClient
-        client = InferenceClient()
+        client = _HFClient()
         q_emb  = np.asarray(
             client.feature_extraction([query], model=_EMBED_MODEL),
             dtype=np.float32
@@ -7152,31 +8370,35 @@ def rag_generate():
     query         = (body.get("query") or "").strip()
     ctx_chunks    = body.get("context_chunks") or []
     max_tokens    = int(body.get("max_new_tokens") or 256)
-    system_prompt = (body.get("system_prompt") or
-                     "Eres un asistente útil. Responde en el mismo idioma que la pregunta. "
-                     "Sé conciso y directo.")
+    _lang = body.get("lang", _UI_LANG)
+    _en   = (_lang == "en")
+
+    _default_system = (
+        "You are a helpful assistant. Be concise and direct."
+        if _en else
+        "Eres un asistente útil. Sé conciso y directo."
+    )
+    system_prompt = (body.get("system_prompt") or _default_system)
 
     if not query:
         return jsonify({"error": "Falta la pregunta (query)."}), 400
 
     # ── LLM selection ────────────────────────────────────────────────────────
     # Model priority:
-    #   1. HF_TOKEN set → use Mistral-7B-Instruct-v0.3 (better quality, authenticated)
-    #   2. No token     → use HuggingFaceH4/zephyr-7b-beta (public, no key needed)
-    # To switch later: set HF_TOKEN in .env and restart the server.
+    # Model selection:
+    #   Default → meta-llama/Llama-3.1-8B-Instruct
+    #     - Consistently available on HF serverless free tier, strong RAG quality.
+    #   Override → set HF_LLM_MODEL in .env to use another model.
+    #   Token   → set HF_TOKEN in .env for authenticated requests (higher rate limits).
     hf_token   = os.environ.get("HF_TOKEN", "").strip()
-    # Qwen2.5-7B-Instruct works via chat_completion with a HF token (auto provider).
-    # If no token is set, same model is tried — may fail without a valid token.
-    # To use a different model: set HF_LLM_MODEL in .env
-    llm_model  = os.environ.get("HF_LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    llm_model  = os.environ.get("HF_LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
 
     if not _HF_AVAILABLE:
         return jsonify({"error": "huggingface_hub no está instalado. Ejecuta: pip install huggingface_hub"}), 500
 
     # ── Context budget ────────────────────────────────────────────────────────
-    # Qwen2.5-7B-Instruct context window: 32768 tokens (≈ 4 chars/token approx)
-    # Reserve ~1000 tokens for system + question + response → ~31768 for context
-    # Using 4 chars/token estimate: 31768 * 4 = ~127072 chars budget for context
+    # Llama-3.1-8B-Instruct context window: 128k tokens (≈ 4 chars/token)
+    # Reserve ~1000 tokens for system + question + response
     MAX_CTX_CHARS = 12000   # conservative: ~3000 tokens, leaves plenty of headroom
 
     def _truncate_chunks(chunks: list, max_chars: int) -> list:
@@ -7205,16 +8427,23 @@ def rag_generate():
         messages = [{"role": "system", "content": system_prompt}]
         if with_context and ctx_chunks_safe:
             context_text = "\n\n---\n\n".join(
-                "[Fragmento {i}]\n{t}".format(i=idx+1, t=c["text"])
+                ("[Fragment {i}]\n{t}" if _en else "[Fragmento {i}]\n{t}").format(i=idx+1, t=c["text"])
                 for idx, c in enumerate(ctx_chunks_safe)
             )
-            user_content = (
-                "Usa los siguientes fragmentos como contexto para responder.\n\n"
-                "=== CONTEXTO ===\n{ctx}\n=== FIN ===\n\n"
-                "Pregunta: {q}"
-            ).format(ctx=context_text, q=query)
+            if _en:
+                user_content = (
+                    "Use the following fragments as context to answer the question.\n\n"
+                    "=== CONTEXT ===\n{ctx}\n=== END ===\n\n"
+                    "Question: {q}"
+                ).format(ctx=context_text, q=query)
+            else:
+                user_content = (
+                    "Usa los siguientes fragmentos como contexto para responder.\n\n"
+                    "=== CONTEXTO ===\n{ctx}\n=== FIN ===\n\n"
+                    "Pregunta: {q}"
+                ).format(ctx=context_text, q=query)
         else:
-            user_content = "Pregunta: " + query
+            user_content = ("Question: " if _en else "Pregunta: ") + query
         messages.append({"role": "user", "content": user_content})
         return messages
 

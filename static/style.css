@@ -264,8 +264,9 @@ textarea.inp{resize:vertical;min-height:80px}
 
 /* Table */
 .tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--ri);max-height:320px}
-.dtable{border-collapse:collapse;font-size:12px;width:100%;min-width:280px}
-.dtable th{background:var(--bg);position:sticky;top:0;padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;border-bottom:1px solid var(--border);color:var(--sec);white-space:nowrap;z-index:1}
+.dtable{border-collapse:separate;border-spacing:0;font-size:12px;width:100%;min-width:280px}
+.dtable thead tr{position:sticky;top:0;z-index:10}
+.dtable th{background:var(--card);padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;border-bottom:2px solid var(--border);border-top:none;color:var(--sec);white-space:nowrap}
 .dtable td{padding:5px 10px;border-bottom:1px solid var(--hair);vertical-align:top;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dtable td.tcell{max-width:360px;white-space:normal;word-break:break-word}
 .dtable tr:hover td{background:rgba(25,230,140,.05)}
