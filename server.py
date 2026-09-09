@@ -562,6 +562,25 @@ def _remove_punctuation(t):
     # Keep: Unicode letters (including á é í ó ú ñ ü), digits, whitespace
     return re.sub(r'[^\w\s]', '', t, flags=re.UNICODE).strip()
 
+def _detect_corpus_lang(texts: list, sample: int = 200, threshold: float = 0.08) -> str:
+    """Detect whether a corpus is predominantly Spanish or English.
+
+    Samples up to `sample` documents, counts Spanish stopword hits per token,
+    and returns 'es' if the hit-rate exceeds `threshold`, else 'en'.
+    """
+    sample_texts = texts[:sample]
+    all_words = []
+    for t in sample_texts:
+        all_words.extend(t.lower().split())
+    if not all_words:
+        return "es"   # default
+    es_hits = sum(1 for w in all_words if w in STOP_ES)
+    rate = es_hits / len(all_words)
+    detected = "es" if rate >= threshold else "en"
+    print(f"[LANG] es_hit_rate={rate:.3f} → detected='{detected}'", flush=True)
+    return detected
+
+
 def _smart_stem(t):
     """Stem with language-aware Snowball stemmer.
     Detects Spanish by checking overlap with Spanish stopwords; falls back to English."""
@@ -3326,6 +3345,7 @@ def train_results():
                 "perplexity":       res.get("perplexity"),
                 "coherence_cv":     res.get("coherence_cv",    res.get("coherence", [])),
                 "coherence_cnpmi":  res.get("coherence_cnpmi", []),
+                "topic_diversity":  res.get("topic_diversity"),
                 "algorithm":        res.get("algorithm", "lda"),
                 "doc_topics":       res.get("doc_topics", []),
                 "label_result":     res.get("label_result"),
@@ -3428,62 +3448,102 @@ _topic_thread = None
 
 def _coherence_cv(topic_words_list, tokenized_docs, top_n=10):
     """
-    C_V coherence approximation (no gensim needed):
-    For each topic, compute pairwise normalised PMI of top-N words,
-    averaged across all word pairs.
+    C_V coherence approximation (Röder et al. 2015).
+    Uses a boolean sliding-window co-occurrence over the whole corpus
+    (window = full document, a common approximation).
+    For each topic word w_i, compute the indirect confirmation measure:
+        cv(w_i, W) = cos_sim( phi(w_i), sum_{w_j in W, j!=i} phi(w_j) )
+    where phi(w) is the NPMI vector of w against every other top word.
+    This gives scores in [0, 1] that are meaningfully higher than C_NPMI.
     """
-    vocab = {}
-    for doc in tokenized_docs:
-        for w in set(doc): vocab[w] = vocab.get(w, 0) + 1
-    N = len(tokenized_docs)
+    # Build co-occurrence counts (document-level boolean)
+    doc_sets = [set(doc) for doc in tokenized_docs]
+    N = len(doc_sets)
+
+    def _cooc(wi, wj):
+        return sum(1 for ds in doc_sets if wi in ds and wj in ds)
+
+    def _freq(w):
+        return sum(1 for ds in doc_sets if w in ds)
+
     scores = []
     for words in topic_words_list:
         wds = words[:top_n]
-        pair_scores = []
-        for i in range(len(wds)):
-            for j in range(i+1, len(wds)):
-                wi, wj = wds[i], wds[j]
-                fi  = vocab.get(wi, 0)
-                fj  = vocab.get(wj, 0)
-                fij = sum(1 for doc in tokenized_docs if wi in doc and wj in doc)
-                if fi == 0 or fj == 0 or fij == 0:
-                    pair_scores.append(0.0)
+        # Pre-compute NPMI of each pair
+        npmi_matrix = {}
+        for i, wi in enumerate(wds):
+            fi = _freq(wi)
+            if fi == 0:
+                continue
+            for j, wj in enumerate(wds):
+                if i == j:
                     continue
-                pmi = np.log((fij * N) / (fi * fj) + 1e-10)
-                norm = -np.log(fij / N + 1e-10)
-                pair_scores.append(float(pmi / (norm + 1e-10)))
-        scores.append(round(float(np.mean(pair_scores)) if pair_scores else 0.0, 4))
+                fj  = _freq(wj)
+                fij = _cooc(wi, wj)
+                if fj == 0 or fij == 0:
+                    npmi_matrix[(i, j)] = 0.0
+                    continue
+                p_i  = fi  / N
+                p_j  = fj  / N
+                p_ij = fij / N
+                raw_pmi  = np.log(p_ij / (p_i * p_j) + 1e-10)
+                norm_val = -np.log(p_ij + 1e-10)
+                npmi_matrix[(i, j)] = float(raw_pmi / (norm_val + 1e-10))
+
+        # Indirect confirmation measure: cosine of phi(wi) vs sum(phi(wj))
+        topic_scores = []
+        for i in range(len(wds)):
+            vec_i   = np.array([npmi_matrix.get((i, j), 0.0) for j in range(len(wds)) if j != i])
+            sum_vec = np.zeros(len(wds) - 1)
+            for k, j in enumerate(x for x in range(len(wds)) if x != i):
+                sum_vec[k] = sum(npmi_matrix.get((j, m), 0.0) for m in range(len(wds)) if m != j)
+            norm_i = np.linalg.norm(vec_i)
+            norm_s = np.linalg.norm(sum_vec)
+            if norm_i < 1e-10 or norm_s < 1e-10:
+                topic_scores.append(0.0)
+            else:
+                cos = float(np.dot(vec_i, sum_vec) / (norm_i * norm_s))
+                # Shift from [-1,1] to [0,1]
+                topic_scores.append((cos + 1.0) / 2.0)
+        scores.append(round(float(np.mean(topic_scores)) if topic_scores else 0.0, 4))
     return scores
 
 
 def _coherence_cnpmi(topic_words_list, tokenized_docs, top_n=10):
     """
-    C_NPMI coherence approximation:
-    NPMI = PMI / -log(p(wi,wj)) — normalised to [-1, 1].
+    C_NPMI coherence: average pairwise NPMI over the top-N topic words.
+    NPMI ∈ [-1, 1]:  1 = always co-occur, 0 = independent, -1 = never.
+    This is the standard definition and will give different (lower) values than C_V.
     """
-    vocab = {}
-    for doc in tokenized_docs:
-        for w in set(doc): vocab[w] = vocab.get(w, 0) + 1
-    N = len(tokenized_docs)
+    doc_sets = [set(doc) for doc in tokenized_docs]
+    N = len(doc_sets)
+
+    def _freq(w):
+        return sum(1 for ds in doc_sets if w in ds)
+
+    def _cooc(wi, wj):
+        return sum(1 for ds in doc_sets if wi in ds and wj in ds)
+
     scores = []
     for words in topic_words_list:
         wds = words[:top_n]
         pair_scores = []
         for i in range(len(wds)):
-            for j in range(i+1, len(wds)):
+            for j in range(i + 1, len(wds)):
                 wi, wj = wds[i], wds[j]
-                fi  = vocab.get(wi, 0)
-                fj  = vocab.get(wj, 0)
-                fij = sum(1 for doc in tokenized_docs if wi in doc and wj in doc)
+                fi  = _freq(wi)
+                fj  = _freq(wj)
+                fij = _cooc(wi, wj)
                 if fi == 0 or fj == 0 or fij == 0:
                     pair_scores.append(-1.0)
                     continue
-                p_ij = fij / N
                 p_i  = fi  / N
                 p_j  = fj  / N
+                p_ij = fij / N
                 pmi  = np.log(p_ij / (p_i * p_j) + 1e-10)
                 npmi = pmi / (-np.log(p_ij + 1e-10))
-                pair_scores.append(float(npmi))
+                # Clamp to [-1, 1] to handle floating point edge cases
+                pair_scores.append(float(max(-1.0, min(1.0, npmi))))
         scores.append(round(float(np.mean(pair_scores)) if pair_scores else -1.0, 4))
     return scores
 
@@ -3494,9 +3554,30 @@ def topic_model():
     body       = request.json
     algorithm  = body.get("algorithm", "lda")   # lda | nmf | lsa
     n_topics   = int(body.get("n_topics",  5))
-    max_vocab  = int(body.get("max_vocab", 500))
+    max_vocab  = int(body.get("max_vocab", 1000))
     top_n_words= int(body.get("top_words", 15))
     user_max_iter = min(int(body.get("max_iter", 0)), 2000)  # 0 = auto, máx 2000
+
+    # ── Advanced vectorizer params ───────────────────────────────────────────
+    min_df     = max(1, int(body.get("min_df", 2)))
+    max_df     = float(body.get("max_df", 1.0))
+    max_df     = max(0.05, min(1.0, max_df))   # clamp to [0.05, 1.0]
+    stop_words_opt = body.get("stop_words", None)  # None | "auto" | "english" | "spanish"
+
+    # ── LDA priors ───────────────────────────────────────────────────────────
+    _ALPHA_MAP = {"auto": None, "symmetric": "symmetric",
+                  "0.001": 0.001, "0.01": 0.01, "0.05": 0.05, "0.1": 0.1,
+                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "0.7": 0.7,
+                  "1.0": 1.0, "2.0": 2.0, "5.0": 5.0, "10.0": 10.0}
+    _BETA_MAP  = {"auto": None,
+                  "0.001": 0.001, "0.01": 0.01, "0.05": 0.05, "0.1": 0.1,
+                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "1.0": 1.0,
+                  "2.0": 2.0, "5.0": 5.0}
+    raw_alpha  = str(body.get("doc_topic_prior",  "auto"))
+    raw_beta   = str(body.get("topic_word_prior", "auto"))
+    lda_alpha  = _ALPHA_MAP.get(raw_alpha, None)   # None → sklearn default ("auto")
+    lda_beta   = _BETA_MAP.get(raw_beta,   None)
+
     # Labeling params (optional — if label_classes provided, run weak labeling too)
     label_classes   = body.get("label_classes", [])    # [{name, keywords}]
     label_strategy  = body.get("label_strategy", "most")
@@ -3509,17 +3590,29 @@ def topic_model():
     def topic_worker():
         try:
             reset_progress()
-            push_progress(5, f"Vectorizando corpus ({algorithm.upper()})…")
+            _es = (_UI_LANG == "es")
+            push_progress(3, "Detectando idioma del corpus…" if _es else "Detecting corpus language…")
+            corpus_lang = _detect_corpus_lang(proc)
+            print(f"[TOPIC] corpus_lang={corpus_lang}", flush=True)
+
+            push_progress(5, f"Vectorizando corpus ({algorithm.upper()})…" if _es else f"Vectorising corpus ({algorithm.upper()})…")
             time.sleep(0.05)
 
-            min_df = 2 if len(proc) > 50 else 1
+            # Resolve stop_words: "auto" → use corpus language, else explicit or None
+            _sw = None
+            if stop_words_opt == "auto":
+                _sw = "english" if corpus_lang == "en" else None  # sklearn only has english built-in
+            elif stop_words_opt in ("english", "spanish"):
+                _sw = stop_words_opt if stop_words_opt == "english" else None
+
             tokenized = [t.lower().split() for t in proc]
 
             # Choose vectorizer and model
             if algorithm == "lda":
-                vec = CountVectorizer(max_features=max_vocab, min_df=min_df)
+                vec = CountVectorizer(max_features=max_vocab, min_df=min_df,
+                                      max_df=max_df, stop_words=_sw)
                 X   = vec.fit_transform(proc)
-                push_progress(20, "Ajustando LDA…")
+                push_progress(20, "Ajustando LDA…" if _es else "Fitting LDA…")
                 n_docs = len(proc)
                 if user_max_iter > 0:
                     n_iter = user_max_iter
@@ -3531,19 +3624,20 @@ def topic_model():
                     n_iter = 300
                 print(f"[LDA] n_docs={n_docs}, n_topics={n_topics}, max_iter={n_iter}", flush=True)
 
-                # ── Iterative fit with per-iteration progress + ETA ──────────
-                _lda_iter_times = []
-                _lda_converged  = False
-                _lda_prev_perp  = None
-                # Minimum iterations before allowing early stop — avoids stopping
-                # in the steep initial drop (corpus with many words converges fast
-                # in perplexity terms but topics are still forming)
-                _lda_min_iter   = max(50, n_iter // 4)
+                # ── Iterative fit with per-iteration progress + ETA + C_V optimisation ──
+                _lda_iter_times  = []
+                _lda_converged   = False
+                _lda_prev_perp   = None
+                _lda_min_iter    = max(50, n_iter // 4)
 
-                lda_partial = LatentDirichletAllocation(
-                    n_components=n_topics, random_state=42,
-                    max_iter=1, learning_method="batch",
-                    evaluate_every=-1, perp_tol=0)
+                _lda_kwargs = dict(n_components=n_topics, random_state=42,
+                                   max_iter=1, learning_method="batch",
+                                   evaluate_every=-1, perp_tol=0)
+                if lda_alpha is not None: _lda_kwargs["doc_topic_prior"]  = lda_alpha
+                if lda_beta  is not None: _lda_kwargs["topic_word_prior"] = lda_beta
+                print(f"[LDA] alpha={lda_alpha or 'auto'} beta={lda_beta or 'auto'} "
+                      f"min_df={min_df} max_df={max_df} stop_words={_sw} vocab={max_vocab}", flush=True)
+                lda_partial = LatentDirichletAllocation(**_lda_kwargs)
 
                 for _it in range(1, n_iter + 1):
                     _t0 = time.time()
@@ -3555,22 +3649,20 @@ def topic_model():
                     _lda_iter_times.append(_iter_t)
 
                     # ETA based on rolling average of last 5 iterations
-                    _recent = _lda_iter_times[-5:]
-                    _avg_t  = sum(_recent) / len(_recent)
+                    _recent  = _lda_iter_times[-5:]
+                    _avg_t   = sum(_recent) / len(_recent)
                     _remaining = int(_avg_t * (n_iter - _it))
-                    if _remaining >= 60:
-                        _eta_str = f"{_remaining // 60}m {_remaining % 60}s"
-                    else:
-                        _eta_str = f"{_remaining}s"
+                    _eta_str = (f"{_remaining // 60}m {_remaining % 60}s"
+                                if _remaining >= 60 else f"{_remaining}s")
 
-                    # Convergence check: delta < 0.01% AND past minimum iterations
+                    # Perplexity convergence check
                     _perp_now = float(lda_partial.perplexity(X))
                     _converged_str = ""
                     if _lda_prev_perp is not None and _it >= _lda_min_iter:
                         _delta = abs(_lda_prev_perp - _perp_now) / max(abs(_lda_prev_perp), 1)
-                        if _delta < 1e-4:   # 0.01% — much stricter than before
+                        if _delta < 1e-4:
                             _lda_converged = True
-                            _converged_str = " ✓ convergido"
+                            _converged_str = " ✓ converged" if not _es else " ✓ convergido"
                     _lda_prev_perp = _perp_now
 
                     # Progress: iter range mapped 20→58%
@@ -3580,23 +3672,24 @@ def topic_model():
                     print(f"[LDA] {_msg}", flush=True)
 
                     if _lda_converged:
-                        print(f"[LDA] convergencia alcanzada en iteración {_it} (mín={_lda_min_iter})", flush=True)
-                        push_progress(58, f"LDA convergido en iter {_it}/{n_iter} ✓")
+                        print(f"[LDA] convergencia en iter {_it} (mín={_lda_min_iter})", flush=True)
+                        push_progress(58, (f"LDA converged at iter {_it}/{n_iter} ✓") if not _es else (f"LDA convergido en iter {_it}/{n_iter} ✓"))
                         break
 
-                model        = lda_partial
-                components   = model.components_
+                model            = lda_partial
+                components       = model.components_
                 doc_topic_matrix = model.transform(X)
-                perplexity   = round(float(model.perplexity(X)), 1)
+                perplexity       = round(float(model.perplexity(X)), 1)
 
             elif algorithm == "nmf":
-                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
+                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df,
+                                      max_df=max_df, stop_words=_sw)
                 X   = vec.fit_transform(proc)
                 nmf_iter = user_max_iter if user_max_iter > 0 else 400
                 print(f"[NMF] n_docs={len(proc)}, n_topics={n_topics}, max_iter={nmf_iter}", flush=True)
 
                 # NMF no tiene partial_fit, pero sí reportamos progreso por bloques
-                push_progress(20, f"Ajustando NMF (max {nmf_iter} iter)…")
+                push_progress(20, f"Ajustando NMF (max {nmf_iter} iter)…" if _es else f"Fitting NMF (max {nmf_iter} iter)…")
                 _nmf_block = max(1, nmf_iter // 10)
                 _nmf_done  = 0
                 _nmf_t0    = time.time()
@@ -3618,13 +3711,13 @@ def topic_model():
 
                     _recon_err = _nmf_model_tmp.reconstruction_err_
                     _pct = 20 + int(38 * _nmf_done / nmf_iter)
-                    _msg = f"NMF iter {_nmf_done}/{nmf_iter} · err {_recon_err:.4f} · ETA {_eta_str}"
+                    _msg = f"NMF iter {_nmf_done}/{nmf_iter} · err {_recon_err:.4f} · ETA {_eta_str}" if not _es else f"NMF iter {_nmf_done}/{nmf_iter} · err {_recon_err:.4f} · ETA {_eta_str}"
                     push_progress(_pct, _msg)
                     print(f"[NMF] {_msg}", flush=True)
 
                     if _nmf_model_tmp.n_iter_ < _nmf_done:
                         _nmf_converged = True
-                        push_progress(58, f"NMF convergido en iter {_nmf_done}/{nmf_iter} ✓")
+                        push_progress(58, f"NMF converged at iter {_nmf_done}/{nmf_iter} ✓" if not _es else f"NMF convergido en iter {_nmf_done}/{nmf_iter} ✓")
                         print(f"[NMF] convergencia alcanzada", flush=True)
 
                 model = _nmf_model_tmp
@@ -3636,9 +3729,10 @@ def topic_model():
                 perplexity = None
 
             else:  # lsa / svd
-                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df)
+                vec = TfidfVectorizer(max_features=max_vocab, min_df=min_df,
+                                      max_df=max_df, stop_words=_sw)
                 X   = vec.fit_transform(proc)
-                push_progress(20, "Ajustando LSA (SVD)…")
+                push_progress(20, "Ajustando LSA (SVD)…" if _es else "Fitting LSA (SVD)…")
                 print(f"[LSA] n_docs={len(proc)}, n_topics={n_topics} (SVD exacto, sin iteraciones)", flush=True)
                 model = TruncatedSVD(n_components=n_topics, random_state=42)
                 W = model.fit_transform(X)
@@ -3650,7 +3744,7 @@ def topic_model():
                 doc_topic_matrix = doc_topic_matrix / row_sums
                 perplexity = None
 
-            push_progress(60, "Extrayendo tópicos…")
+            push_progress(60, "Extrayendo tópicos…" if _es else "Extracting topics…")
             feat   = vec.get_feature_names_out()
             topics = [
                 {
@@ -3662,19 +3756,19 @@ def topic_model():
             ]
             doc_topics = doc_topic_matrix.argmax(axis=1).tolist()
 
-            push_progress(75, "Calculando coherencia C_V…")
+            push_progress(75, "Calculando coherencia C_V…" if _es else "Computing C_V coherence…")
             time.sleep(0.05)
             topic_word_lists = [tp["words"][:10] for tp in topics]
             cv_scores   = _coherence_cv(topic_word_lists, tokenized, top_n=10)
 
-            push_progress(88, "Calculando coherencia C_NPMI…")
+            push_progress(88, "Calculando coherencia C_NPMI…" if _es else "Computing C_NPMI coherence…")
             time.sleep(0.05)
             cnpmi_scores = _coherence_cnpmi(topic_word_lists, tokenized, top_n=10)
 
             # ── Weak labeling (if requested) ──────────────────────────────
             label_result = None
             if label_classes:
-                push_progress(93, "Etiquetando corpus…")
+                push_progress(93, "Etiquetando corpus…" if _es else "Labelling corpus…")
                 class_kws = []
                 for cls in label_classes:
                     kws = [k.lower() if label_ci else k for k in cls.get("keywords", []) if k.strip()]
@@ -3712,49 +3806,17 @@ def topic_model():
                 "topic_diversity": _topic_diversity(topics),
                 "algorithm":       algorithm,
                 "label_result":    label_result,
+                "corpus_lang":     corpus_lang,
                 "task": "topic_model"
             }
 
             # ── Auto-label topics via Groq if toggle is active ───────────
             if HF_LABELING_ACTIVE:
-                push_progress(95, "Etiquetando tópicos con IA…")
-                topic_list_str = "\n".join(
-                    f"Tópico {tp['id']+1} (id={tp['id']}): {', '.join(tp['words'][:10])}"
-                    for tp in topics
-                )
-                prompt_lbl = (
-                    "Eres un experto en análisis de tópicos. Tu tarea es asignar una etiqueta temática a cada tópico.\n\n"
-                    "REGLAS ESTRICTAS para la etiqueta:\n"
-                    "- Entre 2 y 4 palabras como máximo.\n"
-                    "- Debe ser una expresión coherente y natural, como un titular o categoría temática. "
-                    "Ejemplos correctos: 'Política exterior', 'Salud pública', 'Mercados financieros', 'Cine europeo'.\n"
-                    "- NO es una lista de palabras sueltas separadas por espacios. "
-                    "Incorrecto: 'gobierno ley España pp'. Correcto: 'Política española'.\n"
-                    "- Usa sustantivos con adjetivos o preposición cuando ayude al sentido.\n"
-                    "- Idioma: español.\n\n"
-                    "Tópicos a etiquetar:\n"
-                    f"{topic_list_str}\n\n"
-                    "Responde ÚNICAMENTE con este JSON (sin texto antes ni después):\n"
-                    '{"labels":[{"id":0,"label":"Ejemplo etiqueta"},{"id":1,"label":"Otra etiqueta"}]}'
-                )
-                raw_lbl = _call_llm(prompt_lbl)
-                auto_labels = {}
-                if raw_lbl:
-                    jm = re.search(r'\{[\s\S]*\}', raw_lbl)
-                    if jm:
-                        try:
-                            parsed_lbl = json.loads(jm.group())
-                            for item in parsed_lbl.get("labels", []):
-                                auto_labels[str(item["id"])] = _sanitize_label(item["label"])
-                        except Exception:
-                            pass
-                # fallback for any missing
-                for tp in topics:
-                    if str(tp["id"]) not in auto_labels:
-                        auto_labels[str(tp["id"])] = _rule_label(tp["words"])
+                push_progress(95, "Etiquetando tópicos con IA…" if _es else "Labelling topics with AI…")
+                auto_labels = _label_topics_with_lang(topics, corpus_lang)
                 S["results"]["topic_labels"] = auto_labels
 
-            push_progress(100, "Listo ✓")
+            push_progress(100, "Listo ✓" if _es else "Done ✓")
         except Exception as e:
             push_progress(100, f"Error: {str(e)}")
 
@@ -5444,66 +5506,93 @@ def _sanitize_label(label: str) -> str:
     return label
 
 
+def _label_topics_with_lang(topics: list, lang: str = "es") -> dict:
+    """Build a language-aware labeling prompt and call the LLM.
+
+    Returns a dict {str(topic_id): label_str} with every topic covered
+    (falls back to rule-based labels when the LLM is unavailable or fails).
+    """
+    is_es = (lang == "es")
+
+    topic_list_str = "\n".join(
+        f"{'Tópico' if is_es else 'Topic'} {tp['id']+1} (id={tp['id']}): {', '.join(tp['words'][:10])}"
+        for tp in topics
+    )
+
+    if is_es:
+        prompt_lbl = (
+            "Eres un experto en análisis de tópicos. Tu tarea es asignar una etiqueta temática a cada tópico.\n\n"
+            "REGLAS ESTRICTAS para la etiqueta:\n"
+            "- Entre 2 y 4 palabras como máximo.\n"
+            "- Debe ser una expresión coherente y natural, como un titular o categoría temática. "
+            "Ejemplos correctos: 'Política exterior', 'Salud pública', 'Mercados financieros', 'Cine europeo'.\n"
+            "- NO es una lista de palabras sueltas separadas por espacios. "
+            "Incorrecto: 'gobierno ley España pp'. Correcto: 'Política española'.\n"
+            "- Usa sustantivos con adjetivos o preposición cuando ayude al sentido.\n"
+            "- Idioma de las etiquetas: ESPAÑOL.\n\n"
+            "Tópicos a etiquetar:\n"
+            f"{topic_list_str}\n\n"
+            "Responde ÚNICAMENTE con este JSON (sin texto antes ni después):\n"
+            '{"labels":[{"id":0,"label":"Ejemplo etiqueta"},{"id":1,"label":"Otra etiqueta"}]}'
+        )
+    else:
+        prompt_lbl = (
+            "You are an expert in topic analysis. Your task is to assign a thematic label to each topic.\n\n"
+            "STRICT RULES for the label:\n"
+            "- 2 to 4 words maximum.\n"
+            "- Must be a coherent, natural expression like a headline or thematic category. "
+            "Correct examples: 'Foreign policy', 'Public health', 'Financial markets', 'European cinema'.\n"
+            "- NOT a list of unrelated words separated by spaces. "
+            "Incorrect: 'government law spain party'. Correct: 'Spanish politics'.\n"
+            "- Use nouns with adjectives or prepositions where they add meaning.\n"
+            "- Label language: ENGLISH.\n\n"
+            "Topics to label:\n"
+            f"{topic_list_str}\n\n"
+            "Respond ONLY with this JSON (no text before or after):\n"
+            '{"labels":[{"id":0,"label":"Example label"},{"id":1,"label":"Another label"}]}'
+        )
+
+    raw_lbl = _call_llm(prompt_lbl)
+    auto_labels: dict = {}
+
+    if raw_lbl:
+        jm = re.search(r'\{[\s\S]*\}', raw_lbl)
+        if jm:
+            try:
+                parsed_lbl = json.loads(jm.group())
+                for item in parsed_lbl.get("labels", []):
+                    lbl = _sanitize_label(item.get("label", ""))
+                    if lbl:
+                        auto_labels[str(item["id"])] = lbl
+            except Exception:
+                pass
+
+    # Fallback for any topic the LLM missed
+    for tp in topics:
+        if str(tp["id"]) not in auto_labels:
+            auto_labels[str(tp["id"])] = _rule_label(tp["words"])
+
+    print(f"[LABEL] lang={lang} → {auto_labels}", flush=True)
+    return auto_labels
+
+
 @app.route("/api/llm_label_topics", methods=["POST"])
 def llm_label_topics():
-    res = S.get("results", {})
+    res    = S.get("results", {})
     topics = res.get("topics", [])
     if not topics:
         return jsonify({"error": "Ejecuta primero el Topic Model"}), 400
 
-    topic_list = "\n".join(
-        f"Tópico {tp['id']+1} (id={tp['id']}): {', '.join(tp['words'][:10])}"
-        for tp in topics
-    )
-    prompt = (
-        "Eres un experto en análisis de tópicos. Tu tarea es asignar una etiqueta temática a cada tópico.\n\n"
-        "REGLAS ESTRICTAS para la etiqueta:\n"
-        "- Entre 2 y 4 palabras como máximo.\n"
-        "- Debe ser una expresión coherente y natural, como un titular o categoría temática. "
-        "Ejemplos correctos: 'Política exterior', 'Salud pública', 'Mercados financieros', 'Cine europeo'.\n"
-        "- NO es una lista de palabras sueltas separadas por espacios. "
-        "Incorrecto: 'gobierno ley España pp'. Correcto: 'Política española'.\n"
-        "- Usa sustantivos con adjetivos o preposición cuando ayude al sentido.\n"
-        "- Idioma: español.\n\n"
-        "Tópicos a etiquetar:\n"
-        f"{topic_list}\n\n"
-        "Responde ÚNICAMENTE con este JSON (sin texto antes ni después):\n"
-        '{"labels":[{"id":0,"label":"Ejemplo etiqueta"},{"id":1,"label":"Otra etiqueta"}]}'
-    )
+    # Use the language detected when the model was trained; fall back to detecting now
+    corpus_lang = res.get("corpus_lang") or _detect_corpus_lang(S.get("texts", []) or S.get("processed_texts", []))
 
-    raw = _call_llm(prompt)
+    label_map = _label_topics_with_lang(topics, corpus_lang)
+    labels_out = [{"id": tp["id"], "label": label_map.get(str(tp["id"]), ""), "words": tp["words"]}
+                  for tp in topics]
+    llm_ok = any(v for v in label_map.values())
 
-    labels_out = []
-    reasoning  = ""
-    llm_ok     = False
-
-    if raw:
-        json_match = re.search(r'\{[\s\S]*\}', raw)
-        if json_match:
-            try:
-                parsed     = json.loads(json_match.group())
-                llm_labels = parsed.get("labels", [])
-                reasoning  = parsed.get("reasoning", "")
-                if llm_labels:
-                    for tp in topics:
-                        match = next((l for l in llm_labels if l.get("id") == tp["id"]), None)
-                        raw_lbl = match["label"] if match else None
-                        lbl = _sanitize_label(raw_lbl) if raw_lbl else _rule_label(tp["words"])
-                        labels_out.append({"id": tp["id"], "label": lbl, "words": tp["words"]})
-                    llm_ok = True
-            except Exception:
-                pass
-
-    if not llm_ok:
-        for tp in topics:
-            labels_out.append({
-                "id":    tp["id"],
-                "label": _rule_label(tp["words"]),
-                "words": tp["words"]
-            })
-        reasoning = "Etiquetado automático por reglas (Groq no disponible o sin respuesta)."
-
-    S["results"]["topic_labels"] = {str(item["id"]): item["label"] for item in labels_out}
+    S["results"]["topic_labels"] = label_map
+    reasoning = f"Corpus language detected: {corpus_lang}. {'LLM labeling used.' if llm_ok else 'Rule-based fallback.'}"
     return jsonify({"labels": labels_out, "reasoning": reasoning, "llm_used": llm_ok})
 
 
@@ -8073,19 +8162,21 @@ def _cosine_matrix(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
 
 
 def _split_into_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
-    """Naive character-level recursive splitter (mirrors RecursiveCharacterTextSplitter logic)."""
-    if len(text) <= chunk_size:
+    """Word-level splitter. chunk_size and overlap are measured in words."""
+    words = text.split()
+    if len(words) <= chunk_size:
         return [text] if text.strip() else []
     chunks = []
+    stride = max(1, chunk_size - overlap)
     start  = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunk = text[start:end]
-        if chunk.strip():
-            chunks.append(chunk)
-        if end >= len(text):
+    while start < len(words):
+        end   = min(start + chunk_size, len(words))
+        piece = " ".join(words[start:end])
+        if piece.strip():
+            chunks.append(piece)
+        if end >= len(words):
             break
-        start += chunk_size - overlap
+        start += stride
     return chunks
 
 
@@ -8102,8 +8193,8 @@ def rag_chunk():
     node_id       = str(body.get("node_id", ""))
     src_id        = str(body.get("source_node_id", ""))
     text_col      = body.get("text_col", "")
-    chunk_size    = int(body.get("chunk_size", 500))
-    overlap       = int(body.get("overlap", 0))
+    chunk_size    = int(body.get("chunk_size", 100))   # now in words
+    overlap       = int(body.get("overlap", 0))          # now in words
     use_processed = bool(body.get("use_processed", False))
     chunk_mode    = body.get("chunk_mode", "auto")   # "auto" | "one_per_doc"
 
@@ -8142,7 +8233,7 @@ def rag_chunk():
     if not all_chunks:
         return jsonify({"error": "El chunking no produjo ningún fragmento."}), 400
 
-    avg_len = sum(len(c["text"]) for c in all_chunks) / len(all_chunks)
+    avg_len = sum(len(c["text"].split()) for c in all_chunks) / len(all_chunks)
 
     # ── Persist ──────────────────────────────────────────────────────────────
     slot_rag = _rag_slot(node_id)
@@ -8510,7 +8601,7 @@ def rag_generate():
 @app.route("/api/rag_export_html", methods=["POST"])
 def rag_export_html():
     """Generate a self-contained HTML report of the RAG pipeline results."""
-    import html as _html
+    import html as _html, re as _re
     from datetime import datetime
 
     body             = request.get_json(force=True, silent=True) or {}
@@ -8519,159 +8610,200 @@ def rag_export_html():
     resp_with_rag    = body.get("response_with_rag", "")
     llm_model        = body.get("llm_model", "")
     llm_time         = body.get("llm_time", "")
+    embed_time       = body.get("embed_time", "")
     system_prompt    = body.get("system_prompt", "")
     ctx_chunks       = body.get("context_chunks", [])
     chunk_cfg        = body.get("chunk_cfg", {})
     corpus_name      = body.get("corpus_name", "")
     n_docs           = body.get("n_docs", 0)
     n_embeddings     = body.get("n_embeddings", 0)
+    top_k            = body.get("top_k", len(ctx_chunks))
+    embed_model      = body.get("embed_model", "")
     report_lang      = body.get("lang", "es")
     now              = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    # ── i18n strings ─────────────────────────────────────────────────────────
     _en = report_lang == "en"
-    _t  = {
-        "title":          "RAG Results Report"            if _en else "Informe de Resultados RAG",
-        "generated":      "Generated on"                  if _en else "Generado el",
-        "pipeline_cfg":   "Pipeline Configuration"        if _en else "Configuración de la pipeline",
-        "corpus":         "Corpus"                        if _en else "Corpus",
-        "documents":      "documents"                     if _en else "documentos",
-        "embeddings":     "embeddings",
-        "chunking":       "Chunking",
-        "model":          "Model"                         if _en else "Modelo",
-        "sec1":           "1 — Query and Retrieval"       if _en else "1 — Consulta y recuperación",
-        "query_lbl":      "Query"                         if _en else "Consulta",
-        "frags_lbl":      "Retrieved fragments"           if _en else "Fragmentos recuperados",
-        "no_frags":       "No fragments retrieved."       if _en else "No hay fragmentos recuperados.",
-        "sec2":           "2 — Response without RAG"      if _en else "2 — Respuesta sin RAG",
-        "sec3":           "3 — Response with RAG"         if _en else "3 — Respuesta con RAG",
-        "prompt_lbl":     "Prompt sent to the LLM"        if _en else "Prompt enviado al LLM",
-        "resp_lbl":       "Response"                      if _en else "Respuesta",
-        "no_resp":        "No response generated."        if _en else "Sin respuesta generada.",
-        "rag_note":       ("💡 <strong>RAG in one sentence:</strong> the difference between the two responses "
-                           "comes from the LLM receiving the retrieved corpus fragments as context in its prompt. "
-                           "It is not magic — it is literally more text in the input.")
-                          if _en else
-                          ("💡 <strong>RAG en una frase:</strong> la diferencia entre las dos respuestas se debe únicamente "
-                           "a que el LLM recibe los fragmentos del corpus como contexto en el prompt. "
-                           "No es magia — es literalmente más texto en el input."),
-        "footer":         "Generated with NLP Flow"       if _en else "Generado con NLP Flow",
-        "one_per_doc":    "1 chunk per document"          if _en else "1 chunk por documento",
-        "chunk_sz":       "chars, overlap"                if _en else "chars, solapamiento",
-        "hash_lbl":       "#",
-        "score_lbl":      "Score",
-        "frag_lbl":       "Fragment"                      if _en else "Fragmento",
-    }
 
     def _e(t): return _html.escape(str(t or ""))
     def _md(t):
-        """Very minimal markdown to HTML for the report."""
-        import re
         s = _e(t)
-        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
-        s = re.sub(r'\*(.+?)\*',     r'<em>\1</em>', s)
-        s = re.sub(r'^### (.+)$', r'<h3>\1</h3>', s, flags=re.MULTILINE)
-        s = re.sub(r'^## (.+)$',  r'<h2>\1</h2>', s, flags=re.MULTILINE)
-        s = re.sub(r'^# (.+)$',   r'<h1>\1</h1>', s, flags=re.MULTILINE)
-        s = re.sub(r'^\s*[-*] (.+)$', r'<li>\1</li>', s, flags=re.MULTILINE)
+        s = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        s = _re.sub(r'\*(.+?)\*',     r'<em>\1</em>', s)
+        s = _re.sub(r'^### (.+)$', r'<h4>\1</h4>', s, flags=_re.MULTILINE)
+        s = _re.sub(r'^## (.+)$',  r'<h3>\1</h3>', s, flags=_re.MULTILINE)
+        s = _re.sub(r'^# (.+)$',   r'<h3>\1</h3>', s, flags=_re.MULTILINE)
+        s = _re.sub(r'^\s*[-*] (.+)$', r'<li>\1</li>', s, flags=_re.MULTILINE)
+        s = _re.sub(r'(<li>.*</li>)', r'<ul>\1</ul>', s, flags=_re.DOTALL)
         s = s.replace('\n', '<br>')
         return s
 
-    # ── Fragments table ───────────────────────────────────────────────────────
-    frags_rows = ""
-    for i, c in enumerate(ctx_chunks):
-        score  = c.get("score", 0)
-        text   = (c.get("text") or "")[:500] + ("…" if len(c.get("text","")) > 500 else "")
-        frags_rows += (
-            f'<tr><td style="width:36px;text-align:center;color:#888">{i+1}</td>'
-            f'<td style="width:70px;text-align:center"><span class="score">{score:.4f}</span></td>'
-            f'<td style="font-size:12px;line-height:1.5">{_e(text)}</td></tr>'
-        )
+    # ── chunk mode label ─────────────────────────────────────────────────────
+    one_per = "1 chunk per document" if _en else "1 chunk por documento"
+    chunk_sz_lbl = "words, overlap" if _en else "palabras, solapamiento"
+    chunk_mode_lbl = one_per if chunk_cfg.get("chunk_mode") == "one_per_doc" \
+        else f"{chunk_cfg.get('chunk_size','?')} {chunk_sz_lbl} {chunk_cfg.get('overlap',0)}"
 
-    chunk_mode_lbl = _t["one_per_doc"] if chunk_cfg.get("chunk_mode") == "one_per_doc" else \
-                     f"{chunk_cfg.get('chunk_size','?')} {_t['chunk_sz']} {chunk_cfg.get('overlap',0)}"
+    # ── score color helper ────────────────────────────────────────────────────
+    def _score_color(s):
+        if s >= 0.7: return "#1a7f4b", "#d4f5e2"
+        if s >= 0.4: return "#8a6000", "#fff3cd"
+        return "#b00020", "#fde8ec"
+
+    # ── fragments cards ───────────────────────────────────────────────────────
+    frag_cards = ""
+    for i, c in enumerate(ctx_chunks):
+        score = float(c.get("score", 0))
+        text  = (c.get("text") or "")
+        preview = text[:400] + ("…" if len(text) > 400 else "")
+        ink, bg = _score_color(score)
+        frag_cards += f"""
+        <div class="frag-card">
+          <div class="frag-hdr">
+            <span class="frag-num">#{i+1}</span>
+            <span class="frag-score" style="color:{ink};background:{bg}">{score:.4f}</span>
+            <span class="frag-doc" style="color:var(--sec)">doc {c.get('doc_idx','?')} · chunk {c.get('chunk_idx','?')}</span>
+          </div>
+          <div class="frag-text">{_e(preview)}</div>
+        </div>"""
+
+    # ── prompt previews ───────────────────────────────────────────────────────
+    prompt_no_rag = ("Question: " if _en else "Pregunta: ") + query
+    ctx_preview   = ("\n".join(
+        f"[{'Fragment' if _en else 'Fragmento'} {i+1}] {c.get('text','')[:180]}{'…' if len(c.get('text',''))>180 else ''}"
+        for i, c in enumerate(ctx_chunks[:4])
+    ) + ("\n[…]" if len(ctx_chunks) > 4 else ""))
+    prompt_rag = (("=== CONTEXT ===" if _en else "=== CONTEXTO ===") + "\n" +
+                  ctx_preview + "\n\n" +
+                  ("Question: " if _en else "Pregunta: ") + query)
 
     html_lang = "en" if _en else "es"
+    T = lambda es, en: en if _en else es
+
     html_out = f"""<!DOCTYPE html>
 <html lang="{html_lang}">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_t["title"]} — NLP Flow</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{T("Informe RAG", "RAG Report")} — NLP Flow</title>
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          background: #fff; color: #111; padding: 32px 40px; max-width: 900px;
-          margin: 0 auto; font-size: 14px; line-height: 1.6; }}
-  @media print {{ body {{ padding: 16px; }} .no-print {{ display: none; }} }}
-  h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 4px; }}
-  h2 {{ font-size: 15px; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .06em; color: #555; margin: 28px 0 10px;
-        padding-bottom: 4px; border-bottom: 1px solid #e0e0e0; }}
-  h3 {{ font-size: 13px; font-weight: 600; color: #333; margin: 10px 0 4px; }}
-  .meta {{ font-size: 12px; color: #666; margin-top: 4px; }}
-  .pill {{ display:inline-block; background:#f3f3f3; border:1px solid #ddd;
-           border-radius:20px; padding:2px 10px; font-size:11px; margin:2px; }}
-  .query-box {{ background:#f0f8ff; border:1px solid #b3d9ff; border-radius:8px;
-               padding:12px 16px; font-size:14px; font-weight:600; color:#1a4a7a; margin-bottom:4px; }}
-  table {{ width:100%; border-collapse:collapse; margin-top:6px; }}
-  th {{ background:#f7f7f7; font-size:11px; font-weight:700; text-transform:uppercase;
-        letter-spacing:.05em; color:#555; padding:6px 10px; text-align:left;
-        border-bottom:2px solid #e0e0e0; }}
-  td {{ padding:8px 10px; border-bottom:1px solid #f0f0f0; vertical-align:top; }}
-  tr:last-child td {{ border-bottom:none; }}
-  .score {{ background:#e8f5e9; color:#2e7d32; border-radius:4px;
-            padding:1px 6px; font-size:12px; font-family:monospace; font-weight:600; }}
-  .resp-box {{ background:#f9f9f9; border:1px solid #e0e0e0; border-radius:8px;
-               padding:14px 16px; font-size:13px; line-height:1.7; margin-top:6px; }}
-  .resp-box.rag {{ background:#f0fff4; border-color:#b2f5c8; }}
-  .prompt-box {{ background:#f5f5f5; border:1px solid #ddd; border-radius:6px;
-                 padding:10px 12px; font-size:11px; font-family:monospace;
-                 white-space:pre-wrap; word-break:break-word; color:#444; margin-top:6px; }}
-  .label {{ font-size:11px; font-weight:700; text-transform:uppercase;
-            letter-spacing:.06em; color:#888; margin-bottom:4px; }}
-  .note {{ font-size:12px; color:#666; margin-top:8px; font-style:italic; }}
-  footer {{ margin-top:40px; padding-top:14px; border-top:1px solid #eee;
-            font-size:11px; color:#aaa; text-align:center; }}
+  :root{{
+    --bg:#f4f4f8; --card:#fff; --accent:#1db954; --accent2:#0d7a3a;
+    --ink:#1a1a2e; --sec:#4a4a6a; --border:#e0e0f0;
+    --r:12px; --sh:0 2px 14px rgba(0,0,0,.08);
+    --rag-bg:#f0fff6; --rag-border:#b2f5cc;
+    --norag-bg:#f8f8fc; --norag-border:#d0d0e8;
+  }}
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px 16px;line-height:1.65;}}
+  .wrap{{max-width:1000px;margin:0 auto;}}
+  /* ── header ── */
+  .report-hdr{{background:linear-gradient(135deg,#0d7a3a 0%,#1db954 100%);border-radius:var(--r);padding:28px 32px;color:#fff;margin-bottom:28px;}}
+  .report-hdr h1{{font-size:1.8rem;font-weight:800;margin-bottom:4px;}}
+  .report-hdr .sub{{opacity:.8;font-size:.93rem;}}
+  /* ── sections ── */
+  h2{{font-size:1rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--sec);margin:28px 0 12px;border-left:4px solid var(--accent);padding-left:10px;}}
+  /* ── metric cards ── */
+  .mgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:8px;}}
+  .mcard{{background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);}}
+  .mcard .val{{font-size:1.25rem;font-weight:700;color:var(--accent2);word-break:break-all;}}
+  .mcard .lbl{{font-size:.72rem;color:var(--sec);margin-top:3px;text-transform:uppercase;letter-spacing:.04em;}}
+  .mcard.wide{{grid-column:1/-1;}}
+  .mcard.wide .val{{font-size:.88rem;font-weight:500;word-break:break-word;}}
+  /* ── query ── */
+  .query-box{{background:var(--card);border:2px solid var(--accent);border-radius:var(--r);padding:16px 20px;font-size:1.05rem;font-weight:600;color:var(--ink);box-shadow:var(--sh);}}
+  /* ── fragments ── */
+  .frag-card{{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);}}
+  .frag-hdr{{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;}}
+  .frag-num{{font-weight:700;font-size:.85rem;color:var(--sec);}}
+  .frag-score{{padding:2px 9px;border-radius:20px;font-size:.8rem;font-weight:700;font-family:monospace;}}
+  .frag-doc{{font-size:.75rem;}}
+  .frag-text{{font-size:.82rem;color:#333;line-height:1.6;font-family:'Georgia',serif;}}
+  /* ── response boxes ── */
+  .resp-wrap{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px;}}
+  @media(max-width:700px){{.resp-wrap{{grid-template-columns:1fr;}}}}
+  .resp-panel{{border-radius:var(--r);padding:18px 20px;box-shadow:var(--sh);}}
+  .resp-panel.norag{{background:var(--norag-bg);border:1px solid var(--norag-border);}}
+  .resp-panel.rag{{background:var(--rag-bg);border:2px solid var(--rag-border);}}
+  .resp-panel .resp-label{{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;}}
+  .resp-panel.norag .resp-label{{color:#555;}}
+  .resp-panel.rag .resp-label{{color:var(--accent2);}}
+  .resp-text{{font-size:.88rem;line-height:1.75;}}
+  .resp-text h3,.resp-text h4{{margin:8px 0 4px;font-size:.92rem;color:var(--ink);}}
+  .resp-text ul{{margin:4px 0 4px 18px;}}
+  .resp-text li{{margin-bottom:2px;}}
+  /* ── prompt box ── */
+  .prompt-box{{background:#1e1e2e;border-radius:var(--r);padding:14px 16px;font-size:.75rem;font-family:'Fira Mono','Consolas',monospace;white-space:pre-wrap;word-break:break-word;color:#cdd6f4;line-height:1.6;overflow-x:auto;}}
+  .prompt-label{{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--sec);margin-bottom:6px;}}
+  /* ── insight note ── */
+  .insight{{background:linear-gradient(135deg,#e8f5fe,#f0fff6);border:1px solid #b3dff5;border-radius:var(--r);padding:16px 20px;font-size:.88rem;color:#1a3a5c;line-height:1.7;margin-top:8px;}}
+  /* ── footer ── */
+  footer{{margin-top:48px;padding-top:14px;border-top:1px solid var(--border);text-align:center;color:var(--sec);font-size:.75rem;}}
 </style>
 </head>
 <body>
+<div class="wrap">
 
-<h1>{_t["title"]}</h1>
-<div class="meta">{_t["generated"]} {_e(now)} · NLP Flow</div>
+  <!-- Header -->
+  <div class="report-hdr">
+    <h1>{'RAG Results Report' if _en else 'Informe de Resultados RAG'}</h1>
+    <div class="sub">{_e(corpus_name) or '—'} &nbsp;·&nbsp; {_e(now)} &nbsp;·&nbsp; NLP Flow</div>
+  </div>
 
-<h2>{_t["pipeline_cfg"]}</h2>
-<div>
-  <span class="pill">📂 {_t["corpus"]}: {_e(corpus_name) or "—"}</span>
-  <span class="pill">📄 {_e(str(n_docs))} {_t["documents"]}</span>
-  <span class="pill">🧬 {_e(str(n_embeddings))} {_t["embeddings"]}</span>
-  <span class="pill">✂️ {_t["chunking"]}: {_e(chunk_mode_lbl)}</span>
-  <span class="pill">🤖 {_t["model"]}: {_e(llm_model)}</span>
-  {"<span class='pill'>⏱ " + _e(llm_time) + "</span>" if llm_time else ""}
+  <!-- Pipeline config cards -->
+  <h2>{'Pipeline Configuration' if _en else 'Configuración de la Pipeline'}</h2>
+  <div class="mgrid">
+    <div class="mcard"><div class="val">{_e(str(n_docs)) or '—'}</div><div class="lbl">{'Documents' if _en else 'Documentos'}</div></div>
+    <div class="mcard"><div class="val">{_e(str(n_embeddings)) if n_embeddings else '—'}</div><div class="lbl">Embeddings</div></div>
+    <div class="mcard"><div class="val">{_e(str(top_k or len(ctx_chunks)))}</div><div class="lbl">Top-K {'retrieved' if _en else 'recuperados'}</div></div>
+    <div class="mcard"><div class="val">{_e(embed_time) or '—'}</div><div class="lbl">{'Embedding time' if _en else 'Tiempo embeddings'}</div></div>
+    <div class="mcard"><div class="val">{_e(llm_time) or '—'}</div><div class="lbl">{'LLM time' if _en else 'Tiempo LLM'}</div></div>
+    <div class="mcard wide"><div class="val">✂️ {_e(chunk_mode_lbl)}</div><div class="lbl">Chunking</div></div>
+    <div class="mcard wide"><div class="val">🤖 {_e(llm_model) or '—'}</div><div class="lbl">{'Model' if _en else 'Modelo'} LLM</div></div>
+    {('<div class="mcard wide"><div class="val">🧬 ' + _e(embed_model) + '</div><div class="lbl">Embedding model</div></div>') if embed_model else ''}
+  </div>
+
+  <!-- Query -->
+  <h2>{'1 — Query' if _en else '1 — Consulta'}</h2>
+  <div class="query-box">{_e(query) or ('(no query)' if _en else '(sin consulta)')}</div>
+
+  <!-- Fragments -->
+  <h2>{'2 — Retrieved Fragments' if _en else '2 — Fragmentos Recuperados'} ({len(ctx_chunks)})</h2>
+  {frag_cards if frag_cards else ('<p style="color:var(--sec);font-size:.88rem">' + ('No fragments retrieved.' if _en else 'No hay fragmentos recuperados.') + '</p>')}
+
+  <!-- Responses side by side -->
+  <h2>{'3 — Responses' if _en else '3 — Respuestas'}</h2>
+  <div class="resp-wrap">
+    <div class="resp-panel norag">
+      <div class="resp-label">{'Without RAG' if _en else 'Sin RAG'}</div>
+      <div class="resp-text">{_md(resp_no_rag) if resp_no_rag else '<em style="color:#aaa">' + ('No response.' if _en else 'Sin respuesta.') + '</em>'}</div>
+    </div>
+    <div class="resp-panel rag">
+      <div class="resp-label">{'With RAG ✓' if _en else 'Con RAG ✓'}</div>
+      <div class="resp-text">{_md(resp_with_rag) if resp_with_rag else '<em style="color:#aaa">' + ('No response.' if _en else 'Sin respuesta.') + '</em>'}</div>
+    </div>
+  </div>
+
+  <!-- Prompts -->
+  <h2 style="margin-top:32px">{'4 — Prompts sent to the LLM' if _en else '4 — Prompts enviados al LLM'}</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div>
+      <div class="prompt-label">{'Without RAG' if _en else 'Sin RAG'}</div>
+      <div class="prompt-box">{_e(prompt_no_rag)}</div>
+    </div>
+    <div>
+      <div class="prompt-label">{'With RAG' if _en else 'Con RAG'}</div>
+      <div class="prompt-box">{_e(prompt_rag)}</div>
+    </div>
+  </div>
+
+  <!-- Insight note -->
+  <div class="insight" style="margin-top:24px">
+    {'💡 <strong>RAG in one sentence:</strong> the only difference between the two responses is that the LLM received the retrieved fragments as context in its prompt. It is not magic — it is literally more text in the input.' if _en else
+     '💡 <strong>RAG en una frase:</strong> la única diferencia entre las dos respuestas es que el LLM recibió los fragmentos recuperados como contexto en el prompt. No es magia — es literalmente más texto en el input.'}
+  </div>
+
+  <footer>{'Generated with NLP Flow' if _en else 'Generado con NLP Flow'} &nbsp;·&nbsp; {_e(now)}</footer>
 </div>
-
-<h2>{_t["sec1"]}</h2>
-<div class="label">{_t["query_lbl"]}</div>
-<div class="query-box">{_e(query)}</div>
-
-{"<div class='label' style='margin-top:14px'>" + _t["frags_lbl"] + " (" + str(len(ctx_chunks)) + ")</div><table><thead><tr><th>" + _t["hash_lbl"] + "</th><th>" + _t["score_lbl"] + "</th><th>" + _t["frag_lbl"] + "</th></tr></thead><tbody>" + frags_rows + "</tbody></table>" if ctx_chunks else "<div class='note'>" + _t["no_frags"] + "</div>"}
-
-<h2>{_t["sec2"]}</h2>
-<div class="label">{_t["prompt_lbl"]}</div>
-<div class="prompt-box">{_e("Question: " + query) if _en else _e("Pregunta: " + query)}</div>
-<div class="label" style="margin-top:10px">{_t["resp_lbl"]}</div>
-<div class="resp-box">{_md(resp_no_rag) if resp_no_rag else "<em style='color:#aaa'>" + _t["no_resp"] + "</em>"}</div>
-
-<h2>{_t["sec3"]}</h2>
-<div class="label">{_t["prompt_lbl"]}</div>
-<div class="prompt-box">{_e("=== CONTEXT ===" if _en else "=== CONTEXTO ===") + chr(10) + _e(chr(10).join(("[Fragment " if _en else "[Fragmento ") + str(i+1) + "] " + (c.get("text","")[:200]) for i,c in enumerate(ctx_chunks[:3]))) + (chr(10) + _e("[…]") if len(ctx_chunks) > 3 else "") + chr(10) + chr(10) + _e(("Question: " if _en else "Pregunta: ") + query)}</div>
-<div class="label" style="margin-top:10px">{_t["resp_lbl"]}</div>
-<div class="resp-box rag">{_md(resp_with_rag) if resp_with_rag else "<em style='color:#aaa'>" + _t["no_resp"] + "</em>"}</div>
-
-<div class="note" style="margin-top:16px">{_t["rag_note"]}</div>
-
-<footer>{_t["footer"]} · {_e(now)}</footer>
-
 </body>
 </html>"""
 

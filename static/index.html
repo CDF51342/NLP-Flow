@@ -444,6 +444,17 @@ var I18N = {
     // Topic Model new strings
     "tm-iter-lbl":"Iteraciones máx.",
     "tm-iter-hint":"(LDA/NMF · LSA no las usa)",
+    "tm-adv-toggle":"⚙️ Parámetros avanzados",
+    "tm-mindf-lbl":"min_df (frec. mínima de documento)",
+    "tm-maxdf-lbl":"max_df (frec. máxima de documento)",
+    "tm-maxdf-hint":"Elimina términos presentes en más del X% de docs",
+    "tm-stopwords-lbl":"Stopwords integradas",
+    "tm-stopwords-hint":"Filtra stopwords del idioma detectado en el corpus",
+    "tm-alpha-lbl":"Alpha — prior doc-tópico",
+    "tm-alpha-hint":"Bajo → docs concentrados en pocos tópicos",
+    "tm-beta-lbl":"Beta — prior tópico-palabra",
+    "tm-beta-hint":"Bajo → tópicos más especializados",
+    "tm-lda-only":"(Solo LDA)",
     "tm-diversity":"Diversidad",
     "tm-diversity-hint":"(↑ mejor)",
     "tm-running":"Ejecutando…",
@@ -743,6 +754,17 @@ var I18N = {
     // Topic Model new strings
     "tm-iter-lbl":"Max iterations",
     "tm-iter-hint":"(LDA/NMF · LSA does not use iterations)",
+    "tm-adv-toggle":"⚙️ Advanced parameters",
+    "tm-mindf-lbl":"min_df (minimum document frequency)",
+    "tm-maxdf-lbl":"max_df (maximum document frequency)",
+    "tm-maxdf-hint":"Removes terms present in more than X% of docs",
+    "tm-stopwords-lbl":"Built-in stopwords",
+    "tm-stopwords-hint":"Filters stopwords for the detected corpus language",
+    "tm-alpha-lbl":"Alpha — doc-topic prior",
+    "tm-alpha-hint":"Low → documents concentrated on fewer topics",
+    "tm-beta-lbl":"Beta — topic-word prior",
+    "tm-beta-hint":"Low → more specialised topics",
+    "tm-lda-only":"(LDA only)",
     "tm-diversity":"Diversity",
     "tm-diversity-hint":"(↑ better)",
     "tm-running":"Running…",
@@ -5790,6 +5812,13 @@ async function handleCSV(file, node) {
 }
 
 function showDsInfo(data, node) {
+  // Persist dataset metadata so downstream blocks (RAG export, etc.) can read it
+  if (node && node.data) {
+    node.data.ds_name   = data.name || node.data.ds_name || "";
+    node.data.ds_n_docs = data.n    || node.data.ds_n_docs || 0;
+    node.data.ds_n_rows = data.n    || (data.rows && (data.rows.total || data.rows)) || node.data.ds_n_rows || 0;
+  }
+
   var el = document.getElementById("ds-info");
   // Fade out the selector area, then swap in the info panel
   var colLeft = el ? el.closest(".col-left") : null;
@@ -7730,6 +7759,7 @@ async function renderSaveModel(node) {
     btn.textContent = T("save-btn-saving");
     statEl.textContent = T("save-saving");
     var saved = 0, errors = [];
+    try {
 
     // Helper: descarga un Blob con diálogo o fallback
     async function _saveBlob(blob, fname, mime) {
@@ -7967,8 +7997,11 @@ async function renderSaveModel(node) {
           system_prompt:    ragN.data.system_prompt      || "",
           context_chunks:   (ragNodes.retrieve && ragNodes.retrieve.data && ragNodes.retrieve.data.last_results) || [],
           chunk_cfg:        (ragNodes.chunk    && ragNodes.chunk.data)    || {},
-          corpus_name:      (ragNodes.data     && ragNodes.data.data && ragNodes.data.data.filename) || "",
-          n_docs:           (ragNodes.data     && ragNodes.data.data && ragNodes.data.data.rows)     || 0,
+          top_k:            (ragNodes.retrieve && ragNodes.retrieve.data && ragNodes.retrieve.data.top_k) || 0,
+          embed_model:      (ragNodes.embed    && ragNodes.embed.data && ragNodes.embed.data.model) || "",
+          embed_time:       (ragNodes.embed    && ragNodes.embed.data && ragNodes.embed.data.embed_time) || "",
+          corpus_name:      (ragNodes.data && ragNodes.data.data && (ragNodes.data.data.ds_name || ragNodes.data.data.name)) || "",
+          n_docs:           (ragNodes.data && ragNodes.data.data && (ragNodes.data.data.ds_n_docs || ragNodes.data.data.ds_n_rows || ragNodes.data.data.n)) || 0,
           n_embeddings:     (ragNodes.embed    && ragNodes.embed.data && ragNodes.embed.data.n_embeddings) || 0,
           lang:             lang,
         };
@@ -8042,9 +8075,15 @@ async function renderSaveModel(node) {
     var msg = "✓ " + saved + " guardado" + (saved !== 1 ? "s" : "");
     if (errors.length) msg += " · ⚠️ " + errors.join(", ");
     statEl.textContent = msg;
+    if (saved > 0) {
+      setNS(node.id, saved + " ficheros"); setNB(node.id, "guardado", "badge-ok"); setOK(node.id, true);
+    }
+  } catch(err) {
+    statEl.textContent = "⚠️ " + (err && err.message ? err.message : String(err));
+  } finally {
     btn.disabled = false;
     btn.textContent = T("save-download");
-    setNS(node.id, saved + " ficheros"); setNB(node.id, "guardado", "badge-ok"); setOK(node.id, true);
+  }
   };
 }
 
@@ -8561,14 +8600,56 @@ async function renderTopicModel(node) {
             '<div class="rrow"><input type="range" id="tm-ntopics" min="2" max="100" step="1" value="5">' +
               '<input type="number" class="inp rinp" id="tm-ntv" value="5" min="2" max="100" step="1"></div></div>' +
           '<div class="fg"><div class="fl">' + T("tm-vocab-lbl") + '</div>' +
-            '<div class="rrow"><input type="range" id="tm-vocab" min="100" max="2000" step="50" value="500">' +
-              '<input type="number" class="inp rinp" id="tm-vv" value="500" min="100" max="2000" step="50"></div></div>' +
+            '<div class="rrow"><input type="range" id="tm-vocab" min="100" max="5000" step="100" value="1000">' +
+              '<input type="number" class="inp rinp" id="tm-vv" value="1000" min="100" max="5000" step="100"></div></div>' +
           '<div class="fg"><div class="fl">' + T("tm-words-lbl") + '</div>' +
             '<div class="rrow"><input type="range" id="tm-topw" min="5" max="30" value="15">' +
               '<input type="number" class="inp rinp" id="tm-twv" value="15" min="5" max="30"></div></div>' +
           '<div class="fg"><div class="fl">' + T("tm-iter-lbl") + ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-iter-hint") + '</span></div>' +
             '<div class="rrow"><input type="range" id="tm-iter" min="50" max="2000" step="10" value="200">' +
               '<input type="number" class="inp rinp" id="tm-iterv" value="200" min="50" max="2000" step="10"></div></div>' +
+        '</div>' +
+
+        // ── Advanced parameters (collapsible) ──────────────────────────────
+        '<div style="margin-bottom:10px">' +
+          '<button id="tm-adv-btn" class="btn btn-ghost btn-sm" style="width:100%;justify-content:space-between;font-size:12px" onclick="(function(){var p=document.getElementById(\'tm-adv-panel\');var open=p.style.display===\'flex\';p.style.display=open?\'none\':\'flex\';document.getElementById(\'tm-adv-btn\').textContent=(open?\'▶ \':\'▼ \')+\'' + T("tm-adv-toggle").replace(/'/g,"\\'") + '\';})()">▶ ' + T("tm-adv-toggle") + '</button>' +
+          '<div id="tm-adv-panel" style="display:none;flex-direction:column;gap:0;margin-top:8px;padding:10px 12px;background:var(--tinted);border-radius:8px;border:1px solid var(--border)">' +
+
+            // min_df
+            '<div class="fg"><div class="fl">' + T("tm-mindf-lbl") + ' <b id="tm-mindf-val">2</b></div>' +
+              '<div class="rrow"><input type="range" id="tm-mindf" min="1" max="10" step="1" value="2" oninput="document.getElementById(\'tm-mindf-val\').textContent=this.value">' +
+                '<input type="number" class="inp rinp" id="tm-mindfv" value="2" min="1" max="10" step="1"></div></div>' +
+
+            // max_df
+            '<div class="fg"><div class="fl">' + T("tm-maxdf-lbl") + ' <b id="tm-maxdf-val">1.0</b>' +
+              ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-maxdf-hint") + '</span></div>' +
+              '<div class="rrow"><input type="range" id="tm-maxdf" min="0.1" max="1.0" step="0.05" value="1.0" oninput="document.getElementById(\'tm-maxdf-val\').textContent=parseFloat(this.value).toFixed(2)">' +
+                '<input type="number" class="inp rinp" id="tm-maxdfv" value="1.0" min="0.1" max="1.0" step="0.05"></div></div>' +
+
+            // stop_words toggle
+            '<div class="fg" style="flex-direction:row;align-items:center;justify-content:space-between;padding:6px 0">' +
+              '<div>' +
+                '<div style="font-size:12px;font-weight:600">' + T("tm-stopwords-lbl") + '</div>' +
+                '<div style="font-size:11px;color:var(--sec)">' + T("tm-stopwords-hint") + '</div>' +
+              '</div>' +
+              '<label class="plug-toggle"><input type="checkbox" id="tm-stopwords"><span class="plug-slider"></span></label>' +
+            '</div>' +
+
+            // alpha (LDA only)
+            '<div id="tm-alpha-wrap" class="fg"><div class="fl">' + T("tm-alpha-lbl") +
+              ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-lda-only") + '</span>' +
+              ' <span style="font-size:10px;color:var(--sec)">' + T("tm-alpha-hint") + '</span>' +
+              ' <b id="tm-alpha-val">auto</b></div>' +
+              '<div class="rrow"><input type="range" id="tm-alpha" min="0" max="13" step="1" value="0" oninput="document.getElementById(\'tm-alpha-val\').textContent=[\'auto\',\'0.001\',\'0.01\',\'0.05\',\'0.1\',\'0.2\',\'0.3\',\'0.5\',\'0.7\',\'1.0\',\'2.0\',\'5.0\',\'10.0\',\'symmetric\'][parseInt(this.value)]"></div></div>' +
+
+            // beta (LDA only)
+            '<div id="tm-beta-wrap" class="fg"><div class="fl">' + T("tm-beta-lbl") +
+              ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-lda-only") + '</span>' +
+              ' <span style="font-size:10px;color:var(--sec)">' + T("tm-beta-hint") + '</span>' +
+              ' <b id="tm-beta-val">auto</b></div>' +
+              '<div class="rrow"><input type="range" id="tm-beta" min="0" max="10" step="1" value="0" oninput="document.getElementById(\'tm-beta-val\').textContent=[\'auto\',\'0.001\',\'0.01\',\'0.05\',\'0.1\',\'0.2\',\'0.3\',\'0.5\',\'1.0\',\'2.0\',\'5.0\'][parseInt(this.value)]"></div></div>' +
+
+          '</div>' +
         '</div>' +
       '</div>' +
 
@@ -8611,6 +8692,23 @@ async function renderTopicModel(node) {
   syncSliderInput("tm-vocab","tm-vv",     function(v){return parseInt(v);});
   syncSliderInput("tm-topw","tm-twv",     function(v){return parseInt(v);});
   syncSliderInput("tm-iter","tm-iterv",   function(v){return parseInt(v);});
+  syncSliderInput("tm-mindf","tm-mindfv", function(v){return parseInt(v);});
+  syncSliderInput("tm-maxdf","tm-maxdfv", function(v){return parseFloat(v).toFixed(2);});
+
+  // Show/hide alpha & beta only for LDA
+  function _updateLdaOnlyFields() {
+    var algo = document.querySelector('input[name="tm-algo"]:checked');
+    var isLda = algo && algo.value === "lda";
+    ["tm-alpha-wrap","tm-beta-wrap"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.opacity = isLda ? "1" : "0.4";
+      if (el) el.style.pointerEvents = isLda ? "" : "none";
+    });
+  }
+  document.querySelectorAll('input[name="tm-algo"]').forEach(function(r) {
+    r.addEventListener("change", _updateLdaOnlyFields);
+  });
+  _updateLdaOnlyFields();
 
   // ─── Plug toggle: etiquetado IA ────────────────────────────────────────────
   var labelToggle = document.getElementById("tm-label-toggle");
@@ -8663,12 +8761,22 @@ async function renderTopicModel(node) {
     document.getElementById("tm-res").style.display = "none";
 
     var algo = document.querySelector('input[name="tm-algo"]:checked').value;
+    // Alpha & Beta: map slider index to value string
+    var _alphaMap = ["auto","0.001","0.01","0.05","0.1","0.2","0.3","0.5","0.7","1.0","2.0","5.0","10.0","symmetric"];
+    var _betaMap  = ["auto","0.001","0.01","0.05","0.1","0.2","0.3","0.5","1.0","2.0","5.0"];
+    var _alphaIdx = parseInt((document.getElementById("tm-alpha")||{value:"0"}).value||0);
+    var _betaIdx  = parseInt((document.getElementById("tm-beta") ||{value:"0"}).value||0);
     var payload = {
-      algorithm:  algo,
-      n_topics:   parseInt(document.getElementById("tm-ntv").value, 10),
-      max_vocab:  parseInt(document.getElementById("tm-vv").value, 10),
-      top_words:  parseInt(document.getElementById("tm-twv").value, 10),
-      max_iter:   parseInt(document.getElementById("tm-iterv").value, 10)
+      algorithm:   algo,
+      n_topics:    parseInt(document.getElementById("tm-ntv").value, 10),
+      max_vocab:   parseInt(document.getElementById("tm-vv").value, 10),
+      top_words:   parseInt(document.getElementById("tm-twv").value, 10),
+      max_iter:    parseInt(document.getElementById("tm-iterv").value, 10),
+      min_df:      parseInt((document.getElementById("tm-mindfv")||{value:"2"}).value||2, 10),
+      max_df:      parseFloat((document.getElementById("tm-maxdfv")||{value:"1.0"}).value||1.0),
+      stop_words:  (document.getElementById("tm-stopwords")||{checked:false}).checked ? "auto" : null,
+      doc_topic_prior: _alphaMap[_alphaIdx] || "auto",
+      topic_word_prior: _betaMap[_betaIdx]  || "auto"
     };
 
     var resp = await fetch("/api/topic_model", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
@@ -8737,7 +8845,8 @@ async function showTopicResults(node) {
   var cnArr       = res.coherence_cnpmi || [];
   var algo        = res.algorithm || "lda";
   var topicLabels = res.topic_labels || {};  // set when HF labeling was active
-  var topicDiv    = res.topic_diversity != null ? parseFloat(res.topic_diversity).toFixed(3) : "—";
+  var topicDiv    = (res.topic_diversity !== null && res.topic_diversity !== undefined && res.topic_diversity !== "")
+                    ? parseFloat(res.topic_diversity).toFixed(3) : "—";
 
   if (!topics.length) return;
 
@@ -9393,7 +9502,10 @@ async function renderRagChunk(node) {
   var useProcessed = isFromPreprocess && hasProcessed;
 
   var saved        = node.data || {};
-  var defSize      = avgTextLen > 3000 ? 1000 : avgTextLen > 1000 ? 600 : 300;
+  // avg/max text lengths arrive in chars; convert rough estimate to words (~5 chars/word)
+  var avgWordLen   = Math.round(avgTextLen / 5);
+  var maxWordLen   = Math.round(maxTextLen / 5);
+  var defSize      = avgWordLen > 600 ? 200 : avgWordLen > 200 ? 100 : 50;
   var chunkSize    = saved.chunk_size  || defSize;
   var overlap      = saved.overlap     || 0;
   var independent  = saved.independent !== undefined ? saved.independent : true;
@@ -9404,13 +9516,12 @@ async function renderRagChunk(node) {
   function estimateChunks(sz, ov, mode) {
     if (!nDocs) return "—";
     if (mode === "one_per_doc") return nDocs.toLocaleString() + " chunks (1 " + (_en ? "per doc" : "por doc") + ")";
-    // Use max length for a realistic worst-case estimate
-    var refLen = maxTextLen || avgTextLen;
+    // Use word-based lengths (server sends chars; convert ~5 chars/word)
+    var refLen = maxWordLen || avgWordLen;
     var stride = Math.max(1, sz - ov);
     var perDoc = Math.ceil(refLen / stride);
     var total  = perDoc * nDocs;
     var label  = "~" + total.toLocaleString() + " chunks (" + (_en ? "up to " : "hasta ") + perDoc + (_en ? " per doc)" : " por doc)");
-    // If chunk_size >= max doc length → guaranteed 1 per doc
     if (sz >= refLen) label = nDocs.toLocaleString() + " chunks (1 " + (_en ? "per doc, chunk_size ≥ longest doc" : "por doc, chunk_size ≥ doc más largo") + ")";
     return label;
   }
@@ -9464,9 +9575,9 @@ async function renderRagChunk(node) {
 
       // Chunk size slider
       '<div>' +
-        '<div class="fl" style="margin-bottom:4px">' + (_en ? 'Chunk size:' : 'Tamaño de chunk:') + ' <b id="rc-size-val">' + chunkSize + '</b> chars</div>' +
-        '<input type="range" id="rc-size" min="100" max="3000" step="50" value="' + chunkSize + '" style="width:100%">' +
-        '<div style="font-size:11px;color:var(--sec);margin-top:2px">' + (_en ? 'Short (200-500): more precision. Long (800-2000): more context per fragment.' : 'Cortos (200-500): más precisión. Largos (800-2000): más contexto por fragmento.') + '</div>' +
+        '<div class="fl" style="margin-bottom:4px">' + (_en ? 'Chunk size:' : 'Tamaño de chunk:') + ' <b id="rc-size-val">' + chunkSize + '</b> ' + (_en ? 'words' : 'palabras') + '</div>' +
+        '<input type="range" id="rc-size" min="20" max="500" step="10" value="' + chunkSize + '" style="width:100%">' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:2px">' + (_en ? 'Short (20-80 words): more precision. Long (150-400 words): more context per fragment.' : 'Cortos (20-80 palabras): más precisión. Largos (150-400 palabras): más contexto por fragmento.') + '</div>' +
       '</div>' +
 
       // Independent docs toggle
@@ -9485,9 +9596,9 @@ async function renderRagChunk(node) {
 
       // Overlap slider
       '<div id="rc-ov-wrap" style="display:' + (independent ? "none":"block") + '">' +
-        '<div class="fl" style="margin-bottom:4px">' + (_en ? 'Overlap:' : 'Solapamiento:') + ' <b id="rc-ov-val">' + overlap + '</b> chars</div>' +
-        '<input type="range" id="rc-ov" min="0" max="500" step="10" value="' + overlap + '" style="width:100%">' +
-        '<div style="font-size:11px;color:var(--sec);margin-top:2px">' + (_en ? 'Chars repeated between consecutive chunks.' : 'Chars repetidos entre chunks consecutivos.') + '</div>' +
+        '<div class="fl" style="margin-bottom:4px">' + (_en ? 'Overlap:' : 'Solapamiento:') + ' <b id="rc-ov-val">' + overlap + '</b> ' + (_en ? 'words' : 'palabras') + '</div>' +
+        '<input type="range" id="rc-ov" min="0" max="100" step="5" value="' + overlap + '" style="width:100%">' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:2px">' + (_en ? 'Words repeated between consecutive chunks.' : 'Palabras repetidas entre chunks consecutivos.') + '</div>' +
       '</div>' +
 
     '</div>' +  // end rc-auto-controls
@@ -9524,7 +9635,7 @@ async function renderRagChunk(node) {
     var oVal = document.getElementById("rc-ov-val");   if (oVal) oVal.textContent = ov;
     document.getElementById("rc-ov-hidden").value = ov;
     document.getElementById("rc-estimate").textContent = estimateChunks(sz, ov, modeNow);
-    var refLen = maxTextLen || avgTextLen;
+    var refLen = maxWordLen || avgWordLen;
     var total  = modeNow === "one_per_doc" ? nDocs : Math.ceil(refLen / Math.max(1, sz - ov)) * nDocs;
     var warnEl = document.getElementById("rc-embed-warn");
     if (total > 50000)      warnEl.textContent = _en ? "⚠ embedding will take several minutes" : "⚠ embedding tardará varios minutos";
@@ -9604,7 +9715,7 @@ async function renderRagChunk(node) {
     document.getElementById("rc-stats").innerHTML =
       '<b>' + res.n_chunks.toLocaleString() + '</b> ' + (_en ? 'total chunks from' : 'chunks totales de') + ' <b>' + res.n_docs + '</b> ' + (_en ? 'documents' : 'documentos') +
       ' &nbsp;·&nbsp; <b>' + Math.round(res.n_chunks / res.n_docs) + '</b> chunks/' + (_en ? 'doc' : 'doc') +
-      ' &nbsp;·&nbsp; ' + (_en ? 'avg length:' : 'longitud media:') + ' <b>' + res.avg_chunk_len + '</b> chars' +
+      ' &nbsp;·&nbsp; ' + (_en ? 'avg length:' : 'longitud media:') + ' <b>' + res.avg_chunk_len + '</b> ' + (_en ? 'words' : 'palabras') + '' +
       (useProcessed ? ' &nbsp;·&nbsp; <span style="color:#19e68c">' + (_en ? 'using preprocessed text' : 'usando texto preprocesado') + '</span>' : '');
 
     document.getElementById("rc-examples").innerHTML = (res.examples || []).map(function(c) {
@@ -9950,10 +10061,10 @@ function _startEmbedPoll(chunkNodeId, node, updateStatusFn) {
       var canvasId = _embedCanvasNodeId || node.id;
       if (last.pct === 100) {
         if (runBtn) { runBtn.disabled = false; runBtn.textContent = "🔄 " + (lang === "en" ? "Regenerate embeddings" : "Regenerar embeddings"); }
-        node.data = Object.assign(node.data || {}, { applied: true, embed_time: totalTime });
         setOK(canvasId, true);
         var st2 = await fetch("/api/rag_status?node_id=" + chunkNodeId).then(function(r){ return r.json(); }).catch(function(){ return {}; });
         if (updateStatusFn) updateStatusFn(st2);
+        node.data = Object.assign(node.data || {}, { applied: true, embed_time: totalTime, n_embeddings: st2.n_embeddings || 0, model: st2.model || node.data.model || "" });
         var simWrap = document.getElementById("re-sim-wrap");
         if (simWrap) simWrap.style.display = "block";
         setNS(canvasId, (st2.n_embeddings || "?") + " embeddings");
