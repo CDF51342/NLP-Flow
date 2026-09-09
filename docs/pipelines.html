@@ -308,8 +308,9 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
           <ul>
             <li><strong>Tópicos con palabras clave</strong> — tabla con las N palabras más relevantes por tópico</li>
             <li><strong>Word clouds</strong> — una nube de palabras por tópico, generada automáticamente</li>
-            <li><strong>Topic diversity</strong> — métrica 0–1 de cuán distintos son los tópicos entre sí</li>
-            <li><strong>Coherencia</strong> — puntuación de coherencia (LDA) que mejora con iteraciones</li>
+            <li><strong>Topic diversity</strong> — métrica 0–1 de cuán distintos son los tópicos entre sí (1 = máxima diversidad)</li>
+            <li><strong>C_V</strong> — coherencia basada en similitud coseno de vectores NPMI indirectos; rango [0, 1], mayor es mejor</li>
+            <li><strong>C_NPMI</strong> — NPMI pairwise promedio de las palabras clave; rango [−1, 1], valores positivos indican co-ocurrencia relevante</li>
             <li><strong>Distribución de documentos</strong> — qué porcentaje de cada documento pertenece a cada tópico</li>
           </ul>
         </div>
@@ -319,12 +320,20 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
           <div class="card-label">Parámetros clave</div>
           <div class="tbl-wrap"><table>
             <tr><th>Parámetro</th><th>Descripción</th></tr>
-            <tr><td>Nº tópicos</td><td>Cuántos temas extraer del corpus</td></tr>
+            <tr><td>Nº tópicos (K)</td><td>Cuántos temas extraer del corpus; probar K = 5, 8, 10, 15, 20 para encontrar el óptimo</td></tr>
+            <tr><td>Vocabulario máximo</td><td>Palabras más frecuentes del corpus incluidas en la matriz (100–5 000); valores bajos como 500 pueden limitar la coherencia</td></tr>
             <tr><td>Palabras por tópico</td><td>Cuántas palabras clave mostrar por tópico</td></tr>
-            <tr><td>Iteraciones</td><td>Pasadas de optimización (hasta 2 000); más = mayor coherencia para LDA</td></tr>
+            <tr><td>Iteraciones</td><td>Pasadas de optimización (hasta 2 000); más = mayor coherencia para LDA; para convergencia se para automáticamente</td></tr>
             <tr><td>Algoritmo</td><td>LDA, NMF o LSA — selector en el panel lateral</td></tr>
-            <tr><td>Etiquetado automático</td><td>Opcional: etiqueta cada tópico con un nombre generado por el LLM</td></tr>
+            <tr><td>Etiquetado automático</td><td>Opcional: etiqueta cada tópico con un nombre generado por el LLM, en el idioma del corpus</td></tr>
           </table></div>
+          <div class="note-topic">⚙️ <strong>Parámetros avanzados (sección desplegable en el panel)</strong><br>
+            <strong>min_df</strong> — frecuencia mínima de documento: elimina términos rarísimos (valores: 1–10).<br>
+            <strong>max_df</strong> — fracción máxima de docs en que puede aparecer un término: elimina palabras demasiado comunes (0.1–1.0).<br>
+            <strong>Stopwords</strong> — activa el filtrado automático de stopwords según el idioma detectado del corpus.<br>
+            <strong>Alpha</strong> (solo LDA) — prior doc-tópico: valores bajos (0.01–0.1) concentran cada documento en pocos tópicos; recomendado para corpus con categorías bien definidas como BBC News.<br>
+            <strong>Beta</strong> (solo LDA) — prior tópico-palabra: valores bajos (0.01–0.05) generan tópicos más especializados.
+          </div>
         </div>
         <div class="card">
           <div class="card-label">Guardar resultados</div>
@@ -388,12 +397,14 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         <div class="card-label">Parámetros clave</div>
         <div class="tbl-wrap"><table>
           <tr><th>Parámetro</th><th>Bloque</th><th>Descripción</th></tr>
-          <tr><td>Modo chunking</td><td>✂️ Chunking</td><td>Automático (por tamaño) o 1 chunk por documento</td></tr>
-          <tr><td>Tamaño chunk</td><td>✂️ Chunking</td><td>Nº de caracteres por fragmento (modo automático)</td></tr>
+          <tr><td>Modo chunking</td><td>✂️ Chunking</td><td>Automático (por palabras) o 1 chunk por documento</td></tr>
+          <tr><td>Tamaño chunk</td><td>✂️ Chunking</td><td>Nº de <strong>palabras</strong> por fragmento (modo automático; por defecto 100)</td></tr>
+          <tr><td>Solapamiento</td><td>✂️ Chunking</td><td>Palabras compartidas entre chunks consecutivos para conservar contexto</td></tr>
           <tr><td>Top-K</td><td>🔎 Retriever</td><td>Cuántos fragmentos recuperar por consulta</td></tr>
           <tr><td>System prompt</td><td>🤖 LLM</td><td>Instrucciones base del modelo, editable en el bloque</td></tr>
           <tr><td>HF_LLM_MODEL</td><td>.env</td><td>Modelo LLM usado (por defecto <code>meta-llama/Llama-3.1-8B-Instruct</code>)</td></tr>
         </table></div>
+        <div class="note-rag">📄 <strong>Informe HTML de la sesión RAG</strong> — incluye corpus, nº de documentos, nº de embeddings generados, configuración de chunking, tiempo de generación de embeddings, tiempo de respuesta LLM, fragmentos recuperados y comparativa sin RAG / con RAG.</div>
       </div>
 
       <div class="footer">
@@ -547,8 +558,9 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
           <ul>
             <li><strong>Topics with keywords</strong> — table with the N most relevant words per topic</li>
             <li><strong>Word clouds</strong> — one word cloud per topic, generated automatically</li>
-            <li><strong>Topic diversity</strong> — 0–1 metric of how distinct the topics are from each other</li>
-            <li><strong>Coherence</strong> — coherence score (LDA) that improves with more iterations</li>
+            <li><strong>Topic diversity</strong> — 0–1 metric of how distinct the topics are from each other (1 = maximum diversity)</li>
+            <li><strong>C_V</strong> — coherence based on cosine similarity of indirect NPMI vectors; range [0, 1], higher is better</li>
+            <li><strong>C_NPMI</strong> — average pairwise NPMI of the top keywords; range [−1, 1], positive values indicate meaningful co-occurrence</li>
             <li><strong>Document distribution</strong> — what percentage of each document belongs to each topic</li>
           </ul>
         </div>
@@ -558,12 +570,20 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
           <div class="card-label">Key parameters</div>
           <div class="tbl-wrap"><table>
             <tr><th>Parameter</th><th>Description</th></tr>
-            <tr><td>No. of topics</td><td>How many themes to extract from the corpus</td></tr>
+            <tr><td>No. of topics (K)</td><td>How many themes to extract from the corpus; try K = 5, 8, 10, 15, 20 to find the optimum</td></tr>
+            <tr><td>Max vocabulary</td><td>Most frequent words included in the matrix (100–5,000); low values like 500 may limit coherence</td></tr>
             <tr><td>Words per topic</td><td>How many keywords to show per topic</td></tr>
-            <tr><td>Iterations</td><td>Optimisation passes (up to 2,000); more = higher coherence for LDA</td></tr>
+            <tr><td>Iterations</td><td>Optimisation passes (up to 2,000); more = higher coherence for LDA; stops automatically on convergence</td></tr>
             <tr><td>Algorithm</td><td>LDA, NMF or LSA — selector in the side panel</td></tr>
-            <tr><td>Auto-labelling</td><td>Optional: labels each topic with a name generated by the LLM</td></tr>
+            <tr><td>Auto-labelling</td><td>Optional: labels each topic with a name generated by the LLM, in the corpus language</td></tr>
           </table></div>
+          <div class="note-topic">⚙️ <strong>Advanced parameters (collapsible panel section)</strong><br>
+            <strong>min_df</strong> — minimum document frequency: drops extremely rare terms (values: 1–10).<br>
+            <strong>max_df</strong> — maximum fraction of docs a term may appear in: removes overly common words (0.1–1.0).<br>
+            <strong>Stopwords</strong> — enables automatic stopword filtering based on the detected corpus language.<br>
+            <strong>Alpha</strong> (LDA only) — doc-topic prior: low values (0.01–0.1) concentrate each document on fewer topics; recommended for corpora with clear categories such as BBC News.<br>
+            <strong>Beta</strong> (LDA only) — topic-word prior: low values (0.01–0.05) produce more specialised topics.
+          </div>
         </div>
         <div class="card">
           <div class="card-label">Saving results</div>
@@ -627,12 +647,14 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         <div class="card-label">Key parameters</div>
         <div class="tbl-wrap"><table>
           <tr><th>Parameter</th><th>Block</th><th>Description</th></tr>
-          <tr><td>Chunking mode</td><td>✂️ Chunking</td><td>Automatic (by size) or 1 chunk per document</td></tr>
-          <tr><td>Chunk size</td><td>✂️ Chunking</td><td>Number of characters per fragment (automatic mode)</td></tr>
+          <tr><td>Chunking mode</td><td>✂️ Chunking</td><td>Automatic (by words) or 1 chunk per document</td></tr>
+          <tr><td>Chunk size</td><td>✂️ Chunking</td><td>Number of <strong>words</strong> per fragment (automatic mode; default 100)</td></tr>
+          <tr><td>Overlap</td><td>✂️ Chunking</td><td>Words shared between consecutive chunks to preserve context</td></tr>
           <tr><td>Top-K</td><td>🔎 Retriever</td><td>How many fragments to retrieve per query</td></tr>
           <tr><td>System prompt</td><td>🤖 LLM</td><td>Base instructions for the model, editable in the block</td></tr>
           <tr><td>HF_LLM_MODEL</td><td>.env</td><td>LLM model used (default: <code>meta-llama/Llama-3.1-8B-Instruct</code>)</td></tr>
         </table></div>
+        <div class="note-rag">📄 <strong>RAG session HTML report</strong> — includes corpus, number of documents, number of embeddings generated, chunking configuration, embedding generation time, LLM response time, retrieved fragments, and a without-RAG / with-RAG comparison.</div>
       </div>
 
       <div class="footer">
