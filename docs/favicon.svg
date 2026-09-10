@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- top-left: black -->
+  <rect x="4"  y="4"  width="43" height="43" rx="10" fill="#121212"/>
+  <!-- top-right: green -->
+  <rect x="53" y="4"  width="43" height="43" rx="10" fill="#19e68c"/>
+  <!-- bottom-left: green -->
+  <rect x="4"  y="53" width="43" height="43" rx="10" fill="#19e68c"/>
+  <!-- bottom-right: black -->
+  <rect x="53" y="53" width="43" height="43" rx="10" fill="#121212"/>
+</svg>
