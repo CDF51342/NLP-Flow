@@ -321,224 +321,10 @@ def reset_progress():
         _progress.clear()
         _last_progress = {"pct": 0, "msg": "", "seen": True}
 
-# ── Built-in datasets ────────────────────────────────────────────────────────
-DATASETS = {
-    "movie_reviews": {
-        "name": "🎬 Movie Reviews", "task": "classification",
-        "texts": [
-            "This movie was absolutely fantastic! The acting was superb and the plot kept me completely engaged throughout.",
-            "Terrible film. Boring plot, bad acting, complete waste of time and money.",
-            "An outstanding masterpiece with breathtaking visuals and a truly compelling, emotional story.",
-            "Worst movie I've ever seen. The dialogue was cringeworthy and utterly predictable.",
-            "A delightful experience from start to finish. Highly recommended to everyone!",
-            "Dreadful. I fell asleep halfway through. No redeeming qualities whatsoever.",
-            "Brilliant performances and a thought-provoking narrative. A must-watch film.",
-            "Disappointing and dull. The characters were flat and completely uninteresting.",
-            "Incredible storytelling! This film moved me to tears. Pure cinema at its best.",
-            "Awful script, poor direction. A huge letdown after the exciting trailers.",
-            "Visually stunning and emotionally powerful. One of the best films this year.",
-            "Boring and predictable. Nothing new or interesting to offer audiences.",
-            "A cinematic triumph! Every scene is crafted with care and precision.",
-            "Not worth your time. The pacing is terrible and the ending is a mess.",
-            "Funny, heartfelt and thrilling. This movie has it all!",
-            "Generic and forgettable. Just another formulaic blockbuster film.",
-            "The performances are electric and the soundtrack is absolutely incredible.",
-            "A complete disaster. I cannot believe how this got made and released.",
-            "Thoughtful, beautiful, and deeply moving. Cinema at its very finest.",
-            "Tedious and overlong. Could have been easily cut by at least one hour.",
-        ],
-        "labels": [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
-        "label_names": ["Negative","Positive"],
-    },
-    "spam": {
-        "name": "📧 Spam vs Ham", "task": "classification",
-        "texts": [
-            "Congratulations! You have won a FREE iPhone. Click here to claim now!!!",
-            "Hey, are we still meeting for lunch tomorrow at noon?",
-            "URGENT: Your account has been compromised. Send your password immediately.",
-            "Just wanted to check in — how was your weekend?",
-            "WIN $1000 CASH PRIZE! Limited time offer! Act now! Free money waiting!",
-            "The meeting notes from yesterday are attached. Let me know if you have questions.",
-            "You have been selected for a SPECIAL OFFER. Buy now and save 90% off!!!",
-            "Can you review the report before Friday? Thanks in advance.",
-            "FREE MEDS online! No prescription needed! Click here to order now!",
-            "Looking forward to seeing you at the conference next week.",
-            "CLAIM YOUR REWARD NOW! You are our lucky winner today!!!",
-            "The project deadline has been moved to next Monday. Please update your tasks.",
-            "Make money fast! Work from home! $5000 per week guaranteed income!",
-            "I have attached the invoice for last month. Let me know if everything looks correct.",
-            "ALERT: Verify your account in 24 hours or it will be permanently deleted!!!",
-            "Thanks for the great presentation today. The team loved it.",
-            "Lose weight fast! Miracle pill! No diet needed! Buy 2 get 1 free!",
-            "Could you send me the updated schedule when you get a chance?",
-            "Your credit card has been charged. Call us NOW to get a refund!",
-            "Hope you are having a good week. Let us catch up soon!",
-        ],
-        "labels": [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
-        "label_names": ["Ham","Spam"],
-    },
-    "twitter": {
-        "name": "😊 Twitter Sentiment", "task": "classification",
-        "texts": [
-            "I love this new feature! It makes my life so much easier.",
-            "This update broke everything. I cannot believe how bad this is.",
-            "Just had the best coffee of my life. Morning made!",
-            "Traffic is a nightmare today. Going to be late again. So annoying.",
-            "Finally finished my project! So proud of what we built together!",
-            "My phone died right when I needed it most. Worst timing ever.",
-            "Beautiful sunset tonight. Nature never disappoints.",
-            "The customer service was absolutely terrible. Never buying from them again.",
-            "Just got promoted! All the hard work finally paid off!",
-            "Stuck in a 3-hour delay at the airport. This is absolutely ridiculous.",
-            "My best friend surprised me with concert tickets! Best day ever!",
-            "Lost my wallet. This day could not get any worse.",
-            "Cooked an amazing dinner from scratch. Feeling like a real chef tonight!",
-            "App keeps crashing. Zero stars. Total garbage software.",
-            "Volunteered at the shelter today. Such a rewarding experience.",
-            "Internet has been down all day. How is anyone supposed to work like this?",
-            "Just adopted a puppy! She is the cutest thing in the world!",
-            "Exam was way harder than expected. Do not think I passed. Gutted.",
-            "Hiked to the top of the mountain. The view was absolutely breathtaking!",
-            "Flight cancelled with no warning or compensation. Absolutely furious.",
-        ],
-        "labels": [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
-        "label_names": ["Negative","Positive"],
-    },
-    "news_topics": {
-        "name": "📰 News (Topic Model)", "task": "topic_model",
-        "texts": [
-            "The stock market reached new highs as investors reacted to positive earnings from tech companies.",
-            "Scientists discovered a new species of deep-sea fish in the Pacific Ocean.",
-            "The national football team qualified for the World Cup after a dramatic penalty shootout.",
-            "Government officials announced new climate change policies to reduce carbon emissions by 2030.",
-            "A breakthrough in cancer research offers new hope for patients with untreatable forms of disease.",
-            "The central bank raised interest rates for the third consecutive time to combat rising inflation.",
-            "Archaeologists uncovered an ancient Roman villa beneath a modern city center.",
-            "The championship game drew record television audiences as two historic rivals faced off.",
-            "Renewable energy investments surpassed fossil fuels for the first time according to new data.",
-            "Researchers developed a new vaccine showing promise against several variants of the virus.",
-            "Trade negotiations concluded with a landmark agreement on tariffs and trade barriers.",
-            "The exploration rover sent back stunning images of the Martian surface showing ancient water flow.",
-            "Athletes from over 200 countries gathered for the opening ceremony of the sporting event.",
-            "Marine biologists documented the largest coral bleaching event ever recorded in the reef.",
-            "The technology company unveiled its latest artificial intelligence model for complex reasoning.",
-        ],
-        "labels": [], "label_names": [],
-    },
-}
-
-# ── Tabular datasets registry (separate from NLP DATASETS) ───────────────────
-TAB_DATASETS = {}   # populated lazily by _build_tab_datasets()
-
-def _build_tab_datasets():
-    """Build tabular demo datasets and cache in TAB_DATASETS."""
-    import random as _rnd, math as _math
-
-    # ── 1. Patient Health Risk (classification, 100 rows) ────────────────────
-    _rnd.seed(42)
-    rows_ph = []
-    cols_ph = ["age","bmi","blood_pressure","cholesterol","glucose",
-               "heart_rate","creatinine","income_k","smoker","risk_label"]
-    for _ in range(100):
-        age  = _rnd.randint(25, 80)
-        bmi  = round(_rnd.gauss(26.5, 5.0), 1)
-        bp   = _rnd.randint(60, 180) if _rnd.random() > 0.06 else None
-        chol = _rnd.randint(140, 320)
-        gluc = round(_rnd.gauss(100, 30), 1)
-        hr   = _rnd.randint(55, 105)
-        crea = round(_rnd.uniform(0.5, 4.5), 2)
-        inc  = round(_rnd.gauss(45, 20), 1)
-        smok = _rnd.choice(["yes","no","no","no"])
-        score= (age>55) + (bmi>30) + (bp is not None and bp>140) + (chol>260) + (smok=="yes")
-        risk = 1 if (score>=2 or _rnd.random()<0.15) else 0
-        rows_ph.append({
-            "age": str(age),
-            "bmi": str(bmi) if _rnd.random()>0.04 else "",
-            "blood_pressure": str(bp) if bp and _rnd.random()>0.05 else "",
-            "cholesterol": str(chol),
-            "glucose": str(gluc) if _rnd.random()>0.04 else "",
-            "heart_rate": str(hr),
-            "creatinine": str(crea),
-            "income_k": str(inc) if _rnd.random()>0.03 else "?",
-            "smoker": smok,
-            "risk_label": str(risk),
-        })
-    TAB_DATASETS["patient_health"] = {
-        "name": "🏥 Patient Health Risk (clasificación)",
-        "task": "classification", "target": "risk_label",
-        "columns": cols_ph, "rows": rows_ph,
-        "desc": "100 pacientes · variables médicas → riesgo (0/1) · ~5% valores ausentes"
-    }
-
-    # ── 2. California Housing (regression, 400 rows realistic) ───────────────
-    _rnd.seed(7)
-    import math as _math
-    rows_ca = []
-    cols_ca = ["MedInc","HouseAge","AveRooms","AveBedrms","Population",
-               "AveOccup","Latitude","Longitude","MedHouseVal"]
-    for _ in range(400):
-        medinc  = round(_rnd.uniform(0.5, 15.0), 4)
-        age     = _rnd.randint(1, 52)
-        rooms   = round(_rnd.uniform(1.5, 10.0), 4)
-        bedrms  = round(_rnd.uniform(0.8, 3.5), 4)
-        pop     = _rnd.randint(50, 35000)
-        occup   = round(_rnd.uniform(1.5, 8.0), 4)
-        lat     = round(_rnd.uniform(32.5, 42.0), 4)
-        lon     = round(_rnd.uniform(-124.5, -114.0), 4)
-        coast_bonus = _math.exp(-0.3 * (lon + 120)**2) * 0.8
-        overcrowd   = max(0, occup - 3.5) * (-0.25)
-        noise       = _rnd.gauss(0, 0.65)
-        base = (0.42*medinc + 0.06*rooms - 0.04*bedrms
-                + 0.005*age - 0.000012*pop
-                + coast_bonus + overcrowd + noise)
-        val = round(max(0.15, min(5.0, base + 0.9)), 4)
-        rows_ca.append({
-            "MedInc": str(medinc),
-            "HouseAge": str(age),
-            "AveRooms": str(rooms),
-            "AveBedrms": str(bedrms),
-            "Population": str(pop),
-            "AveOccup": str(occup),
-            "Latitude": str(lat),
-            "Longitude": str(lon),
-            "MedHouseVal": str(val) if _rnd.random() > 0.03 else "",
-        })
-    TAB_DATASETS["california_housing"] = {
-        "name": "🏠 California Housing (regresión)",
-        "task": "regression", "target": "MedHouseVal",
-        "columns": cols_ca, "rows": rows_ca,
-        "desc": "400 distritos · variables demográficas → valor medio vivienda (×$100k)"
-    }
-
-    # ── 3. Ruido Puro — dataset completamente aleatorio para probar ───────────
-    _rnd2 = __import__("random").Random(99)
-    rows_noise = []
-    cols_noise = ["X1","X2","X3","X4","X5","X6","Y"]
-    for _ in range(300):
-        x1 = round(_rnd2.gauss(0, 10), 3)
-        x2 = round(_rnd2.uniform(-50, 50), 3)
-        x3 = round(_rnd2.gauss(100, 30), 3)
-        x4 = round(_rnd2.uniform(0, 1), 4)
-        x5 = round(_rnd2.gauss(-5, 20), 3)
-        x6 = round(_rnd2.uniform(1, 100), 3)
-        # Y barely related to inputs — mostly noise
-        y_val = round(
-            0.15*x1 - 0.05*x2 + _rnd2.gauss(0, 25),   # signal swamped by noise
-            3
-        )
-        rows_noise.append({
-            "X1": str(x1), "X2": str(x2), "X3": str(x3),
-            "X4": str(x4), "X5": str(x5), "X6": str(x6),
-            "Y":  str(y_val) if _rnd2.random() > 0.05 else "",
-        })
-    TAB_DATASETS["pure_noise"] = {
-        "name": "🎲 Ruido Puro (regresión)",
-        "task": "regression", "target": "Y",
-        "columns": cols_noise, "rows": rows_noise,
-        "desc": "300 filas · 6 features aleatorias → Y casi independiente. R² esperado: 0.01–0.15"
-    }
-
-_build_tab_datasets()
+# ── Built-in datasets removed ────────────────────────────────────────────────
+DATASETS = {}  # kept for compatibility; no built-in datasets
+# ── Tabular datasets registry ─────────────────────────────────────────────────
+TAB_DATASETS = {}  # no built-in datasets; users upload their own CSV
 
 # ── Tabular state (separate from NLP state S) ────────────────────────────────
 # raw_rows / columns come from S; tabular preprocessing lives here
@@ -719,22 +505,6 @@ def status():
                     "trained": S["model"] is not None, "task": S["task"],
                     "n_texts": len(S["texts"])})
 
-@app.route("/api/datasets")
-def get_datasets():
-    return jsonify([{"id":k,"name":v["name"],"task":v["task"]} for k,v in DATASETS.items()])
-
-@app.route("/api/load_dataset", methods=["POST"])
-def load_dataset():
-    ds = DATASETS.get(request.json.get("id",""))
-    if not ds: return jsonify({"error":"Not found"}), 404
-    rows = [{"text": t, "label": ds["label_names"][l] if ds["label_names"] else ""}
-            for t, l in zip(ds["texts"], ds["labels"])] if ds["labels"] else [{"text":t} for t in ds["texts"]]
-    S.update(texts=ds["texts"], labels=ds["labels"], label_names=ds["label_names"],
-             task=ds["task"], dataset_name=ds["name"],
-             processed_texts=list(ds["texts"]), results={}, model=None, vectorizer=None,
-             columns=list(rows[0].keys()) if rows else [], raw_rows=rows)
-    return jsonify(_dataset_summary())
-
 @app.route("/api/upload_csv", methods=["POST"])
 def upload_csv():
     f = request.files.get("file")
@@ -822,7 +592,7 @@ def upload_csv():
         raw_rows = [r for r in raw_rows if str(r.get(text_col,"")).strip()]
 
         labels, label_names = [], []
-        if label_col and label_col in cols and task == "classification":
+        if label_col and label_col in cols:
             raw_lbl = [str(r.get(label_col,"")).strip() for r in raw_rows]
             uniq    = sorted(set(raw_lbl))
             m       = {v: i for i, v in enumerate(uniq)}
@@ -844,6 +614,20 @@ def upload_csv():
 
 @app.route("/api/dataset_info")
 def dataset_info(): return jsonify(_dataset_summary())
+
+@app.route("/api/all_texts")
+def all_texts():
+    """Return all doc indices, labels and short previews for the preview selector."""
+    texts  = S["texts"]
+    labels = S["labels"]
+    names  = S["label_names"]
+    if not texts:
+        return jsonify({"docs": []})
+    docs = []
+    for i, t in enumerate(texts):
+        lbl = names[labels[i]] if labels and i < len(labels) else ""
+        docs.append({"idx": i, "label": lbl, "preview": t[:120]})
+    return jsonify({"docs": docs, "label_names": names, "task": S["task"]})
 
 # ── Tabular Data Info (rich — for the Data Info panel) ────────────────────────
 def _col_type(values):
@@ -890,39 +674,6 @@ def _is_missing(v):
     return str(v).strip() in ("", "?", "NA", "NaN", "nan", "None", "null")
 
 # ── List & load tabular datasets ──────────────────────────────────────────────
-@app.route("/api/tab_datasets")
-def tab_datasets():
-    return jsonify([{"id": k, "name": v["name"], "task": v["task"],
-                     "target": v["target"], "desc": v["desc"]}
-                    for k, v in TAB_DATASETS.items()])
-
-@app.route("/api/load_tab_dataset", methods=["POST"])
-def load_tab_dataset():
-    body = request.get_json(force=True, silent=True) or {}
-    ds_id   = body.get("id", "")
-    node_id = str(body.get("node_id", ""))
-    ds = TAB_DATASETS.get(ds_id)
-    if not ds:
-        return jsonify({"error": "Dataset not found"}), 404
-    cols, rows = ds["columns"], ds["rows"]
-    texts = [" ".join(str(r.get(c,"")) for c in cols) for r in rows]
-    # Always update global S for NLP pipeline compatibility
-    S.update(
-        texts=texts, labels=[], label_names=[], task=ds["task"],
-        processed_texts=list(texts), results={}, model=None, vectorizer=None,
-        dataset_name=ds["name"], columns=cols, raw_rows=rows, csv_source="demo"
-    )
-    # Also store in per-node slot when a node_id is provided
-    if node_id:
-        slot = _node_slot(node_id)
-        slot.update(columns=cols, raw_rows=rows, dataset_name=ds["name"],
-                    task=ds["task"], csv_source="demo")
-    # ── Store DataFrame (new layer) ──────────────────────────────────────────
-    _store_df(node_id if node_id else None, pd.DataFrame(rows).fillna(""))
-    _TAB["target_col"] = ds["target"]
-    return jsonify({**_dataset_summary(), "columns": cols,
-                    "target": ds["target"], "task": ds["task"], "node_id": node_id})
-
 # ── Node configuration (selected columns, target) ─────────────────────────────
 @app.route("/api/set_node_config", methods=["POST"])
 def set_node_config():
@@ -3199,6 +2950,171 @@ def plot_wordcloud():
     ax.axis("off")
     plt.tight_layout(pad=0)
     return jsonify({"img":fig_b64(fig)})
+
+# ── NLP EDA plots ─────────────────────────────────────────────────────────────
+@app.route("/api/plot_nlp", methods=["POST"])
+def plot_nlp():
+    """EDA plots for NLP corpora. body: {type, corpus, top_n, class_filter}"""
+    body         = request.get_json(force=True, silent=True) or {}
+    plot_type    = body.get("type", "doc_length")
+    corpus_key   = body.get("corpus", "raw")   # "raw" | "processed"
+    top_n        = int(body.get("top_n", 20))
+    class_filter = body.get("class_filter", "")  # "" = all
+    es           = _UI_LANG == "es"
+
+    texts  = S["processed_texts"] if corpus_key == "processed" else S["texts"]
+    labels = S["labels"]
+    names  = S["label_names"]
+
+    if not texts:
+        return jsonify({"error": "No hay corpus cargado" if es else "No corpus loaded"}), 400
+
+    # Optional per-class filter
+    if class_filter and names and class_filter in names:
+        cidx = names.index(class_filter)
+        pairs = [(t, labels[i] if labels else -1) for i, t in enumerate(texts) if labels and labels[i] == cidx]
+        texts  = [p[0] for p in pairs]
+        labels = [p[1] for p in pairs]
+
+    # ── 1. Distribución de longitud de documentos ──────────────────────────
+    if plot_type == "doc_length":
+        lengths = [len(t.split()) for t in texts]
+        fig, ax = plt.subplots(figsize=(8, 4))
+        style_ax(ax)
+        ax.hist(lengths, bins=min(40, max(10, len(lengths)//3)),
+                color=PALETTE[0], edgecolor="white", linewidth=0.5, alpha=0.9)
+        ax.set_xlabel("Nº de palabras" if es else "Number of words", color=INK, fontsize=11)
+        ax.set_ylabel("Nº de documentos" if es else "Number of documents", color=INK, fontsize=11)
+        ax.set_title("Distribución de longitud de documentos" if es else "Document length distribution",
+                     color=INK, fontsize=13, fontweight="bold", pad=12)
+        med = float(np.median(lengths))
+        ax.axvline(med, color=PALETTE[2], linewidth=1.5, linestyle="--",
+                   label=f"{'Mediana' if es else 'Median'}: {med:.0f} {'palabras' if es else 'words'}")
+        ax.legend(fontsize=10, framealpha=0)
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── 2. Top N palabras más frecuentes ──────────────────────────────────
+    if plot_type == "top_words":
+        all_words = []
+        for t in texts: all_words.extend(t.split())
+        top = Counter(all_words).most_common(top_n)
+        if not top: return jsonify({"error": "No hay palabras" if es else "No words found"}), 400
+        words, counts = zip(*top)
+        fig, ax = plt.subplots(figsize=(8, max(4, top_n * 0.3)))
+        style_ax(ax)
+        colors = [PALETTE[i % len(PALETTE)] for i in range(len(words))]
+        ax.barh(list(reversed(words)), list(reversed(counts)), color=list(reversed(colors)), height=0.65)
+        ax.set_xlabel("Frecuencia" if es else "Frequency", color=INK, fontsize=11)
+        ax.set_title(f"Top {top_n} {'palabras más frecuentes' if es else 'most frequent words'}",
+                     color=INK, fontsize=13, fontweight="bold", pad=12)
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── 3. Distribución de clases ─────────────────────────────────────────
+    if plot_type == "class_dist":
+        if not names:
+            return jsonify({"error": "Este dataset no tiene columna de categorías" if es else "Dataset has no category column"}), 400
+        c = Counter(labels)
+        cats   = [names[k] for k in sorted(c.keys()) if k < len(names)]
+        counts = [c[k] for k in sorted(c.keys()) if k < len(names)]
+        total  = sum(counts) or 1
+        fig, ax = plt.subplots(figsize=(7, 4))
+        style_ax(ax)
+        bars = ax.bar(cats, counts,
+                      color=[PALETTE[i % len(PALETTE)] for i in range(len(cats))],
+                      width=0.55, zorder=3)
+        ax.set_ylabel("Nº de documentos" if es else "Number of documents", color=INK, fontsize=11)
+        ax.set_title("Distribución de clases" if es else "Class distribution",
+                     color=INK, fontsize=13, fontweight="bold", pad=12)
+        for bar, cnt in zip(bars, counts):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + total*0.01,
+                    f"{cnt}\n({100*cnt/total:.1f}%)",
+                    ha="center", va="bottom", fontsize=10, color=INK)
+        ax.set_ylim(0, max(counts) * 1.18)
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── 4. Longitud media por clase ────────────────────────────────────────
+    if plot_type == "length_by_class":
+        if not names:
+            return jsonify({"error": "Este dataset no tiene columna de categorías" if es else "Dataset has no category column"}), 400
+        from collections import defaultdict
+        by_class = defaultdict(list)
+        for i, t in enumerate(texts):
+            if labels and i < len(labels):
+                lname = names[labels[i]] if labels[i] < len(names) else str(labels[i])
+                by_class[lname].append(len(t.split()))
+        if not by_class: return jsonify({"error": "Sin datos por clase" if es else "No data per class"}), 400
+        cats   = sorted(by_class.keys())
+        means  = [float(np.mean(by_class[c])) for c in cats]
+        stds   = [float(np.std(by_class[c]))  for c in cats]
+        fig, ax = plt.subplots(figsize=(7, 4))
+        style_ax(ax)
+        xs = range(len(cats))
+        bars = ax.bar(xs, means, yerr=stds, capsize=5,
+                      color=[PALETTE[i % len(PALETTE)] for i in range(len(cats))],
+                      width=0.55, zorder=3, error_kw={"ecolor": "#888", "linewidth": 1.2})
+        ax.set_xticks(list(xs)); ax.set_xticklabels(cats, color=INK, fontsize=11)
+        ax.set_ylabel("Palabras por documento" if es else "Words per document", color=INK, fontsize=11)
+        ax.set_title("Longitud media de documentos por clase" if es else "Average document length by class",
+                     color=INK, fontsize=13, fontweight="bold", pad=12)
+        for bar, m in zip(bars, means):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(stds)*0.05,
+                    f"{m:.1f}", ha="center", va="bottom", fontsize=10, color=INK)
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
+    # ── 5. Nube de palabras por clase ──────────────────────────────────────
+    if plot_type == "wordcloud_by_class":
+        try:
+            from wordcloud import WordCloud as WC
+        except ImportError:
+            return jsonify({"error": "wordcloud no instalado" if es else "wordcloud not installed"}), 500
+        if not names:
+            return jsonify({"error": "Este dataset no tiene columna de categorías" if es else "Dataset has no category column"}), 400
+        from collections import defaultdict
+        by_class = defaultdict(list)
+        for i, t in enumerate(texts):
+            if labels and i < len(labels):
+                lname = names[labels[i]] if labels[i] < len(names) else str(labels[i])
+                by_class[lname].append(t)
+        cats = sorted(by_class.keys())
+        n_cls = len(cats)
+        if n_cls == 0: return jsonify({"error": "Sin clases" if es else "No classes found"}), 400
+        cols_n = min(n_cls, 3)
+        rows_n = (n_cls + cols_n - 1) // cols_n
+        fig, axes = plt.subplots(rows_n, cols_n,
+                                 figsize=(cols_n * 5, rows_n * 3.2))
+        if n_cls == 1: axes = [[axes]]
+        elif rows_n == 1: axes = [axes] if cols_n > 1 else [[axes]]
+        fig.patch.set_facecolor(LIGHT)
+        flat_axes = [ax for row in axes for ax in (row if hasattr(row, '__iter__') else [row])]
+        import random as _rnd
+        _rnd.seed(42)
+        wc_palette = PALETTE + ["#FF6B9D", "#00B4D8", "#06D6A0"]
+        def color_func(word, font_size, position, orientation, random_state=None, **kwargs):
+            return _rnd.choice(wc_palette)
+        for i, cls in enumerate(cats):
+            ax = flat_axes[i]
+            ax.set_facecolor(LIGHT)
+            words = []
+            for t in by_class[cls]: words.extend(t.split())
+            freq = {w: c for w, c in Counter(words).most_common(60)}
+            if freq:
+                wc = WC(width=500, height=260, background_color="#f5f5f5",
+                        max_words=60, color_func=color_func, margin=4).generate_from_frequencies(freq)
+                ax.imshow(wc, interpolation="bilinear")
+            ax.axis("off")
+            ax.set_title(cls, color=INK, fontsize=12, fontweight="bold", pad=6)
+        for j in range(n_cls, len(flat_axes)):
+            flat_axes[j].axis("off")
+        fig.suptitle("Nube de palabras por clase" if es else "Word cloud by class",
+                     color=INK, fontsize=13, fontweight="bold", y=1.01)
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
+    return jsonify({"error": f"Tipo de gráfica desconocido: {plot_type}" if es else f"Unknown plot type: {plot_type}"}), 400
 
 # ── SSE progress stream ───────────────────────────────────────────────────────
 @app.route("/api/progress_stream")

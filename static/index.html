@@ -5191,7 +5191,240 @@ async function renderTabPreprocess(node) {
 // ═══════════════════════════════════════════
 // PLOTS — flexible plot builder with auto-history + compare
 // ═══════════════════════════════════════════
+async function renderNlpPlots(node) {
+  var _en = lang === "en";
+  var dnRef = upstreamDataNode(node.id);
+
+  // Fetch dataset info to know if there are classes
+  var inf = await fetch("/api/dataset_info").then(function(r){ return r.json(); }).catch(function(){ return {}; });
+  var hasClasses = inf.label_names && inf.label_names.length > 0;
+
+  // Check if preprocessing has been applied upstream
+  var upSrc = upstreamSourceNode(node.id);
+  var preprocessed = upSrc && upSrc.type === "preprocess" && upSrc.data && upSrc.data.applied;
+
+  if (!node.data.plotHistory) node.data.plotHistory = [];
+
+  var NLP_PLOT_TYPES = [
+    { id:"doc_length",        label:"📏 " + (_en?"Document length"    :"Longitud de documentos"), desc:_en?"Distribution of words per document"         :"Distribución del nº de palabras por documento" },
+    { id:"top_words",         label:"🔤 " + (_en?"Frequent words"     :"Palabras frecuentes"),    desc:_en?"Top N most common words in the corpus"        :"Top N palabras más comunes del corpus" },
+    { id:"class_dist",        label:"📊 " + (_en?"Class distribution" :"Distribución de clases"), desc:_en?"Number of documents per category"             :"Cuántos documentos hay por categoría",   needsClass: true },
+    { id:"length_by_class",   label:"📐 " + (_en?"Length by class"    :"Longitud por clase"),     desc:_en?"Average document length per category"         :"Longitud media de docs por categoría",   needsClass: true },
+    { id:"wordcloud_by_class",label:"☁️ " + (_en?"Wordcloud by class" :"Wordcloud por clase"),    desc:_en?"Word cloud separated by category"             :"Nube de palabras separada por categoría",needsClass: true },
+  ];
+
+  var PLOT_TYPES = NLP_PLOT_TYPES.filter(function(p){ return !p.needsClass || hasClasses; });
+
+  var selType   = (node.data.nlpPlotCfg && node.data.nlpPlotCfg.type) || PLOT_TYPES[0].id;
+  var corpus    = (node.data.nlpPlotCfg && node.data.nlpPlotCfg.corpus) || (preprocessed ? "processed" : "raw");
+  var topN      = (node.data.nlpPlotCfg && node.data.nlpPlotCfg.top_n) || 20;
+  var activeTab = "chart";
+  var histCompareIdx = null;
+
+  function renderHistoryTab() {
+    var hw = document.getElementById("plt-history-tab");
+    if (!hw) return;
+    var hist = node.data.plotHistory;
+    var n = hist.length;
+    var tabHist = document.getElementById("plt-tab-hist");
+    if (tabHist) tabHist.textContent = n ? "🗂 Historial (" + n + ")" : "🗂 Historial";
+    if (!n) {
+      hw.innerHTML = '<div style="padding:32px;text-align:center;color:var(--sec)"><div style="font-size:32px">🗂️</div><div style="font-size:13px;margin-top:8px">'+(_en?"No saved charts yet.":"Sin gráficas guardadas.")+'</div></div>';
+      return;
+    }
+    hw.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 6px;flex-shrink:0">' +
+        '<div style="font-size:12px;color:var(--sec)">'+n+' '+(_en?'chart'+(n!==1?"s":""):'gráfica'+(n!==1?"s":""))+'  ·  '+(_en?"Click to compare · 🔍 expand":"Clic para comparar · 🔍 ampliar")+'</div>' +
+        '<button id="btn-plt-clear-hist" class="btn btn-ghost btn-sm" style="font-size:11px">🗑 '+(_en?"Clear":"Limpiar")+'</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;padding:6px 14px 14px;overflow-y:auto;flex:1">' +
+        hist.map(function(h, idx) {
+          var isSel = idx === histCompareIdx;
+          return '<div onclick="pltHistClick('+idx+')" style="position:relative;border:2px solid '+(isSel?'var(--accent)':'var(--border)')+';border-radius:8px;overflow:hidden;cursor:pointer">' +
+            '<img src="'+h.img+'" style="width:100%;display:block">' +
+            '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);color:#fff;font-size:10px;padding:4px 6px;display:flex;justify-content:space-between;align-items:center">' +
+              '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px">'+h.label+'</span>' +
+              '<span style="display:flex;gap:4px;flex-shrink:0">' +
+                '<button onclick="event.stopPropagation();pltHistZoom('+idx+')" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px;padding:0">🔍</button>' +
+                '<button onclick="event.stopPropagation();pltHistSave('+idx+')" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px;padding:0">💾</button>' +
+                '<button onclick="event.stopPropagation();pltHistDel('+idx+')" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px;padding:0">✕</button>' +
+              '</span>' +
+            '</div></div>';
+        }).join("") +
+      '</div>';
+    document.getElementById("btn-plt-clear-hist").onclick = function() {
+      node.data.plotHistory = []; histCompareIdx = null; renderHistoryTab();
+    };
+  }
+
+  window.pltHistClick = function(idx) {
+    var hist = node.data.plotHistory;
+    if (!hist || !hist[idx]) return;
+    if (histCompareIdx === null) { histCompareIdx = idx; renderHistoryTab(); }
+    else if (histCompareIdx === idx) { histCompareIdx = null; renderHistoryTab(); }
+    else { pltHistZoom(idx); histCompareIdx = null; renderHistoryTab(); }
+  };
+  window.pltHistZoom = function(idx) {
+    var hist = node.data.plotHistory;
+    if (hist && hist[idx]) expandImg(hist[idx].img);
+  };
+  window.pltCompareClear = function() { histCompareIdx = null; };
+
+  function switchTab(tab) {
+    activeTab = tab;
+    var onC = tab === "chart";
+    ["plt-tab-chart","plt-tab-hist"].forEach(function(id, i) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var active = (i === 0) === onC;
+      el.style.borderBottom = active ? "2px solid var(--accent)" : "2px solid transparent";
+      el.style.color        = active ? "var(--ink)" : "var(--sec)";
+      el.style.fontWeight   = active ? "700" : "400";
+    });
+    var left = document.getElementById("plt-left-panel");
+    var btnGen = document.getElementById("btn-plt");
+    if (left) { left.style.maxWidth = onC ? "270px" : "0"; left.style.opacity = onC ? "1" : "0"; }
+    if (btnGen) btnGen.style.display = onC ? "" : "none";
+    var panC = document.getElementById("plt-panel-chart");
+    var panH = document.getElementById("plt-panel-history");
+    if (panC) panC.style.display = onC ? "" : "none";
+    if (panH) panH.style.display = onC ? "none" : "";
+    if (!onC) renderHistoryTab();
+  }
+
+  // ── Build UI ─────────────────────────────────────────────────────────────
+  mBody.style.padding = "0";
+  mBody.innerHTML =
+    '<div style="display:flex;min-height:420px">' +
+    '<div id="plt-left-panel" style="width:270px;max-width:270px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:14px 12px;gap:10px;transition:max-width 250ms ease,opacity 180ms ease">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--sec);letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px">'+(_en?"Chart type":"Tipo de gráfico")+'</div>' +
+      '<div style="display:flex;flex-direction:column;gap:5px">' +
+        PLOT_TYPES.map(function(pt) {
+          var active = pt.id === selType;
+          return '<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1.5px solid '+(active?'var(--accent)':'var(--border)')+';background:'+(active?'var(--accent-tint)':'var(--card)')+';transition:all .15s">' +
+            '<input type="radio" name="plt-type" value="'+pt.id+'" '+(active?'checked':'')+' style="margin-top:3px;flex-shrink:0">' +
+            '<div><div style="font-size:13px;font-weight:700;line-height:1.4">'+pt.label+'</div>' +
+            '<div style="font-size:11px;color:var(--sec);line-height:1.3">'+pt.desc+'</div></div></label>';
+        }).join("") +
+      '</div>' +
+      // Extra controls
+      '<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">' +
+        (preprocessed
+          ? '<div class="fg"><div class="fl" style="font-size:11px">Corpus</div>' +
+              '<select class="inp" id="plt-corpus" style="font-size:12px">' +
+                '<option value="raw"'+(corpus==="raw"?" selected":"")+'>'     +(_en?"Original":"Original")+'</option>' +
+                '<option value="processed"'+(corpus==="processed"?" selected":"")+'>'  +(_en?"Preprocessed":"Preprocesado")+'</option>' +
+              '</select></div>'
+          : '<div style="font-size:11px;color:var(--sec)">'+(_en?"Corpus: original (connect Preprocessing to use processed)":"Corpus: original (conecta Preprocesado para usar el procesado)")+'</div>') +
+        '<div id="plt-topn-wrap" class="fg"><div class="fl" style="font-size:11px">'+(_en?"Top N words":"Top N palabras")+'</div>' +
+          '<input type="number" class="inp" id="plt-topn" value="'+topN+'" min="5" max="100" style="font-size:12px"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="flex:1;min-width:0;display:flex;flex-direction:column">' +
+      '<div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0">' +
+        '<button id="plt-tab-chart" style="padding:9px 18px;font-size:13px;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--ink);font-weight:700;cursor:pointer">📊 '+(_en?"Chart":"Gráfica")+'</button>' +
+        '<button id="plt-tab-hist"  style="padding:9px 18px;font-size:13px;background:none;border:none;border-bottom:2px solid transparent;color:var(--sec);font-weight:400;cursor:pointer">🗂 '+(_en?"History":"Historial")+'</button>' +
+      '</div>' +
+      '<div id="plt-panel-chart" style="padding:14px"><div id="plt-chart" style="color:var(--sec);font-size:13px">'+(_en?"Select a type and click Generate.":"Selecciona un tipo y pulsa Generar.")+'</div></div>' +
+      '<div id="plt-panel-history" style="display:none;flex-direction:column"><div id="plt-history-tab"></div></div>' +
+    '</div>' +
+    '</div>';
+
+  mFoot.innerHTML =
+    '<button class="btn btn-black" id="btn-plt">📊 '+(_en?"Generate":"Generar")+'</button>' +
+    '<span id="plt-autosave-note" style="font-size:11px;color:var(--sec);display:none">✓ '+(_en?"saved to history":"guardado en historial")+'</span>';
+
+  window._pltRenderHistoryTab = renderHistoryTab;
+
+  // Show/hide top-n control depending on type
+  function updateControls() {
+    var topNWrap = document.getElementById("plt-topn-wrap");
+    if (topNWrap) topNWrap.style.display = selType === "top_words" ? "" : "none";
+  }
+  updateControls();
+
+  mBody.querySelectorAll('input[name="plt-type"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      selType = radio.value;
+      mBody.querySelectorAll('label').forEach(function(lbl) {
+        var inp = lbl.querySelector('input[name="plt-type"]');
+        if (!inp) return;
+        var active = inp.value === selType;
+        lbl.style.borderColor = active ? "var(--accent)" : "var(--border)";
+        lbl.style.background  = active ? "var(--accent-tint)" : "var(--card)";
+      });
+      updateControls();
+    });
+  });
+
+  document.getElementById("plt-tab-chart").onclick = function() { switchTab("chart"); };
+  document.getElementById("plt-tab-hist").onclick  = function() { switchTab("history"); };
+
+  document.getElementById("btn-plt").onclick = async function() {
+    var corpusSel = document.getElementById("plt-corpus");
+    var topNEl    = document.getElementById("plt-topn");
+    corpus = corpusSel ? corpusSel.value : "raw";
+    topN   = topNEl   ? parseInt(topNEl.value, 10) || 20 : 20;
+    node.data.nlpPlotCfg = { type: selType, corpus: corpus, top_n: topN };
+
+    switchTab("chart");
+    var chartEl = document.getElementById("plt-chart");
+    var _anim   = prepareModalResize();
+    chartEl.innerHTML = '<div class="loading" style="padding:20px">' + (_en?"Generating…":"Generando…") + '</div>';
+
+    var resp = await fetch("/api/plot_nlp", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ type: selType, corpus: corpus, top_n: topN })
+    });
+    var d = await resp.json();
+    if (d.error) { chartEl.innerHTML = '<div style="color:#ff6b6b;padding:14px">'+d.error+'</div>'; return; }
+
+    var imgSrc = "data:image/png;base64," + d.img;
+    var pt = PLOT_TYPES.find(function(p){ return p.id === selType; });
+    var label = (pt ? pt.label.replace(/\p{Emoji}/gu,"").trim() : selType) +
+                " · " + new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+
+    chartEl.innerHTML =
+      '<img id="plt-chart-img" src="'+imgSrc+'" style="width:100%;cursor:zoom-in;border-radius:8px;display:block" onclick="expandImg(this.src)">' +
+      '<div style="margin-top:8px;display:flex;gap:8px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="expandImg(document.querySelector(\'#plt-chart-img\').src)">⛶ '+(_en?"Expand":"Ampliar")+'</button>' +
+        '<button class="btn btn-ghost btn-sm" id="btn-plt-dl">💾 '+(_en?"Save PNG":"Guardar PNG")+'</button>' +
+      '</div>';
+
+    var _img = document.getElementById("plt-chart-img");
+    if (_img && !_img.complete) { _img.onload = function() { _anim(); }; } else { requestAnimationFrame(function(){ requestAnimationFrame(_anim); }); }
+
+    document.getElementById("btn-plt-dl").onclick = function() {
+      var a = document.createElement("a"); a.download = "nlp_plot_"+selType+"_"+Date.now()+".png"; a.href = imgSrc; a.click();
+    };
+
+    if (!node.data.plotHistory) node.data.plotHistory = [];
+    node.data.plotHistory.push({ label: label, img: imgSrc, ts: Date.now() });
+    var tabHist = document.getElementById("plt-tab-hist");
+    var nHist = node.data.plotHistory.length;
+    if (tabHist) tabHist.textContent = "🗂 "+(_en?"History":"Historial")+" (" + nHist + ")";
+    var noteEl = document.getElementById("plt-autosave-note");
+    if (noteEl) { noteEl.style.display = ""; setTimeout(function(){ noteEl.style.display = "none"; }, 2500); }
+    setNS(node.id, pt ? pt.label : selType);
+    setNB(node.id, "✓", "badge-ok");
+    setOK(node.id, true);
+  };
+}
+
 async function renderPlots(node) {
+  // ── Detect NLP upstream ──────────────────────────────────────────────────
+  var dnRef = upstreamDataNode(node.id);
+  var isNlp = dnRef && dnRef.data && dnRef.data.nlp_mode === true;
+  if (!isNlp) {
+    // also check preprocess node upstream
+    var upSrc = upstreamSourceNode(node.id);
+    if (upSrc && upSrc.type === "preprocess") {
+      var upData = upstreamDataNode(upSrc.id);
+      if (upData && upData.data && upData.data.nlp_mode === true) isNlp = true;
+    }
+  }
+  if (isNlp) { await renderNlpPlots(node); return; }
+
   var qi = nq(node, "/api/tabular_info");
   if (qi.err) { showNotConnected(qi.err); return; }
   var infoResp = await fetch(qi.url);
@@ -5589,10 +5822,6 @@ async function renderData(node) {
   mBody.innerHTML =
     '<div class="col2">' +
     '<div class="col-left">' +
-      '<div class="fg"><div class="fl">Built-in dataset</div>' +
-        '<select class="inp" id="ds-sel"><option value="">Loading...</option></select></div>' +
-      '<button class="btn btn-black" id="btn-ds">Load dataset</button>' +
-      '<div class="divider">or</div>' +
       '<div class="fg"><div class="fl">Upload CSV</div>' +
         '<div class="dropzone" id="dz">📄 Drop CSV or click to browse</div>' +
         '<input type="file" accept=".csv" id="csv-fi" style="display:none"></div>' +
@@ -5605,53 +5834,7 @@ async function renderData(node) {
     '</div>' +
     '</div>';
 
-  // Load both NLP and tabular datasets into the same select
-  var [nlpList, tabList] = await Promise.all([
-    fetch("/api/datasets").then(function(r){ return r.json(); }),
-    fetch("/api/tab_datasets").then(function(r){ return r.json(); })
-  ]);
-  var dsSel = document.getElementById("ds-sel");
-  dsSel.innerHTML =
-    '<option value="">— Selecciona —</option>' +
-    '<optgroup label="📝 Texto / NLP">' +
-      nlpList.map(function(d){ return '<option value="nlp::'+d.id+'">'+d.name+'</option>'; }).join("") +
-    '</optgroup>' +
-    '<optgroup label="📊 Datos tabulares">' +
-      tabList.map(function(d){ return '<option value="tab::'+d.id+'">'+d.name+'</option>'; }).join("") +
-    '</optgroup>';
-
   _animData();
-
-  document.getElementById("btn-ds").onclick = async function() {
-    var val = dsSel.value; if (!val) { toast("Select a dataset first"); return; }
-    var isTab = val.startsWith("tab::");
-    var id = val.replace(/^(nlp|tab)::/, "");
-    var rd, d;
-    if (isTab) {
-      rd = await fetch("/api/load_tab_dataset", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id:id, node_id: String(node.id)}) });
-    } else {
-      rd = await fetch("/api/load_dataset", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id:id, node_id: String(node.id)}) });
-    }
-    d = await rd.json(); if (d.error) { toast(d.error); return; }
-    node.data.loaded = true; node.data.task = d.task;
-    // New data loaded — clear plotHistory of any connected plots nodes
-    edges.forEach(function(e) {
-      if (e.from === node.id) {
-        var dn = nodeById(e.to);
-        if (dn && dn.type === "plots" && dn.data) dn.data.plotHistory = [];
-      }
-    });
-    // Persist target col and mode so downstream blocks can read them
-    node.data.nlp_mode = isTab ? false : true;
-    if (d.target && d.task !== "topic_model") node.data.targetCol = d.target;
-    else if (isTab && d.columns && d.columns.length && !node.data.targetCol)
-      node.data.targetCol = d.columns[d.columns.length-1].name || d.columns[d.columns.length-1];
-    var badge = isTab ? "tabular" : d.task;
-    setNS(node.id, (d.n || (d.rows && d.rows.total) || "") + " · " + d.task);
-    setNB(node.id, badge, isTab ? "badge-info" : "badge-ok");
-    setOK(node.id, true);
-    showDsInfo(d, node);
-  };
 
   var dz = document.getElementById("dz"), fi = document.getElementById("csv-fi");
   dz.onclick = function() { fi.click(); };
@@ -6308,11 +6491,12 @@ async function renderPre(node) {
     // RIGHT: live preview + charts
     '<div class="col-right" style="overflow-y:auto">' +
       '<div class="fl" style="margin-bottom:6px">' + (_en ? "Live preview" : "Preview en vivo") + '</div>' +
+      '<div id="pre-class-row" style="display:none;gap:8px;align-items:center;margin-bottom:6px">' +
+        '<span style="font-size:11px;color:var(--sec);white-space:nowrap">' + (_en ? "Filter class:" : "Clase:") + '</span>' +
+        '<select class="inp" id="pre-class" style="flex:1"></select>' +
+      '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">' +
-        '<select class="inp" id="pre-idx" style="width:120px">' +
-          (inf.samples||[]).map(function(_, i){ return '<option value="'+i+'">Doc '+(i+1)+'</option>'; }).join("") +
-        '</select>' +
-        '<button class="btn btn-ghost btn-sm" id="pre-prev">▶ ' + (_en ? "View" : "Ver") + '</button>' +
+        '<select class="inp" id="pre-idx" style="flex:1"></select>' +
       '</div>' +
       '<div class="fl" style="font-size:11px">' + (_en ? "Original (≤200 chars)" : "Original (≤200 chars)") + '</div>' +
       '<div class="mono-box mono-before" id="pre-orig"></div>' +
@@ -6367,6 +6551,55 @@ async function renderPre(node) {
     } catch(e) { /* silent on preview errors */ }
   }
 
+  // ── Load all docs into selector, with optional class filter ────────────
+  var _allDocs = [];
+  (async function() {
+    try {
+      var r = await fetch("/api/all_texts");
+      var d = await r.json();
+      _allDocs = d.docs || [];
+      var classNames = d.label_names || [];
+      var task = d.task || "";
+
+      // Show class filter only when there are categories (classification)
+      var classRow = document.getElementById("pre-class-row");
+      var classSel = document.getElementById("pre-class");
+      if (classNames.length > 0) {
+        classRow.style.display = "flex";
+        classSel.innerHTML =
+          '<option value="">' + (_en ? "All classes" : "Todas las clases") + '</option>' +
+          classNames.map(function(c){ return '<option value="'+c+'">'+c+'</option>'; }).join("");
+        classSel.addEventListener("change", function() { _rebuildDocSelect(); });
+      }
+
+      _rebuildDocSelect();
+    } catch(e) { /* silent */ }
+  })();
+
+  function _rebuildDocSelect() {
+    var classSel = document.getElementById("pre-class");
+    var filterClass = classSel ? classSel.value : "";
+    var idxSel = document.getElementById("pre-idx");
+    if (!idxSel) return;
+    var filtered = filterClass
+      ? _allDocs.filter(function(d){ return d.label === filterClass; })
+      : _allDocs;
+    if (filtered.length === 0) {
+      idxSel.innerHTML = '<option value="">—</option>';
+      return;
+    }
+    idxSel.innerHTML = filtered.map(function(d){
+      var lbl = d.label ? " [" + d.label + "]" : "";
+      var preview = d.preview ? " · " + d.preview.slice(0, 50) + (d.preview.length > 50 ? "…" : "") : "";
+      return '<option value="'+d.idx+'">Doc '+(d.idx+1)+lbl+preview+'</option>';
+    }).join("");
+    runPreview();
+  }
+
+  // Auto-preview on select change
+  var _idxSel = document.getElementById("pre-idx");
+  if (_idxSel) _idxSel.addEventListener("change", runPreview);
+
   document.getElementById("pre-all").onclick  = function(){
     // "Todos" respeta exclusividad: activa stemming, desactiva lemmatization
     document.querySelectorAll("#pre-panel-text .step-chk").forEach(function(c){
@@ -6376,7 +6609,6 @@ async function renderPre(node) {
     runPreview();
   };
   document.getElementById("pre-none").onclick = function(){ document.querySelectorAll("#pre-panel-text .step-chk").forEach(function(c){c.checked=false;}); runPreview(); };
-  document.getElementById("pre-prev").onclick = runPreview;
   document.querySelectorAll("#pre-panel-text .step-chk").forEach(function(chk){
     chk.addEventListener("change", function() {
       // Exclusivity: uncheck the sibling exclusive step
@@ -6441,8 +6673,7 @@ async function renderPre(node) {
     exportWithDialog("/api/export_csv", _en ? "preprocessed_corpus.csv" : "corpus_preprocesado.csv");
   };
 
-  // Initial preview (only if there are samples)
-  if (inf.samples && inf.samples.length) runPreview();
+  // Initial preview is triggered by _rebuildDocSelect() after all_texts loads
 
   // ── 5. Fill TABULAR panel ────────────────────────────────────────────────
   var tabPanel = document.getElementById("pre-panel-tabular");
