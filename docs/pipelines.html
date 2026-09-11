@@ -190,7 +190,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
         </div></div>
         <div class="tbl-wrap"><table>
           <tr><th>Bloque</th><th>Qué hace</th></tr>
-          <tr><td>📂 Datos</td><td>Carga el CSV o dataset demo (ej. California Housing)</td></tr>
+          <tr><td>📂 Datos</td><td>Sube tu propio CSV tabular</td></tr>
           <tr><td>🔧 Preprocesado</td><td>Imputa nulos, escala con StandardScaler, codifica categóricas</td></tr>
           <tr><td>📉 Reg. Lineal</td><td>Entrena OLS / Ridge / Lasso; muestra RMSE, MAE, R² y gráficas de residuos</td></tr>
           <tr><td>📋 Evaluación</td><td>Métricas detalladas sobre el split de test</td></tr>
@@ -230,7 +230,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
         </div></div>
         <div class="tbl-wrap"><table>
           <tr><th>Bloque</th><th>Qué hace</th></tr>
-          <tr><td>📂 Datos</td><td>Carga cualquier CSV tabular o dataset demo</td></tr>
+          <tr><td>📂 Datos</td><td>Sube cualquier CSV tabular</td></tr>
           <tr><td>🔬 Análisis</td><td>Estadísticas descriptivas, tipos de columna, nulos y correlación</td></tr>
           <tr><td>📊 Plots</td><td>Histogramas, boxplots, dispersión y distribución de la variable objetivo</td></tr>
         </table></div>
@@ -257,28 +257,9 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       </div>
 
       <div class="card">
-        <div class="card-label">Datasets incluidos</div>
-        <div class="row-2" style="margin-top:10px;margin-bottom:0">
-          <div>
-            <h3 style="margin-top:0;margin-bottom:8px">Texto</h3>
-            <div class="tbl-wrap"><table>
-              <tr><th>Dataset</th><th>Tarea</th></tr>
-              <tr><td>🎬 Movie Reviews</td><td>Clasificación</td></tr>
-              <tr><td>📧 Spam vs Ham</td><td>Clasificación</td></tr>
-              <tr><td>😊 Twitter Sentiment</td><td>Clasificación</td></tr>
-              <tr><td>📰 News</td><td>Topic model</td></tr>
-            </table></div>
-          </div>
-          <div>
-            <h3 style="margin-top:0;margin-bottom:8px">Tabulares</h3>
-            <div class="tbl-wrap"><table>
-              <tr><th>Dataset</th><th>Tarea</th></tr>
-              <tr><td>🏥 Patient Health Risk</td><td>Clasificación</td></tr>
-              <tr><td>🏠 California Housing</td><td>Regresión</td></tr>
-            </table></div>
-          </div>
-        </div>
-        <div class="note" style="margin-top:12px">También puedes subir tu propio CSV desde el bloque <strong>Datos</strong>.</div>
+        <div class="card-label">Carga de datos</div>
+        <p style="margin:10px 0 6px">El bloque <strong>📂 Datos</strong> solo acepta CSV subido por el usuario. No hay datasets predeterminados.</p>
+        <div class="note">Arrastra tu CSV a la zona de carga o usa el selector de archivo. Tras la carga, configura la columna objetivo y el tipo de tarea.</div>
       </div>
 
       <span class="sec-anchor" id="es-topic"></span>
@@ -440,7 +421,7 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         </div></div>
         <div class="tbl-wrap"><table>
           <tr><th>Block</th><th>What it does</th></tr>
-          <tr><td>📂 Data</td><td>Loads the CSV or demo dataset (e.g. California Housing)</td></tr>
+          <tr><td>📂 Data</td><td>Upload your own tabular CSV</td></tr>
           <tr><td>🔧 Preprocessing</td><td>Imputes nulls, scales with StandardScaler, encodes categoricals</td></tr>
           <tr><td>📉 Lin. Reg.</td><td>Trains OLS / Ridge / Lasso; shows RMSE, MAE, R² and residual plots</td></tr>
           <tr><td>📋 Evaluation</td><td>Detailed metrics on the test split</td></tr>
@@ -480,7 +461,7 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         </div></div>
         <div class="tbl-wrap"><table>
           <tr><th>Block</th><th>What it does</th></tr>
-          <tr><td>📂 Data</td><td>Loads any tabular CSV or demo dataset</td></tr>
+          <tr><td>📂 Data</td><td>Upload any tabular CSV</td></tr>
           <tr><td>🔬 Analysis</td><td>Descriptive stats, column types, null values and correlation matrix</td></tr>
           <tr><td>📊 Plots</td><td>Histograms, boxplots, scatter plots and target variable distribution</td></tr>
         </table></div>
@@ -507,28 +488,9 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
       </div>
 
       <div class="card">
-        <div class="card-label">Included datasets</div>
-        <div class="row-2" style="margin-top:10px;margin-bottom:0">
-          <div>
-            <h3 style="margin-top:0;margin-bottom:8px">Text</h3>
-            <div class="tbl-wrap"><table>
-              <tr><th>Dataset</th><th>Task</th></tr>
-              <tr><td>🎬 Movie Reviews</td><td>Classification</td></tr>
-              <tr><td>📧 Spam vs Ham</td><td>Classification</td></tr>
-              <tr><td>😊 Twitter Sentiment</td><td>Classification</td></tr>
-              <tr><td>📰 News</td><td>Topic model</td></tr>
-            </table></div>
-          </div>
-          <div>
-            <h3 style="margin-top:0;margin-bottom:8px">Tabular</h3>
-            <div class="tbl-wrap"><table>
-              <tr><th>Dataset</th><th>Task</th></tr>
-              <tr><td>🏥 Patient Health Risk</td><td>Classification</td></tr>
-              <tr><td>🏠 California Housing</td><td>Regression</td></tr>
-            </table></div>
-          </div>
-        </div>
-        <div class="note" style="margin-top:12px">You can also upload your own CSV from the <strong>Data</strong> block.</div>
+        <div class="card-label">Loading data</div>
+        <p style="margin:10px 0 6px">The <strong>📂 Data</strong> block only accepts user-uploaded CSV files. There are no built-in datasets.</p>
+        <div class="note">Drag your CSV to the upload area or use the file picker. After loading, configure the target column and task type.</div>
       </div>
 
       <span class="sec-anchor" id="en-topic"></span>

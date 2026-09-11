@@ -564,7 +564,7 @@ var BLOCKS = {
   es: {
     data: [
       {id:'datos', icon:'📂', name:'Datos',
-       tagline:'Carga un CSV local o uno de los datasets incluidos.',
+       tagline:'Sube tu propio CSV. Configura columnas y variable objetivo.',
        desc:'Punto de entrada de todos los flujos. Sube tu propio fichero CSV o selecciona un dataset de muestra. Detecta automáticamente columnas de texto y etiquetas. Los datos cargados están disponibles para todos los bloques conectados aguas abajo.',
        ins:[], outs:['Datos tabulares','Corpus de texto'],
        canvas:[{icon:'📂',name:'Datos',status:'1 200 filas · 3 cols',out:true}]},
@@ -581,7 +581,7 @@ var BLOCKS = {
        ins:['Datos tabulares','Corpus de texto'], outs:['Datos procesados'],
        canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🔧',name:'Preprocesado',status:'Pipeline listo',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
-       tagline:'Visualizaciones del dataset: histogramas, boxplots, pairplot.',
+       tagline:'Tabular: histogramas, boxplots, scatter, correlación. NLP: longitud de docs, palabras frecuentes, distribución de clases, wordcloud por clase.',
        desc:'Genera gráficas matplotlib sobre el dataset activo: histograma por columna, boxplot, pairplot de las primeras 5 variables numéricas y distribución de la variable objetivo. Las gráficas se muestran en el panel lateral.',
        ins:['Datos tabulares'], outs:[],
        canvas:[{icon:'📂',name:'Datos',out:true},{icon:'📊',name:'Plots',status:'Ver gráficas →'}]},
@@ -651,7 +651,7 @@ var BLOCKS = {
   en: {
     data: [
       {id:'datos', icon:'📂', name:'Data',
-       tagline:'Load a local CSV or one of the included datasets.',
+       tagline:'Upload your own CSV. Configure columns and target variable.',
        desc:'Entry point for all flows. Upload your own CSV file or select a sample dataset. Automatically detects text and label columns. Loaded data is available to all downstream blocks.',
        ins:[], outs:['Tabular data','Text corpus'],
        canvas:[{icon:'📂',name:'Data',status:'1,200 rows · 3 cols',out:true}]},
@@ -668,7 +668,7 @@ var BLOCKS = {
        ins:['Tabular data','Text corpus'], outs:['Processed data'],
        canvas:[{icon:'📂',name:'Data',out:true},{icon:'🔧',name:'Preprocessing',status:'Pipeline ready',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
-       tagline:'Dataset visualisations: histograms, boxplots, pairplot.',
+       tagline:'Tabular: histograms, boxplots, scatter, correlation. NLP: document length, frequent words, class distribution, wordcloud by class.',
        desc:'Generates matplotlib plots on the active dataset: histogram per column, boxplot, pairplot of the first 5 numeric variables and target variable distribution.',
        ins:['Tabular data'], outs:[],
        canvas:[{icon:'📂',name:'Data',out:true},{icon:'📊',name:'Plots',status:'See plots →'}]},
