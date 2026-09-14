@@ -157,6 +157,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <div class="toc-group-label" style="margin-top:10px">Avanzadas</div>
       <a class="toc-link" href="#es-topic"     onclick="tocClick(this)">Topic Model</a>
       <a class="toc-link" href="#es-rag"       onclick="tocClick(this)">RAG</a>
+      <a class="toc-link" href="#es-vision"    onclick="tocClick(this)">Visión CNN</a>
     </div>
     <div class="toc-group" id="tocGroupEn">
       <div class="toc-group-label">Typical</div>
@@ -167,6 +168,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <div class="toc-group-label" style="margin-top:10px">Advanced</div>
       <a class="toc-link" href="#en-topic"     onclick="tocClick(this)">Topic Model</a>
       <a class="toc-link" href="#en-rag"       onclick="tocClick(this)">RAG</a>
+      <a class="toc-link" href="#en-vision"    onclick="tocClick(this)">CNN Vision</a>
     </div>
   </nav>
 
@@ -388,6 +390,64 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
           <tr><td>HF_LLM_MODEL</td><td>.env</td><td>Modelo LLM usado (por defecto <code>meta-llama/Llama-3.1-8B-Instruct</code>)</td></tr>
         </table></div>
         <div class="note-rag">📄 <strong>Informe HTML de la sesión RAG</strong> — incluye corpus, nº de documentos, nº de embeddings generados, configuración de chunking, tiempo de generación de embeddings, tiempo de respuesta LLM, fragmentos recuperados y comparativa sin RAG / con RAG.</div>
+      </div>
+
+      <span class="sec-anchor" id="es-vision"></span>
+      <div class="sec-title">Pipeline Clasificación de Imagen (CNN)</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">¿Qué se aprende?</div>
+        <p>Una <strong>red neuronal convolucional (CNN)</strong> entrenada desde cero con PyTorch aprende a distinguir clases visuales directamente de los píxeles. El estudiante ve cómo el modelo mejora época a época sin escribir una sola línea de código.</p>
+        <h3>Flujo completo</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📷 Datos Imagen</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 CNN</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluación</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Guardar</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Datasets incluidos</div>
+          <ul>
+            <li><strong>MNIST</strong> — 70 000 dígitos escritos a mano (0–9), escala de grises 28×28. Descarga automática vía torchvision.</li>
+            <li><strong>Chihuahua vs Muffin</strong> — 299 imágenes a color. El clásico reto visual. Descarga automática desde Hugging Face.</li>
+            <li><strong>Cats vs Dogs</strong> — ~23 000 imágenes a color. ⚠️ Descarga pesada ~720 MB. Se usa una muestra de 2 000 imágenes para CPU.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-label">Preprocesado de imagen</div>
+          <ul>
+            <li><strong>Resize</strong> — 28 a 128 px (cuadrado)</li>
+            <li><strong>Normalización</strong> — [0,1] o media/std</li>
+            <li><strong>Data augmentation</strong> — flip horizontal, rotación ±15°, recorte aleatorio. Solo sobre el conjunto de train (nunca val ni test).</li>
+            <li><strong>Factor de multiplicación</strong> — x1 a x5 copias aumentadas por imagen</li>
+            <li><strong>Test split</strong> — 10/15/20/25% configurable</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">CNN — parámetros configurables</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parámetro</th><th>Opciones</th><th>Efecto</th></tr>
+          <tr><td>Épocas</td><td>1–20 (slider + input manual)</td><td>Más épocas → modelo más entrenado, pero riesgo de sobreajuste</td></tr>
+          <tr><td>Learning rate</td><td>0.01 / 0.001 / 0.0001</td><td>Velocidad de actualización de pesos</td></tr>
+          <tr><td>Capas conv</td><td>1 / 2 / 3</td><td>Profundidad de la red — más capas detectan patrones más complejos</td></tr>
+          <tr><td>Val split</td><td>10 / 20 / 30%</td><td>Porcentaje del train para monitorear el entrenamiento</td></tr>
+        </table></div>
+        <div class="note">El botón Train se bloquea mientras hay un entrenamiento en curso. Usa <em>Nueva run</em> para comparar configuraciones distintas sin perder los resultados anteriores.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sistema de runs y Evaluación</div>
+        <p style="margin-bottom:10px">Cada entrenamiento genera una <strong>run</strong> con nombre editable. El bloque Evaluación detecta automáticamente la CNN upstream y muestra cuatro pestañas:</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Pestaña</th><th>Contenido</th></tr>
+          <tr><td>📊 Comparar</td><td>Tabla de todas las runs con Accuracy, F1, Precision y Recall. La mejor run se marca con ★.</td></tr>
+          <tr><td>📝 Informe</td><td>Selector de run con pills → métricas por clase, curvas de entrenamiento y matriz de confusión.</td></tr>
+          <tr><td>🎯 Predecir</td><td>Arrastra tu propia imagen. El modelo devuelve las probabilidades de todas las clases para cada run. Historial de las últimas 12 imágenes.</td></tr>
+          <tr><td>❌ Errores</td><td>Imágenes mal clasificadas (top losses) y matriz de confusión del run seleccionado.</td></tr>
+        </table></div>
+        <div class="note">El informe HTML completo (con gráficas, métricas e imágenes predichas) se descarga en ES o EN desde el bloque <strong>💾 Guardar</strong> — se abre el diálogo nativo del sistema operativo.</div>
       </div>
 
       <div class="footer">
@@ -621,6 +681,64 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         <div class="note-rag">📄 <strong>RAG session HTML report</strong> — includes corpus, number of documents, number of embeddings generated, chunking configuration, embedding generation time, LLM response time, retrieved fragments, and a without-RAG / with-RAG comparison.</div>
       </div>
 
+      <span class="sec-anchor" id="en-vision"></span>
+      <div class="sec-title">Image Classification Pipeline (CNN)</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">What is learned?</div>
+        <p>A <strong>convolutional neural network (CNN)</strong> trained from scratch with PyTorch learns to distinguish visual classes directly from pixels. The student watches the model improve epoch by epoch without writing a single line of code.</p>
+        <h3>Full pipeline</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📷 Image Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node">🧠 CNN</div><div class="pip-arrow"></div>
+          <div class="pip-node">📋 Evaluation</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Save</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Included datasets</div>
+          <ul>
+            <li><strong>MNIST</strong> — 70,000 handwritten digits (0–9), greyscale 28×28. Downloads automatically via torchvision.</li>
+            <li><strong>Chihuahua vs Muffin</strong> — 299 colour images. The classic visual trick. Downloads automatically from Hugging Face.</li>
+            <li><strong>Cats vs Dogs</strong> — ~23,000 colour images. ⚠️ Large download ~720 MB. A 2,000-image sample is used for CPU performance.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-label">Image preprocessing</div>
+          <ul>
+            <li><strong>Resize</strong> — 28 to 128 px (square)</li>
+            <li><strong>Normalisation</strong> — [0,1] or mean/std</li>
+            <li><strong>Data augmentation</strong> — horizontal flip, ±15° rotation, random crop. Only applied to the training set (never val or test).</li>
+            <li><strong>Multiplication factor</strong> — x1 to x5 augmented copies per image</li>
+            <li><strong>Test split</strong> — 10/15/20/25% configurable</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">CNN — configurable parameters</div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Parameter</th><th>Options</th><th>Effect</th></tr>
+          <tr><td>Epochs</td><td>1–20 (slider + manual input)</td><td>More epochs → better trained model, but risk of overfitting</td></tr>
+          <tr><td>Learning rate</td><td>0.01 / 0.001 / 0.0001</td><td>Speed at which weights are updated</td></tr>
+          <tr><td>Conv layers</td><td>1 / 2 / 3</td><td>Network depth — more layers detect more complex patterns</td></tr>
+          <tr><td>Val split</td><td>10 / 20 / 30%</td><td>Percentage of training data used to monitor training progress</td></tr>
+        </table></div>
+        <div class="note">The Train button is disabled while training is running. Use <em>New run</em> to compare different configurations without losing previous results.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Runs system and Evaluation</div>
+        <p style="margin-bottom:10px">Each training produces a <strong>run</strong> with an editable name. The Evaluation block automatically detects the upstream CNN and shows four tabs:</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Tab</th><th>Content</th></tr>
+          <tr><td>📊 Compare</td><td>Table of all runs with Accuracy, F1, Precision and Recall. Best run marked with ★.</td></tr>
+          <tr><td>📝 Report</td><td>Run selector with pills → per-class metrics, training curves and confusion matrix.</td></tr>
+          <tr><td>🎯 Predict</td><td>Drag your own image. The model returns class probabilities for all runs. History of the last 12 uploaded images.</td></tr>
+          <tr><td>❌ Errors</td><td>Misclassified images (top losses) and confusion matrix for the selected run.</td></tr>
+        </table></div>
+        <div class="note">The full HTML report (with charts, metrics and predicted images) is downloaded in ES or EN from the <strong>💾 Save</strong> block — the native OS save dialog appears.</div>
+      </div>
+
       <div class="footer">
         <div class="footer-credits">Developed by <strong>Carlos Díez-Fenoy</strong> · <a href="https://github.com/cdf51342" target="_blank" rel="noopener">@CDF51342 on GitHub ↗</a></div>
         <div class="footer-logo">
@@ -636,7 +754,7 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
 </div><!-- /layout -->
 
 <script>
-var _lang = 'en';
+var _lang = localStorage.getItem('nlpflow_lang') || 'en';
 function toggleDrawer(){
   var toc = document.getElementById('tocNav');
   var overlay = document.getElementById('drawerOverlay');
@@ -645,6 +763,7 @@ function toggleDrawer(){
 }
 function setLang(l){
   _lang = l;
+  localStorage.setItem('nlpflow_lang', l);
   document.querySelectorAll('.lang-content').forEach(function(el){ el.classList.remove('visible'); });
   document.getElementById('content-'+l).classList.add('visible');
   document.querySelectorAll('.lang-btn').forEach(function(b){
@@ -655,6 +774,8 @@ function setLang(l){
   document.getElementById('tocGroupEn').style.display = l==='en'?'':'none';
   document.getElementById('nav-home').textContent = l==='es' ? 'Inicio' : 'Home';
 }
+// Apply saved language on load
+(function(){ setLang(_lang); })();
 
 function tocClick(el){
   document.querySelectorAll('.toc-link').forEach(function(a){ a.classList.remove('active'); });
@@ -666,8 +787,8 @@ function tocClick(el){
 
 window.addEventListener('scroll', function(){
   var ids = _lang==='es'
-    ? ['es-pipelines','es-regression','es-classification','es-exploration','es-nlp','es-topic','es-rag']
-    : ['en-pipelines','en-regression','en-classification','en-exploration','en-nlp','en-topic','en-rag'];
+    ? ['es-pipelines','es-regression','es-classification','es-exploration','es-nlp','es-topic','es-rag','es-vision']
+    : ['en-pipelines','en-regression','en-classification','en-exploration','en-nlp','en-topic','en-rag','en-vision'];
   var current = ids[0];
   ids.forEach(function(id){
     var el = document.getElementById(id);

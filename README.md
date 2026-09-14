@@ -56,21 +56,25 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 | 🔬 **Análisis** | solo entrada | Info del dataset: filas, columnas, tipos, valores nulos, estadísticas y distribuciones. |
 | 📊 **Plots** | entrada + salida | **Tabular:** histograma, boxplot, scatter, correlación, barras por clase, tarta, líneas. **NLP / Topic model:** longitud de documentos, top N palabras frecuentes, distribución de clases, longitud media por clase, wordcloud por clase. Historial de gráficas con comparación lado a lado. |
 
+### Bloques compartidos (tabular, NLP e imagen)
+
+| Bloque | Puertos | Descripción |
+|--------|---------|-------------|
+| 🔧 **Preprocesado** | entrada + salida | Se adapta al tipo de datos upstream. **Tabular:** imputación (mediana/moda), escalado (StandardScaler) y codificación de variables categóricas. **NLP:** lowercase, eliminar puntuación y números, stopwords EN/ES, stemming o lemmatización, preview en vivo. **Imagen:** resize (28–128 px), normalización ([0,1] o media/std), batch size, test split (10/15/20/25%), data augmentation solo en train (flip horizontal, rotación ±15°, recorte aleatorio) con factor de multiplicación x1–x5, vista previa en tiempo real. |
+| 📋 **Evaluación** | entrada + salida | Se adapta al modelo upstream. **Tabular/NLP:** accuracy, F1, RMSE, R², matriz de confusión, curva ROC, frontera de decisión 2D, validación cruzada. **Imagen (CNN):** cuatro pestañas — Comparar (tabla de runs con ★ mejor), Informe (métricas por clase + curvas + CM por run), Predecir (imagen propia → probabilidades de todas las clases para todos los runs, historial de 12 imágenes), Errores (imágenes mal clasificadas). |
+| 💾 **Guardar** | solo entrada | Se adapta a lo que viene de upstream. **Tabular/NLP:** exporta modelo (.pkl), métricas (.json/.csv) y gráficas (.png/.zip). **RAG:** informe HTML con consulta, fragmentos recuperados, prompt y respuestas. **Imagen (CNN):** genera informe HTML completo en ES o EN — comparativa de runs, métricas por clase, curvas, matriz de confusión y predicciones de imágenes del usuario. En todos los casos abre el diálogo nativo del SO. |
+| 📂 **Cargar Modelo** | solo salida | Carga un modelo .pkl guardado para evaluarlo o clasificar nuevas muestras. |
+
 ### Bloques tabulares
 
 | Bloque | Puertos | Descripción |
 |--------|---------|-------------|
-| 🔧 **Preprocesado** | entrada + salida | Imputación (media/mediana/moda/constante), normalización (Z-score, Min-Max), codificación de variables categóricas, split train/test configurable, selección de features. Detección automática tabular vs NLP. |
 | 📉 **Regresión Lineal** | entrada + salida | OLS, Ridge (L2) y LASSO (L1). Detecta automáticamente clasificación o regresión según el target. Grid search CV de lambda/C con visualización de curvas. |
-| 📋 **Evaluación** | entrada + salida | Métricas (accuracy, F1, RMSE, R²…), matriz de confusión, curva ROC, frontera de decisión 2D, supuestos de regresión (residuos, Q-Q, homocedasticidad), tab de validación cruzada. |
-| 💾 **Guardar** | solo entrada | Exporta modelo (.pkl), métricas (.json/.csv), gráficas (.png/.zip) y splits train/test (.zip). |
-| 📂 **Cargar Modelo** | solo salida | Carga un modelo .pkl guardado para evaluarlo o clasificar nuevas muestras. |
 
 ### Bloques NLP
 
 | Bloque | Puertos | Descripción |
 |--------|---------|-------------|
-| 🔧 **Preprocesado** | entrada + salida | Para datos de texto: lowercase, eliminar puntuación, eliminar números, stopwords EN/ES, stemming o lemmatización (exclusivos entre sí). Preview en vivo con filtro de clase. |
 | 🧠 **Entrenamiento NLP** | entrada + salida | Pipeline TF-IDF + clasificador (Naive Bayes, Regresión Logística, KNN, Random Forest, SVM). Validación cruzada y grid search de hiperparámetros. |
 | 🗂️ **Topic Model** | entrada + salida | LDA para descubrir temas latentes en corpus de texto. Configurable: nº de tópicos, vocabulario, iteraciones. Coherencia C_V individual por tópico. Etiquetado automático de tópicos con LLM (Groq). |
 | 🎯 **Clasificar NLP** | solo entrada | Clasifica nuevas muestras de texto con el modelo NLP entrenado. Muestra clase predicha y distribución de probabilidades. |
@@ -83,6 +87,13 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 | 🧬 **Embeddings** | entrada + salida | Vectoriza chunks con `all-MiniLM-L6-v2`. Progreso en tiempo real. |
 | 🔎 **Retriever** | entrada + salida | Búsqueda semántica por similitud coseno. Muestra los chunks más relevantes con score. |
 | 🤖 **LLM (RAG)** | solo entrada | Genera respuesta sin RAG y con RAG en paralelo usando Groq. El prompt se adapta al idioma configurado (ES/EN). |
+
+### Bloques de visión (imagen)
+
+| Bloque | Puertos | Descripción |
+|--------|---------|-------------|
+| 📷 **Datos Imagen** | solo salida | Descarga automática de MNIST (70 000 imágenes, dígitos 0–9), Chihuahua vs Muffin (299 imgs, color) o Cats vs Dogs (~23 000 imgs, ~720 MB, muestra de 2 000). Muestra distribución de clases y ejemplos por clase. |
+| 🧠 **CNN Clasificación** | entrada + salida | CNN entrenada desde cero con PyTorch en CPU. Configurable: épocas (1–20), learning rate, capas conv (1–3), val split. Progreso en tiempo real con curvas de loss/accuracy. Sistema de runs: múltiples configuraciones comparables y renombrables. El botón Train se bloquea durante el entrenamiento. |
 
 ---
 
@@ -114,6 +125,11 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 ```
 📂 Datos → ✂️ Chunking → 🧬 Embeddings → 🔎 Retriever → 🤖 LLM (RAG)
 📂 Datos → 🔧 Preprocesado → ✂️ Chunking → 🧬 Embeddings → 🔎 Retriever → 🤖 LLM (RAG)
+```
+
+**Clasificación de imagen (CNN):**
+```
+📷 Datos Imagen → 🔧 Preprocesado → 🧠 CNN Clasificación → 📋 Evaluación → 💾 Guardar
 ```
 
 ---

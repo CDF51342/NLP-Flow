@@ -344,6 +344,8 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <div class="blocks-grid" id="es-grid-nlp"></div>
       <div class="cat-label">🔍 RAG — recuperación con LLM</div>
       <div class="blocks-grid" id="es-grid-rag"></div>
+      <div class="cat-label">🖼️ Visión — clasificación de imagen</div>
+      <div class="blocks-grid" id="es-grid-vision"></div>
 
       <span class="sec-anchor" id="es-shortcuts"></span>
       <div class="sec-title">Atajos de teclado</div>
@@ -457,6 +459,8 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <div class="blocks-grid" id="en-grid-nlp"></div>
       <div class="cat-label">🔍 RAG — retrieval with LLM</div>
       <div class="blocks-grid" id="en-grid-rag"></div>
+      <div class="cat-label">🖼️ Vision — image classification</div>
+      <div class="blocks-grid" id="en-grid-vision"></div>
 
       <span class="sec-anchor" id="en-shortcuts"></span>
       <div class="sec-title">Keyboard shortcuts</div>
@@ -517,7 +521,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
 </div><!-- /layout -->
 <script>
 // ─── Lang switch ────────────────────────────────────────────────────────────
-var _lang = 'en';
+var _lang = localStorage.getItem('nlpflow_lang') || 'en';
 function toggleDrawer(){
   var toc = document.getElementById('tocNav');
   var overlay = document.getElementById('drawerOverlay');
@@ -526,6 +530,7 @@ function toggleDrawer(){
 }
 function setLang(l){
   _lang = l;
+  localStorage.setItem('nlpflow_lang', l);
   document.querySelectorAll('.lang-content').forEach(function(el){
     el.classList.remove('visible');
   });
@@ -540,7 +545,7 @@ function setLang(l){
   renderBlocks(l);
   setShortcutKeys(l);
 }
-
+// Apply saved language on load
 // ─── OS detection ───────────────────────────────────────────────────────────
 var _mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 var _mod = _mac ? '⌘' : 'Ctrl';
@@ -576,9 +581,9 @@ var BLOCKS = {
     ],
     proc: [
       {id:'prep', icon:'🔧', name:'Preprocesado',
-       tagline:'Rellena nulos, escala, codifica variables categóricas.',
-       desc:'Aplica un pipeline de sklearn automático: imputa valores nulos (mediana numérica, moda categórica), escala con StandardScaler y codifica variables categóricas con OneHotEncoder. El pipeline se guarda junto al modelo para inference.',
-       ins:['Datos tabulares','Corpus de texto'], outs:['Datos procesados'],
+       tagline:'Tabular: imputa, escala y codifica. NLP: limpieza y stopwords. Imagen: resize, normalización y data augmentation.',
+       desc:'Bloque compartido que se adapta al tipo de datos upstream. Tabular: imputa nulos, escala y codifica categóricas. NLP: lowercase, stopwords EN/ES, stemming o lemmatización. Imagen: resize, normalización, test split y data augmentation solo en train (x1–x5 copias). Vista previa en tiempo real.',
+       ins:['Datos tabulares','Corpus de texto','Imágenes'], outs:['Datos procesados','Imágenes procesadas'],
        canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🔧',name:'Preprocesado',status:'Pipeline listo',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
        tagline:'Tabular: histogramas, boxplots, scatter, correlación. NLP: longitud de docs, palabras frecuentes, distribución de clases, wordcloud por clase.',
@@ -593,14 +598,14 @@ var BLOCKS = {
        ins:['Datos procesados'], outs:['Modelo entrenado'],
        canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'📉',name:'Reg. Lineal',status:'R² 0.84',out:true,inp:true}]},
       {id:'eval', icon:'📋', name:'Evaluación',
-       tagline:'Métricas detalladas + matriz de confusión.',
-       desc:'Evalúa el modelo conectado sobre el split de test. Muestra accuracy, precision, recall, F1, AUC-ROC (si aplica) y matriz de confusión como heatmap.',
-       ins:['Modelo entrenado'], outs:[],
+       tagline:'Tabular/NLP: métricas + matriz de confusión. Imagen: comparativa de runs CNN, predicción y análisis de errores.',
+       desc:'Bloque compartido. Tabular/NLP: accuracy, F1, AUC-ROC y matriz de confusión. Imagen (CNN): pestaña Comparar (tabla de runs), Informe (métricas + curvas + CM por run), Predecir (imagen propia → probabilidades por clase en todos los runs) y Errores (imágenes mal clasificadas).',
+       ins:['Modelo entrenado','Modelo CNN'], outs:[],
        canvas:[{icon:'🌲',name:'Random Forest',out:true},{icon:'📋',name:'Evaluación',status:'Métricas →',inp:true}]},
       {id:'guardar', icon:'💾', name:'Guardar',
-       tagline:'Exporta el modelo .pkl, plots .zip e informe RAG .html.',
-       desc:'Guarda el modelo serializado (joblib .pkl), los plots generados (.zip) y, si hay un bloque LLM conectado, el informe RAG completo en HTML con consulta, fragmentos recuperados, prompt completo y las dos respuestas.',
-       ins:['Modelo entrenado','LLM'], outs:[],
+       tagline:'Exporta modelo .pkl, plots .zip, informe RAG .html o informe CNN .html.',
+       desc:'Bloque compartido. Tabular/NLP: modelo .pkl y plots .zip. RAG: informe HTML de la sesión. Imagen (CNN): informe HTML completo en ES o EN con comparativa de runs, métricas, curvas y predicciones. Abre el diálogo nativo del SO en todos los casos.',
+       ins:['Modelo entrenado','LLM','Evaluación CNN'], outs:[],
        canvas:[{icon:'📋',name:'Evaluación',out:true},{icon:'💾',name:'Guardar',status:'Guardar modelo',inp:true}]},
       {id:'cargar', icon:'📂', name:'Cargar Modelo',
        tagline:'Restaura un modelo .pkl guardado previamente.',
@@ -646,6 +651,18 @@ var BLOCKS = {
        desc:'Llama a Qwen/Qwen2.5-7B-Instruct vía el router de Hugging Face (requiere HF_TOKEN en .env). Genera dos respuestas en paralelo: sin contexto (sin RAG) y con los fragmentos recuperados como contexto (con RAG). Ambas respuestas se muestran lado a lado con markdown renderizado. El system prompt es editable.',
        ins:['Fragmentos'], outs:['Respuesta LLM'],
        canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Respuesta →',out:true,inp:true,rag:true}]},
+    ],
+    vision: [
+      {id:'datos-img', icon:'📷', name:'Datos Imagen',
+       tagline:'Carga MNIST, Chihuahua vs Muffin o Cats vs Dogs automáticamente.',
+       desc:'Punto de entrada del flujo de visión. Descarga el dataset seleccionado sin configuración: MNIST (70 000 imágenes en escala de grises, dígitos 0–9), Chihuahua vs Muffin (299 imágenes a color, vía Hugging Face) o Cats vs Dogs (~23 000 imágenes, ~720 MB). Muestra distribución de clases y ejemplos por clase. Conecta a Preprocesado para configurar resize, normalización, data augmentation y split.',
+       ins:[], outs:['Imágenes'],
+       canvas:[{icon:'📷',name:'Datos Imagen',status:'MNIST · 70 000 imgs',out:true}]},
+      {id:'cnn', icon:'🧠', name:'CNN Clasificación',
+       tagline:'CNN entrenada desde cero con PyTorch. Curvas en tiempo real.',
+       desc:'Entrena una CNN convolucional desde cero con PyTorch sobre CPU. Configurable: épocas (1–20), learning rate (0.01/0.001/0.0001), número de capas conv (1–3) y val split (10/20/30%). El entrenamiento muestra progreso epoch a epoch con curvas de loss y accuracy en tiempo real. Al terminar: accuracy de test, F1 macro, precisión y recall por clase, matriz de confusión e imágenes mal clasificadas. Sistema de runs: entrena varias configuraciones y compáralas. El botón Train se bloquea durante el entrenamiento.',
+       ins:['Imágenes procesadas'], outs:['Modelo CNN'],
+       canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'🧠',name:'CNN',status:'acc 94.2% · F1 93.8%',out:true,inp:true}]},
     ]
   },
   en: {
@@ -663,9 +680,9 @@ var BLOCKS = {
     ],
     proc: [
       {id:'prep', icon:'🔧', name:'Preprocessing',
-       tagline:'Fill nulls, scale, encode categorical variables.',
-       desc:'Applies an automatic sklearn pipeline: imputes null values (numeric median, categorical mode), scales with StandardScaler and encodes categoricals with OneHotEncoder. The pipeline is saved with the model for inference.',
-       ins:['Tabular data','Text corpus'], outs:['Processed data'],
+       tagline:'Tabular: impute, scale, encode. NLP: cleaning and stopwords. Image: resize, normalisation and data augmentation.',
+       desc:'Shared block that adapts to upstream data. Tabular: impute nulls, scale and encode categoricals. NLP: lowercase, EN/ES stopwords, stemming or lemmatisation. Image: resize, normalisation, test split and data augmentation on train only (x1–x5 copies). Real-time preview.',
+       ins:['Tabular data','Text corpus','Images'], outs:['Processed data','Processed images'],
        canvas:[{icon:'📂',name:'Data',out:true},{icon:'🔧',name:'Preprocessing',status:'Pipeline ready',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
        tagline:'Tabular: histograms, boxplots, scatter, correlation. NLP: document length, frequent words, class distribution, wordcloud by class.',
@@ -680,14 +697,14 @@ var BLOCKS = {
        ins:['Processed data'], outs:['Trained model'],
        canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'📉',name:'Linear Reg.',status:'R² 0.84',out:true,inp:true}]},
       {id:'eval', icon:'📋', name:'Evaluation',
-       tagline:'Detailed metrics + confusion matrix.',
-       desc:'Evaluates the connected model on the test split. Shows accuracy, precision, recall, F1, AUC-ROC (if applicable) and confusion matrix as heatmap.',
-       ins:['Trained model'], outs:[],
+       tagline:'Tabular/NLP: metrics + confusion matrix. Image: CNN run comparison, prediction and error analysis.',
+       desc:'Shared block. Tabular/NLP: accuracy, F1, AUC-ROC and confusion matrix. Image (CNN): Compare tab (runs table), Report (metrics + curves + CM per run), Predict (own image → per-class probabilities across all runs) and Errors (misclassified images).',
+       ins:['Trained model','CNN model'], outs:[],
        canvas:[{icon:'🌲',name:'Random Forest',out:true},{icon:'📋',name:'Evaluation',status:'Metrics →',inp:true}]},
       {id:'guardar', icon:'💾', name:'Save',
-       tagline:'Export model .pkl, plots .zip and RAG report .html.',
-       desc:'Saves the serialised model (joblib .pkl), generated plots (.zip) and, if a LLM block is connected, the full RAG HTML report with query, retrieved fragments, full prompt and both responses.',
-       ins:['Trained model','LLM'], outs:[],
+       tagline:'Export model .pkl, plots .zip, RAG report .html or CNN report .html.',
+       desc:'Shared block. Tabular/NLP: model .pkl and plots .zip. RAG: session HTML report. Image (CNN): full HTML report in ES or EN with run comparison, metrics, curves and predictions. Native OS save dialog in all cases.',
+       ins:['Trained model','LLM','CNN evaluation'], outs:[],
        canvas:[{icon:'📋',name:'Evaluation',out:true},{icon:'💾',name:'Save',status:'Save model',inp:true}]},
       {id:'cargar', icon:'📂', name:'Load Model',
        tagline:'Restore a previously saved .pkl model.',
@@ -733,6 +750,18 @@ var BLOCKS = {
        desc:'Calls Qwen/Qwen2.5-7B-Instruct via the Hugging Face router (requires HF_TOKEN in .env). Generates two responses in parallel: without context (without RAG) and with the retrieved fragments as context (with RAG). Both responses are shown side by side with rendered markdown. The system prompt is editable.',
        ins:['Fragments'], outs:['LLM response'],
        canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Response →',out:true,inp:true,rag:true}]},
+    ],
+    vision: [
+      {id:'datos-img', icon:'📷', name:'Image Data',
+       tagline:'Load MNIST, Chihuahua vs Muffin or Cats vs Dogs automatically.',
+       desc:'Entry point for the vision pipeline. Downloads the selected dataset with no configuration: MNIST (70,000 greyscale images, digits 0–9), Chihuahua vs Muffin (299 colour images, via Hugging Face) or Cats vs Dogs (~23,000 images, ~720 MB). Shows class distribution and per-class examples. Connect to Preprocessing to configure resize, normalisation, data augmentation and split.',
+       ins:[], outs:['Images'],
+       canvas:[{icon:'📷',name:'Image Data',status:'MNIST · 70 000 imgs',out:true}]},
+      {id:'cnn', icon:'🧠', name:'CNN Classification',
+       tagline:'CNN trained from scratch with PyTorch. Live training curves.',
+       desc:'Trains a convolutional neural network from scratch with PyTorch on CPU. Configurable: epochs (1–20), learning rate (0.01/0.001/0.0001), number of conv layers (1–3) and val split (10/20/30%). Training shows epoch-by-epoch progress with live loss and accuracy curves. On completion: test accuracy, macro F1, per-class precision and recall, confusion matrix and misclassified images. Runs system: train multiple configurations and compare them. The Train button locks during training.',
+       ins:['Processed images'], outs:['CNN model'],
+       canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'🧠',name:'CNN',status:'acc 94.2% · F1 93.8%',out:true,inp:true}]},
     ]
   }
 };
@@ -745,6 +774,7 @@ function renderBlocks(l){
   renderGrid(l+'-grid-models', b.models, l);
   renderGrid(l+'-grid-nlp',    b.nlp,    l);
   renderGrid(l+'-grid-rag',    b.rag,    l);
+  renderGrid(l+'-grid-vision', b.vision, l);
 }
 
 function renderGrid(id, items, l){
@@ -753,7 +783,7 @@ function renderGrid(id, items, l){
   var html = '';
   items.forEach(function(b){
     var ports = '';
-    if(b.ins.length===0)  ports += '<span class="pbadge pb-none">Sin entrada</span>';
+    if(b.ins.length===0)  ports += '<span class="pbadge pb-none">'+(l==='es'?'Sin entrada':'No input')+'</span>';
     b.ins.forEach(function(p){ ports += '<span class="pbadge pb-in">← '+p+'</span>'; });
     b.outs.forEach(function(p){ ports += '<span class="pbadge pb-out">'+p+' →</span>'; });
     html += '<div class="block-card" onclick="openModal(\''+l+'\',\''+b.id+'\')">';
@@ -769,7 +799,7 @@ function renderGrid(id, items, l){
 // ─── Modal ─────────────────────────────────────────────────────────────────
 function findBlock(l, id){
   var b = BLOCKS[l];
-  var all = b.data.concat(b.proc).concat(b.models).concat(b.nlp).concat(b.rag);
+  var all = b.data.concat(b.proc).concat(b.models).concat(b.nlp).concat(b.rag).concat(b.vision);
   for(var i=0;i<all.length;i++) if(all[i].id===id) return all[i];
   return null;
 }
@@ -902,8 +932,10 @@ window.addEventListener('scroll',function(){
 },{passive:true});
 
 // ─── Init ───────────────────────────────────────────────────────────────────
+renderBlocks('es');
 renderBlocks('en');
-setShortcutKeys('en');
+setShortcutKeys(_lang);
+setLang(_lang);
 </script>
 </body>
 </html>

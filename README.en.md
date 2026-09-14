@@ -56,21 +56,25 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 | 🔬 **Analysis** | input only | Dataset info: rows, columns, types, missing values, statistics and distributions. |
 | 📊 **Plots** | input + output | **Tabular:** histogram, boxplot, scatter, correlation, bar chart by class, pie, line. **NLP / Topic model:** document length, top N frequent words, class distribution, average length by class, wordcloud by class. Plot history with side-by-side comparison. |
 
+### Shared blocks (tabular, NLP and image)
+
+| Block | Ports | Description |
+|-------|-------|-------------|
+| 🔧 **Preprocessing** | input + output | Adapts to the upstream data type. **Tabular:** impute nulls (median/mode), scale with StandardScaler, encode categoricals with OneHotEncoder. **NLP:** lowercase, remove punctuation and numbers, EN/ES stopwords, stemming or lemmatisation, live preview. **Image:** resize (28–128 px), normalisation ([0,1] or mean/std), batch size, test split (10/15/20/25%), data augmentation on train only (horizontal flip, ±15° rotation, random crop) with multiplication factor x1–x5, real-time preview. |
+| 📋 **Evaluation** | input + output | Adapts to the upstream model. **Tabular/NLP:** accuracy, F1, RMSE, R², confusion matrix, ROC curve, 2D decision boundary, cross-validation tab. **Image (CNN):** four tabs — Compare (runs table with ★ best), Report (per-class metrics + curves + CM per run), Predict (own image → per-class probabilities for all runs, history of 12 images), Errors (misclassified images). |
+| 💾 **Save** | input only | Adapts to what is connected upstream. **Tabular/NLP:** exports model (.pkl), metrics (.json/.csv) and plots (.png/.zip). **RAG:** HTML report with query, retrieved fragments, prompt and responses. **Image (CNN):** generates a full HTML report in ES or EN — run comparison, per-class metrics, training curves, confusion matrix and user-uploaded image predictions. Native OS save dialog in all cases. |
+| 📂 **Load Model** | output only | Load a previously saved .pkl model for evaluation or classifying new samples. |
+
 ### Tabular blocks
 
 | Block | Ports | Description |
 |-------|-------|-------------|
-| 🔧 **Preprocessing** | input + output | Imputation (mean/median/mode/constant), normalisation (Z-score, Min-Max), categorical encoding, configurable train/test split, feature selection. Automatic tabular vs NLP detection. |
 | 📉 **Linear Regression** | input + output | OLS, Ridge (L2) and LASSO (L1). Auto-detects classification vs regression from target type. CV grid search for lambda/C with curve visualisation. |
-| 📋 **Evaluation** | input + output | Metrics (accuracy, F1, RMSE, R²…), confusion matrix, ROC curve, 2D decision boundary, regression assumptions (residuals, Q-Q, homoscedasticity), cross-validation tab. |
-| 💾 **Save** | input only | Export model (.pkl), metrics (.json/.csv), plots (.png/.zip) and train/test splits (.zip). |
-| 📂 **Load Model** | output only | Load a previously saved .pkl model for evaluation or classifying new samples. |
 
 ### NLP blocks
 
 | Block | Ports | Description |
 |-------|-------|-------------|
-| 🔧 **Preprocessing** | input + output | For text data: lowercase, remove punctuation, remove numbers, EN/ES stopwords, stemming or lemmatisation (mutually exclusive). Live preview with class filter. |
 | 🧠 **NLP Training** | input + output | TF-IDF + classifier pipeline (Naive Bayes, Logistic Regression, KNN, Random Forest, SVM). Cross-validation and hyperparameter grid search. |
 | 🗂️ **Topic Model** | input + output | LDA to discover latent topics in a text corpus. Configurable: number of topics, vocabulary, iterations. Individual C_V coherence per topic. Automatic topic labelling with LLM (Groq). |
 | 🎯 **Classify NLP** | input only | Classify new text samples using a trained NLP model. Shows predicted class and probability distribution. |
@@ -83,6 +87,13 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 | 🧬 **Embeddings** | input + output | Vectorise chunks with `all-MiniLM-L6-v2`. Real-time progress. |
 | 🔎 **Retriever** | input + output | Semantic search by cosine similarity. Shows the most relevant chunks with score. |
 | 🤖 **LLM (RAG)** | input only | Generates a response without RAG and with RAG in parallel using Groq. Prompt adapts to the active language (ES/EN). |
+
+### Vision blocks (image)
+
+| Block | Ports | Description |
+|-------|-------|-------------|
+| 📷 **Image Data** | output only | Automatic download of MNIST (70,000 images, digits 0–9), Chihuahua vs Muffin (299 colour images) or Cats vs Dogs (~23,000 images, ~720 MB, 2,000-image sample). Shows class distribution and per-class examples. |
+| 🧠 **CNN Classification** | input + output | CNN trained from scratch with PyTorch on CPU. Configurable: epochs (1–20), learning rate, conv layers (1–3), val split. Real-time progress with loss/accuracy curves. Runs system: multiple configurations comparable and renameable. Train button locks during training. |
 
 ---
 
@@ -114,6 +125,11 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 ```
 📂 Data → ✂️ Chunking → 🧬 Embeddings → 🔎 Retriever → 🤖 LLM (RAG)
 📂 Data → 🔧 Preprocessing → ✂️ Chunking → 🧬 Embeddings → 🔎 Retriever → 🤖 LLM (RAG)
+```
+
+**Image classification (CNN):**
+```
+📷 Image Data → 🔧 Preprocessing → 🧠 CNN Classification → 📋 Evaluation → 💾 Save
 ```
 
 ---
