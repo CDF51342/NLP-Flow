@@ -45,10 +45,13 @@
       <p class="sb-hint" data-i18n="blocks-hint">Clic o arrastra al canvas</p>
       <div class="sb-group-label" data-i18n="group-data">📋 Datos</div>
       <div class="palette-item" data-type="data" draggable="true">📂 Datos</div>
+      <div class="palette-item" data-type="data_image" draggable="true">📷 Datos Imagen</div>
       <div class="palette-item" data-type="inspect" draggable="true">🔬 Análisis</div>
       <div class="palette-item" data-type="plots" draggable="true">📊 Plots</div>
       <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
       <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
+      <div class="palette-item" data-type="cnn" draggable="true">🧠 CNN Clasificación</div>
+
       <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
       <div class="palette-item" data-type="model_eval" draggable="true">📋 Evaluación</div>
       <div class="sb-group-label" data-i18n="group-session">💾 Sesión</div>
@@ -524,6 +527,18 @@ var I18N = {
     "clipboard-copied":"bloque copiado","clipboard-copied-pl":"bloques copiados",
     "canvas-add-first":"Añade bloques al canvas primero",
     "warn-data-unconnected":"⚠ Usando bloque Datos sin conectar explícitamente",
+    // Image Data block
+    "img-load-mnist":"📷 Cargar MNIST","img-load-dogs":"🐶 Cargar Chihuahua vs Muffin",
+    "img-load-cats":"🐱 Cargar Cats vs Dogs",
+    "img-loading":"Descargando dataset…","img-ready":"✅ Dataset listo",
+    "img-dataset":"Dataset","img-classes":"Clases","img-train":"Entrenamiento",
+    "img-test":"Test","img-size":"Tamaño imagen","img-class-dist":"Distribución de clases",
+    "img-examples":"Ejemplo por clase","img-not-loaded":"Carga un dataset de imagen para comenzar.",
+    "img-error":"Error al cargar el dataset.",
+    "img-target":"Variable objetivo","img-target-hint":"Cada subcarpeta / etiqueta = una clase a predecir.",
+    "img-mnist-desc":"Dígitos escritos a mano (0–9). 70 000 imágenes en escala de grises 28×28. Descarga automática.",
+    "img-dogs-desc":"Chihuahuas vs. magdalenas (muffins). 299 imágenes a color. Descarga automática desde Hugging Face.",
+    "img-cats-desc":"Gatos vs perros. ~23 000 imágenes a color. ⚠️ Descarga pesada (~720 MB).",
     "select-model":"Selecciona al menos un modelo",
     "training":"Entrenando…",
     "scatter-min-vars":"Se necesitan al menos 2 variables numéricas para el Scatter Plot.",
@@ -834,6 +849,18 @@ var I18N = {
     "clipboard-copied":"node copied","clipboard-copied-pl":"nodes copied",
     "canvas-add-first":"Add blocks to the canvas first",
     "warn-data-unconnected":"⚠ Using Data block without explicit connection",
+    // Image Data block
+    "img-load-mnist":"📷 Load MNIST","img-load-dogs":"🐶 Load Chihuahua vs Muffin",
+    "img-loading":"Downloading dataset…","img-ready":"✅ Dataset ready",
+    "img-dataset":"Dataset","img-classes":"Classes","img-train":"Training",
+    "img-test":"Test","img-size":"Image size","img-class-dist":"Class distribution",
+    "img-examples":"Example per class","img-not-loaded":"Load an image dataset to begin.",
+    "img-error":"Error loading dataset.",
+    "img-target":"Target variable","img-target-hint":"Each subfolder / label = one class to predict.",
+    "img-load-cats":"🐱 Load Cats vs Dogs",
+    "img-mnist-desc":"Handwritten digits (0–9). 70 000 grayscale images 28×28. Downloads automatically.",
+    "img-dogs-desc":"Chihuahuas vs blueberry muffins. 299 colour images. Downloads automatically from Hugging Face.",
+    "img-cats-desc":"Cats vs dogs. ~23 000 colour images. ⚠️ Large download (~720 MB).",
     "select-model":"Select at least one model",
     "training":"Training…",
     "scatter-min-vars":"At least 2 numeric variables are needed for the Scatter Plot.",
@@ -867,6 +894,9 @@ function applyLang() {
     m.name = lang === "es" ? (m.name.indexOf("NLP")!==-1 ? m.name : (m.nameEs||m.name)) : (m.nameEn||m.name);
   });
   META.data.name        = lang === "es" ? "Datos"            : "Data";
+  META.data_image.name  = lang === "es" ? "Datos Imagen"     : "Image Data";
+  META.cnn.name         = lang === "es" ? "CNN Clasificación"  : "CNN Classification";
+
   META.inspect.name     = lang === "es" ? "Análisis"         : "Analysis";
   META.preprocess.name  = lang === "es" ? "Preprocesado"     : "Preprocessing";
   META.linreg.name      = lang === "es" ? "Regresión Lineal" : "Linear Regression";
@@ -914,7 +944,7 @@ function applyLang() {
   fetch("/api/set_lang", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({lang: lang}) }).catch(function(){});
   // Re-render the open modal if its content depends on lang
   var LANG_RERENDER_TYPES = ["rag_chunk", "rag_embed", "rag_retrieve", "rag_llm",
-                              "data", "preprocess", "topicmodel", "save_model"];
+                              "data", "data_image", "preprocess", "topicmodel", "save_model"];
   if (currentNode && LANG_RERENDER_TYPES.indexOf(currentNode.type) !== -1) {
     openModal(currentNode);
   }
@@ -1386,6 +1416,9 @@ ec.addEventListener("mousemove", function(e) {
 // ═══════════════════════════════════════════
 var META = {
   data:         { icon: "📂",  bg: "#f0fdf7", name: "Datos",           nameEn: "Data" },
+  data_image:   { icon: "📷",  bg: "#fff8f0", name: "Datos Imagen",    nameEn: "Image Data" },
+  cnn:          { icon: "🧠",  bg: "#f0f4ff", name: "CNN Clasificación",  nameEn: "CNN Classification" },
+
   inspect:      { icon: "🔬",  bg: "#f0f8ff", name: "Análisis",        nameEn: "Analysis" },
   plots:        { icon: "📊",  bg: "#fdf5ff", name: "Plots",           nameEn: "Plots" },
   preprocess:   { icon: "🔧",  bg: "#f5f5f5", name: "Preprocesado",    nameEn: "Preprocessing" },
@@ -1404,10 +1437,12 @@ var META = {
 var ALLOWED = {
   // Exploración de datos — cualquier bloque de exploración puede recibir desde datos o desde preprocesado
   data:         ["inspect","plots","preprocess","linreg","rag_chunk","rag_embed"],
+  data_image:   ["inspect","preprocess"],
+  cnn:          ["model_eval","save_model"],
   inspect:      [],
   plots:        ["save_model"],
   // Preprocesado → exploración (para ver datos transformados) O → modelos O → guardar
-  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model","rag_chunk","rag_embed"],
+  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model","rag_chunk","rag_embed","cnn"],
   // Modelos
   linreg:       ["model_eval","save_model"],
   model_eval:   ["save_model"],
@@ -1440,8 +1475,9 @@ function setOK(id, ok) { var n = nodeById(id); if (n && n.el) n.el.classList.tog
 // no_in  = no input port  (pipeline source nodes)
 // no_out = no output port (pipeline sink nodes)
 var NODE_PORT_CFG = {
-  data:       { no_in: true,  no_out: false },  // source
-  load_model: { no_in: true,  no_out: false },  // source
+  data:         { no_in: true,  no_out: false },  // source
+  data_image:   { no_in: true,  no_out: false },  // source
+  load_model:   { no_in: true,  no_out: false },  // source
   inspect:    { no_in: false, no_out: true  },  // sink
   save_model: { no_in: false, no_out: true  },  // sink
 };
@@ -1458,11 +1494,29 @@ function addNode(type) {
     nx = c0.x; ny = c0.y;
   } else {
     var last = nodes[nodes.length - 1];
-    nx = last.x + 250; ny = last.y;
-    // Wrap to a new row every 4 nodes to avoid going off-screen
+    // Measure actual width of last block so we don't overlap it
+    var lastW = 170; // fallback
+    if (last.el) {
+      var lw = last.el.getBoundingClientRect().width;
+      if (lw > 0) lastW = lw / vp.scale;
+    }
+    nx = last.x + lastW + 30; ny = last.y;
+    // Wrap to a new row every 4 nodes — measure actual DOM height of the tallest
+    // node in the current row so we never overlap a taller block
     if ((nodes.length % 4) === 0) {
-      var first = nodes[Math.max(0, nodes.length - 4)];
-      nx = first.x; ny = first.y + 130;
+      var rowStart = Math.max(0, nodes.length - 4);
+      var first = nodes[rowStart];
+      var maxH = 130; // fallback minimum
+      for (var ri = rowStart; ri < nodes.length; ri++) {
+        var rn = nodes[ri];
+        if (rn.el) {
+          var rh = rn.el.getBoundingClientRect().height;
+          // getBoundingClientRect is in screen px; convert back to world units
+          var rh_world = rh / vp.scale;
+          if (rh_world > maxH) maxH = rh_world;
+        }
+      }
+      nx = first.x; ny = first.y + maxH + 24; // 24px gap
     }
   }
   var n = { id: ++nodeIdCounter, type: type, x: nx, y: ny, data: {} };
@@ -2230,6 +2284,7 @@ function openModal(node) {
   var modalEl = document.getElementById("modal");
   if (modalEl) modalEl.classList.toggle("modal-wide", wideTypes.indexOf(node.type) !== -1);
   if      (node.type === "data")          renderData(node);
+  else if (node.type === "data_image")    renderDataImage(node);
   else if (node.type === "inspect")       renderInspect(node);
   else if (node.type === "plots")         renderPlots(node);
   else if (node.type === "preprocess")    renderPre(node);
@@ -2239,6 +2294,8 @@ function openModal(node) {
   else if (node.type === "load_model")    renderLoadModel(node);
   else if (node.type === "training")     renderTrain(node);
   else if (node.type === "topicmodel")   renderTopicModel(node);
+  else if (node.type === "cnn")          renderCNN(node);
+
   else if (node.type === "classify")     renderClassify(node);
   else if (node.type === "rag_chunk")    renderRagChunk(node);
   else if (node.type === "rag_embed")    renderRagEmbed(node);
@@ -2395,7 +2452,7 @@ function upstreamSourceNode(nid) {
         var fromN = nodeById(edges[i].from);
         if (!fromN) continue;
         // A preprocess node acts as a data source once it has been applied
-        if (fromN.type === "data") return fromN;
+        if (fromN.type === "data" || fromN.type === "data_image") return fromN;
         if (fromN.type === "preprocess" && fromN.data && fromN.data.applied) return fromN;
         queue.push(fromN.id);
       }
@@ -2414,8 +2471,8 @@ function resolveDataNode(currentNodeId) {
   var dn = upstreamSourceNode(currentNodeId);
   if (dn) return { ok: true, nodeId: String(dn.id) };
 
-  // Count data nodes on canvas
-  var dataNodes = nodes.filter(function(n) { return n.type === "data"; });
+  // Count data nodes on canvas (including image data nodes)
+  var dataNodes = nodes.filter(function(n) { return n.type === "data" || n.type === "data_image"; });
   if (dataNodes.length === 0) {
     return { ok: false, error: "No hay ningún bloque Datos en el canvas. Añade uno primero." };
   }
@@ -2478,6 +2535,44 @@ function showModalLoading(msg) {
 async function renderInspect(node) {
   showModalLoading(T("inspect-loading"));
   mFoot.innerHTML = '<button class="btn btn-black" id="btn-inspect-refresh">'+T("refresh")+'</button>';
+
+  // ── Detect upstream image node ─────────────────────────────────────────────
+  var upNode = upstreamSourceNode(node.id);
+  if (upNode && upNode.type === "data_image") {
+    // Delegate to image info view
+    async function loadImgInspect() {
+      showModalLoading(T("loading"));
+      var resp = await fetch("/api/image_info?node=" + upNode.id);
+      var d    = await resp.json();
+      if (d.error) { mBody.innerHTML = '<div style="padding:20px;color:#ef4444">' + d.error + '</div>'; return; }
+      var _es = (lang === "es");
+      var thumbsHtml = d.thumbs.map(function(b64, i) {
+        if (!b64) return "";
+        return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+          '<img src="data:image/png;base64,' + b64 + '" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:1.5px solid var(--border)">' +
+          '<span style="font-size:10px;color:var(--sec)">' + (d.class_names[i] || i) + '</span>' +
+        '</div>';
+      }).join("");
+      mBody.innerHTML =
+        '<div style="padding:14px;display:flex;flex-direction:column;gap:14px">' +
+          '<div class="mgrid">' +
+            '<div class="mcard mcard-hi"><div class="mval">' + d.n_train.toLocaleString() + '</div><div class="mlbl">' + T("img-train") + '</div></div>' +
+            '<div class="mcard mcard-hi"><div class="mval">' + d.n_test.toLocaleString()  + '</div><div class="mlbl">' + T("img-test")  + '</div></div>' +
+            '<div class="mcard"><div class="mval">' + d.n_classes + '</div><div class="mlbl">' + T("img-classes") + '</div></div>' +
+            '<div class="mcard"><div class="mval">' + d.img_size.join("×") + '</div><div class="mlbl">' + T("img-size") + '</div></div>' +
+          '</div>' +
+          '<div>' +
+            '<div class="fl" style="margin-bottom:6px">' + T("img-class-dist") + '</div>' +
+            '<img src="data:image/png;base64,' + d.dist_img + '" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+          '</div>' +
+          (thumbsHtml ? '<div><div class="fl" style="margin-bottom:8px">' + T("img-examples") + '</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:8px">' + thumbsHtml + '</div></div>' : '') +
+        '</div>';
+    }
+    loadImgInspect();
+    document.getElementById("btn-inspect-refresh").onclick = loadImgInspect;
+    return;
+  }
 
   async function load() {
     var qi = nq(node, "/api/tabular_info");
@@ -4474,7 +4569,7 @@ function _setCardActive(card, active) {
 // MODEL_EVAL MODAL — Bloque Evaluación (detecta modelo upstream)
 // ═══════════════════════════════════════════════════════════════════
 // Tipos de nodo que pueden alimentar Evaluación (ampliar aquí al añadir nuevos modelos)
-var _EVAL_MODEL_TYPES = ["linreg", "load_model"];
+var _EVAL_MODEL_TYPES = ["linreg", "load_model", "cnn"];
 
 async function renderModelEval(node) {
   var _animEval = prepareModalResize();
@@ -4493,6 +4588,12 @@ async function renderModelEval(node) {
         '<div style="font-size:32px">🔌</div>' +
         '<div>Conecta un bloque de <b>Modelo</b> o <b>Cargar Modelo</b> a este bloque de Evaluación.</div>' +
       '</div>';
+    return;
+  }
+
+  // ── CNN upstream → delegate to vision evaluation ─────────────────────────
+  if (modelNode.type === "cnn") {
+    await renderCNNEval(node, modelNode);
     return;
   }
 
@@ -5817,6 +5918,198 @@ window.pltHistDel = function(idx) {
   if (typeof window._pltRenderHistoryTab === "function") window._pltRenderHistoryTab();
 };
 
+// ═══════════════════════════════════════════
+// IMAGE DATA BLOCK
+// ═══════════════════════════════════════════
+async function renderDataImage(node) {
+  var _anim = prepareModalResize();
+
+  // ── Helper: poll load progress ─────────────────────────────────────────────
+  async function pollLoad(dataset) {
+    var bar  = document.getElementById("img-bar");
+    var lbl  = document.getElementById("img-lbl");
+    var done = false;
+    while (!done) {
+      await new Promise(function(r){ setTimeout(r, 700); });
+      var resp = await fetch("/api/image_load_progress?node=" + node.id);
+      var d    = await resp.json();
+      if (bar) bar.style.width = (d.pct || 0) + "%";
+      if (lbl) lbl.textContent = d.msg || "…";
+      if (d.error) {
+        if (lbl) lbl.textContent = "❌ " + d.error;
+        done = true;
+        return;
+      }
+      if (d.done) { done = true; }
+    }
+    // Load succeeded — show info panel
+    await showImgInfo();
+  }
+
+  // ── Helper: render info panel ──────────────────────────────────────────────
+  async function showImgInfo() {
+    var resp = await fetch("/api/image_info?node=" + node.id);
+    var d    = await resp.json();
+    if (d.error) {
+      mBody.innerHTML = '<div style="padding:20px;color:#ef4444">' + d.error + '</div>';
+      return;
+    }
+
+    var _es = (lang === "es");
+
+    // Update canvas node badge
+    setNS(node.id, d.dataset_name);
+    setNB(node.id, d.n_classes + (_es ? " clases" : " classes") + " · " + d.n_train + " train", "badge-ok");
+    setOK(node.id, true);
+    node.data = node.data || {};
+    node.data.loaded = true;
+    node.data.dataset = d.dataset;
+
+    // Thumbnails — grouped by class, 3 per class, 96px, clickable to expand
+    var thumbsHtml = d.thumbs.map(function(bucket, i) {
+      if (!bucket || !bucket.length) return "";
+      var label = d.class_names[i] || ("Class " + i);
+      var imgs = bucket.map(function(b64) {
+        return '<img src="data:image/png;base64,' + b64 + '" ' +
+          'style="width:120px;height:120px;border-radius:8px;object-fit:cover;border:1.5px solid var(--border);cursor:zoom-in;flex-shrink:0" ' +
+          'onclick="expandImg(this.src)" title="' + label + '">';
+      }).join("");
+      return '<div style="display:flex;flex-direction:column;gap:6px">' +
+        '<span style="font-size:11px;color:var(--sec);font-weight:600">' + label + '</span>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + imgs + '</div>' +
+      '</div>';
+    }).join("");
+
+    mBody.innerHTML =
+      '<div style="padding:14px;display:flex;flex-direction:column;gap:14px">' +
+
+        // ── Summary cards ──────────────────────────────────────────────
+        '<div class="mgrid">' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.n_train.toLocaleString() + '</div><div class="mlbl">' + T("img-train") + '</div></div>' +
+          '<div class="mcard mcard-hi"><div class="mval">' + d.n_test.toLocaleString()  + '</div><div class="mlbl">' + T("img-test")  + '</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.n_classes + '</div><div class="mlbl">' + T("img-classes") + '</div></div>' +
+          '<div class="mcard"><div class="mval">' + d.img_size.join("×") + '</div><div class="mlbl">' + T("img-size") + '</div></div>' +
+        '</div>' +
+
+        // ── Target variable info ───────────────────────────────────────
+        '<div class="psec">' +
+          '<div class="ptitle">' + T("img-target") + '</div>' +
+          '<div style="font-size:12px;color:var(--sec);margin-bottom:6px">' + T("img-target-hint") + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+            d.class_names.map(function(n, i) {
+              return '<span class="badge badge-ok" style="font-size:11px">' + n + '</span>';
+            }).join("") +
+          '</div>' +
+        '</div>' +
+
+        // ── Class distribution chart ───────────────────────────────────
+        '<div>' +
+          '<div class="fl" style="margin-bottom:6px">' + T("img-class-dist") + '</div>' +
+          '<img src="data:image/png;base64,' + d.dist_img + '" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '</div>' +
+
+        // ── Thumbnails ─────────────────────────────────────────────────
+        (thumbsHtml ? '<div class="psec"><div class="fl" style="margin-bottom:10px">' + T("img-examples") + '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:14px">' + thumbsHtml + '</div></div>' : '') +
+
+      '</div>';
+
+    mFoot.innerHTML =
+      '<button class="btn btn-sec btn-sm" id="btn-img-reload">' + (lang==="es"?"🔄 Cambiar dataset":"🔄 Change dataset") + '</button>';
+    document.getElementById("btn-img-reload").onclick = function() { showPicker(); };
+    _anim();
+  }
+
+  // ── Helper: dataset picker UI ─────────────────────────────────────────────
+  function showPicker() {
+    mBody.innerHTML =
+      '<div style="padding:18px;display:flex;flex-direction:column;gap:16px">' +
+
+        '<div style="font-size:13px;color:var(--sec)">' +
+          (lang==="es"?"Selecciona el dataset de imagen que quieres usar:":"Select the image dataset you want to use:") +
+        '</div>' +
+
+        // MNIST card
+        '<div class="psec" style="cursor:pointer;border:2px solid var(--border);transition:border-color .15s" id="img-card-mnist"' +
+          ' onmouseenter="this.style.borderColor=\'var(--accent)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+            '<span style="font-size:22px">🔢</span>' +
+            '<div><div style="font-weight:700;font-size:13px">MNIST</div>' +
+            '<div style="font-size:11px;color:var(--sec)">' + T("img-mnist-desc") + '</div></div>' +
+          '</div>' +
+          '<button class="btn btn-black" id="btn-load-mnist" style="width:100%">' + T("img-load-mnist") + '</button>' +
+        '</div>' +
+
+        // Chihuahua vs Muffin card
+        '<div class="psec" style="cursor:pointer;border:2px solid var(--border);transition:border-color .15s" id="img-card-dogs"' +
+          ' onmouseenter="this.style.borderColor=\'var(--accent)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+            '<span style="font-size:22px">🐶🧁</span>' +
+            '<div><div style="font-weight:700;font-size:13px">Chihuahua vs Muffin</div>' +
+            '<div style="font-size:11px;color:var(--sec)">' + T("img-dogs-desc") + '</div></div>' +
+          '</div>' +
+          '<button class="btn btn-black" id="btn-load-dogs" style="width:100%">' + T("img-load-dogs") + '</button>' +
+        '</div>' +
+
+        // Cats vs Dogs card
+        '<div class="psec" style="cursor:pointer;border:2px solid var(--border);transition:border-color .15s" id="img-card-cats"' +
+          ' onmouseenter="this.style.borderColor=\'var(--accent)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+            '<span style="font-size:22px">🐱🐶</span>' +
+            '<div><div style="font-weight:700;font-size:13px">Cats vs Dogs</div>' +
+            '<div style="font-size:11px;color:var(--sec)">' + T("img-cats-desc") + '</div></div>' +
+          '</div>' +
+          '<div style="font-size:11px;color:#f59e0b;margin-bottom:6px">⚠️ ' + (lang === "es" ? "Descarga pesada ~720 MB. Solo con buena conexión." : "Large download ~720 MB. Only with a good connection.") + '</div>' +
+          '<button class="btn btn-black" id="btn-load-cats" style="width:100%">' + T("img-load-cats") + '</button>' +
+        '</div>' +
+
+        // Progress bar (hidden until loading starts)
+        '<div id="img-prog-wrap" style="display:none">' +
+          '<div class="prog-wrap"><div class="prog-bar" id="img-bar" style="width:0%"></div></div>' +
+          '<div class="prog-lbl" id="img-lbl">' + T("img-loading") + '</div>' +
+        '</div>' +
+
+      '</div>';
+
+    mFoot.innerHTML = "";
+    _anim();
+
+    document.getElementById("btn-load-mnist").onclick = function() { startLoad("mnist"); };
+    document.getElementById("btn-load-dogs").onclick  = function() { startLoad("dogs_muffins"); };
+    document.getElementById("btn-load-cats").onclick  = function() { startLoad("cats_vs_dogs"); };
+  }
+
+  async function startLoad(dataset) {
+    document.getElementById("img-prog-wrap").style.display = "block";
+    document.getElementById("btn-load-mnist").disabled = true;
+    document.getElementById("btn-load-dogs").disabled  = true;
+    var _catBtn = document.getElementById("btn-load-cats"); if (_catBtn) _catBtn.disabled = true;
+    var bar = document.getElementById("img-bar");
+    var lbl = document.getElementById("img-lbl");
+    if (bar) bar.style.width = "0%";
+    if (lbl) lbl.textContent = T("img-loading");
+
+    await fetch("/api/image_load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node: node.id, dataset: dataset })
+    });
+    await pollLoad(dataset);
+  }
+
+  // ── Initial render ────────────────────────────────────────────────────────
+  var checkResp = await fetch("/api/image_info?node=" + node.id);
+  var checkData = await checkResp.json();
+  if (!checkData.error && checkData.dataset) {
+    mBody.innerHTML = '<div style="padding:16px;color:var(--sec);font-size:13px">Cargando…</div>';
+    _anim();
+    await showImgInfo();
+    return;
+  }
+
+  showPicker();
+}
+
 async function renderData(node) {
   var _animData = prepareModalResize();
   mBody.innerHTML =
@@ -6406,10 +6699,427 @@ var STEPS_DEF = [
 async function renderPre(node) {
   showModalLoading(lang==="en" ? "Detecting data type…" : "Detectando tipo de datos…");
 
+  var _en = lang === "en";
+
   // ── 0. Resolve upstream data node ────────────────────────────────────────
   var dataSrc    = upstreamDataNode(node.id);
   var dataNodeId = dataSrc ? String(dataSrc.id) : "";
   var prepNodeId = String(node.id);
+
+  // ── IMAGE MODE: upstream is data_image ───────────────────────────────────
+  var upSrcNode = upstreamSourceNode(node.id);
+  if (upSrcNode && upSrcNode.type === "data_image") {
+    var imgResp = await fetch("/api/image_info?node=" + upSrcNode.id).then(function(r){ return r.json(); }).catch(function(){ return {}; });
+    if (!imgResp || imgResp.error) {
+      mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' +
+        (_en ? "Load an image dataset in the Image Data block first." : "Carga primero un dataset en el bloque Datos Imagen.") +
+        '</div>';
+      return;
+    }
+
+    var cfg        = node.data.imgCfg || {};
+    var imgSize    = cfg.imgSize    || 64;
+    var normMode   = cfg.normMode   || "01";
+    var batchSize  = cfg.batchSize  || 32;
+    var testSplit  = cfg.testSplit  || "0.2";
+    var augFlip    = cfg.augFlip    || false;
+    var augRotate  = cfg.augRotate  || false;
+    var augCrop    = cfg.augCrop    || false;
+    var augFactor  = cfg.augFactor  || 1;
+    var nCh        = (imgResp.dataset === "mnist") ? 1 : 3;
+    var total     = imgResp.n_train + imgResp.n_test;
+
+    // ── helper: render a pill-card row ──────────────────────────────────────
+    function pillRow(groupId, options, selected) {
+      return '<div style="display:flex;gap:8px;flex-wrap:wrap" id="' + groupId + '">' +
+        options.map(function(o) {
+          var active = (o.v === selected);
+          return '<button type="button" data-val="' + o.v + '" ' +
+            'style="padding:10px 16px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+            'background:var(--card);color:var(--ink);' +
+            'font-size:12px;font-weight:' + (active ? '700' : '500') + ';cursor:pointer;transition:border-color .15s;' +
+            'display:flex;flex-direction:column;align-items:center;gap:3px;min-width:64px">' +
+            '<span style="font-size:16px">' + o.icon + '</span>' +
+            '<span>' + o.label + '</span>' +
+            (o.sub ? '<span style="font-size:10px;opacity:.7">' + o.sub + '</span>' : '') +
+          '</button>';
+        }).join("") +
+      '</div>';
+    }
+
+    function wirePills(groupId, onChange) {
+      var container = document.getElementById(groupId);
+      if (!container) return;
+      container.querySelectorAll("button[data-val]").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          container.querySelectorAll("button[data-val]").forEach(function(b) {
+            var isMe = (b === btn);
+            b.style.borderColor = isMe ? "var(--accent)" : "var(--border)";
+            b.style.fontWeight  = isMe ? "700" : "500";
+          });
+          onChange(btn.dataset.val);
+        });
+      });
+    }
+
+    function getSelected(groupId) {
+      var active = document.querySelector("#" + groupId + " button[style*='var(--accent)'][style*='background']");
+      if (active) return active.dataset.val;
+      var first = document.querySelector("#" + groupId + " button[data-val]");
+      return first ? first.dataset.val : null;
+    }
+
+    function updateSummary() {
+      var ch  = nCh === 1 ? (_en ? "grayscale" : "grises") : (_en ? "colour" : "color");
+      var augList = [augFlip ? "flip" : "", augRotate ? "rot" : "", augCrop ? "crop" : ""].filter(Boolean);
+      var augTxt  = augList.length ? augList.join("+") : "—";
+      document.getElementById("pre-img-summary").innerHTML =
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:15px">' + imgResp.n_train + '</div><div class="mlbl">Train</div></div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:15px">' + imgResp.n_test + '</div><div class="mlbl">Test</div></div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:15px">' + imgSize + '×' + imgSize + '</div><div class="mlbl">px</div></div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:15px">' + batchSize + '</div><div class="mlbl">batch</div></div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:13px">' + ch + '</div><div class="mlbl">' + (_en ? "channels" : "canales") + '</div></div>' +
+          '<div class="mcard" style="flex:1;padding:8px 12px;text-align:center"><div class="mval" style="font-size:12px">' + augTxt + '</div><div class="mlbl">aug</div></div>' +
+        '</div>';
+    }
+
+    // Helper: renders a single aug toggle row
+    function _augToggleHtml(id, active, title, desc) {
+      return '<div id="' + id + '-card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;gap:14px">' +
+        '<div>' +
+          '<div style="font-size:12px;font-weight:700;color:var(--ink)">' + title + '</div>' +
+          '<div id="' + id + '-status" style="font-size:11px;margin-top:2px;color:var(--sec)">' + desc + '</div>' +
+        '</div>' +
+        '<div id="' + id + '-pill" style="width:40px;height:22px;border-radius:11px;background:' + (active ? 'var(--accent)' : 'var(--border)') + ';display:flex;align-items:center;padding:2px;transition:background .2s;flex-shrink:0">' +
+          '<div style="width:18px;height:18px;border-radius:50%;background:#fff;transform:translateX(' + (active ? '18px' : '0') + ');transition:transform .2s"></div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    var _sizeOpts = [
+      { v: "28",  icon: "🔲", label: "28×28",  sub: "MNIST" },
+      { v: "64",  icon: "🟦", label: "64×64",  sub: "" },
+      { v: "128", icon: "🟧", label: "128×128", sub: "" }
+    ];
+    var _normOpts = [
+      { v: "01",      icon: "📐", label: "[0, 1]",    sub: "÷255" },
+      { v: "meanstd", icon: "📊", label: "Media/std", sub: "μ σ" },
+      { v: "none",    icon: "🔢", label: (_en ? "None" : "Ninguna"), sub: "0–255" }
+    ];
+    var _batchOpts = [
+      { v: "8",  icon: "🔸", label: "8",  sub: "" },
+      { v: "16", icon: "🔶", label: "16", sub: "" },
+      { v: "32", icon: "🟠", label: "32", sub: "" },
+      { v: "64", icon: "🔴", label: "64", sub: "" }
+    ];
+
+    mBody.innerHTML =
+      '<div style="padding:14px;display:flex;flex-direction:column;gap:18px;overflow-y:auto">' +
+
+        // Dataset badge
+        '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--tinted);border-radius:8px;font-size:12px;color:var(--sec)">' +
+          '<span style="font-size:18px">🖼️</span>' +
+          '<span><b>' + imgResp.dataset_name + '</b> · ' + total + (_en ? " images · " : " imágenes · ") + nCh + (_en ? " channel(s)" : " canal(es)") + '</span>' +
+        '</div>' +
+
+        // Image size
+        '<div class="fg">' +
+          '<div class="fl" style="margin-bottom:4px;font-size:12px">' + (_en ? "📐 Image size — choose the resolution for training" : "📐 Tamaño de imagen — elige la resolución para entrenar") + '</div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' +
+            (_en ? "All images are resized to a square of this size before entering the model." : "Todas las imágenes se redimensionan a un cuadrado de este tamaño antes de entrar al modelo.") +
+          '</div>' +
+          pillRow("pre-size-grp", _sizeOpts, String(imgSize)) +
+        '</div>' +
+
+        // Normalisation
+        '<div class="fg">' +
+          '<div class="fl" style="margin-bottom:4px;font-size:12px">' + (_en ? "🎚️ Normalisation — how to scale pixel values" : "🎚️ Normalización — cómo escalar los valores de píxel") + '</div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' +
+            (_en ? "Converts pixel values so the network learns more efficiently." : "Convierte los valores de píxel para que la red aprenda de forma más eficiente.") +
+          '</div>' +
+          pillRow("pre-norm-grp", _normOpts, normMode) +
+        '</div>' +
+
+        // Batch size
+        '<div class="fg">' +
+          '<div class="fl" style="margin-bottom:4px;font-size:12px">' + (_en ? "📦 Batch size — images per training step" : "📦 Batch size — imágenes por paso de entrenamiento") + '</div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' +
+            (_en ? "Number of images the model sees before updating its weights." : "Número de imágenes que el modelo ve antes de actualizar sus pesos.") +
+          '</div>' +
+          pillRow("pre-batch-grp", _batchOpts, String(batchSize)) +
+        '</div>' +
+
+        // Test split
+        '<div class="fg">' +
+          '<div class="fl" style="margin-bottom:4px;font-size:12px">' + (_en ? "🧪 Test split — images reserved for final evaluation" : "🧪 Test split — imágenes reservadas para evaluación final") + '</div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' +
+            (_en ? "These images are set aside before training begins. The model never sees them during training — they are only used to measure real performance at the end."
+                  : "Estas imágenes se apartan antes de que comience el entrenamiento. El modelo nunca las ve durante el entrenamiento — solo se usan para medir el rendimiento real al final.") +
+          '</div>' +
+          '<div style="display:flex;gap:6px" id="pre-testsplit-grp">' +
+            ["0.1","0.15","0.2","0.25"].map(function(o) {
+              var active = (o === String(testSplit));
+              return '<button type="button" data-val="' + o + '" style="flex:1;padding:9px 6px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? '700' : '500') + ';cursor:pointer;transition:border-color .15s;text-align:center">' + (parseFloat(o) * 100).toFixed(0) + '%</button>';
+            }).join("") +
+          '</div>' +
+          '<div id="pre-testsplit-preview" style="margin-top:8px;font-size:11px;color:var(--sec)"></div>' +
+        '</div>' +
+
+        // Data augmentation — three toggles
+        '<div class="fg">' +
+          '<div class="fl" style="margin-bottom:4px;font-size:12px">🔀 Data augmentation</div>' +
+          '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' +
+            (_en ? "Applies random transformations during training so the model sees more variety without needing extra data."
+                  : "Aplica transformaciones aleatorias durante el entrenamiento para que el modelo vea más variedad sin necesitar más datos.") +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px">' +
+            // flip
+            _augToggleHtml("aug-flip",   augFlip,   _en ? "Horizontal flip" : "Giro horizontal",
+              _en ? "Randomly mirrors each image left-right." : "Refleja aleatoriamente cada imagen de izquierda a derecha.") +
+            // rotate
+            _augToggleHtml("aug-rotate", augRotate, _en ? "Small rotation (±15°)" : "Rotación leve (±15°)",
+              _en ? "Rotates each image by a random angle up to 15°." : "Rota cada imagen un ángulo aleatorio de hasta 15°.") +
+            // crop
+            _augToggleHtml("aug-crop",   augCrop,   _en ? "Random crop" : "Recorte aleatorio",
+              _en ? "Crops a random region then resizes back — the model learns that the subject can appear anywhere." : "Recorta una región aleatoria y redimensiona — el modelo aprende que el objeto puede aparecer en cualquier parte.") +
+          '</div>' +
+          // Augmentation factor
+          '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">' +
+            '<div style="font-size:12px;font-weight:600;margin-bottom:4px">' +
+              (_en ? "Copies per image" : "Copias por imagen") +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--sec);margin-bottom:8px" id="aug-factor-desc"></div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap" id="aug-factor-grp">' +
+              [1,2,3,5].map(function(v) {
+                var active = augFactor === v;
+                return '<button class="pill-opt' + (active ? ' pill-opt-active' : '') + '" data-val="' + v + '" data-grp="aug-factor-grp">' +
+                  'x' + v + '</button>';
+              }).join('') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+
+        // Output summary
+        '<div class="psec">' +
+          '<div class="ptitle" style="margin-bottom:10px">' + (_en ? "Summary" : "Resumen") + '</div>' +
+          '<div id="pre-img-summary"></div>' +
+        '</div>' +
+
+        // Preview (shown after Apply)
+        '<div class="psec" id="pre-img-preview" style="display:' + (node.data.applied ? 'block' : 'none') + '"></div>' +
+
+      '</div>';
+
+    mFoot.innerHTML =
+      '<button class="btn btn-black" id="btn-pre-img-apply" style="width:100%">▶ ' + (_en ? "Apply preprocessing" : "Aplicar preprocesado") + '</button>';
+
+    // Wire pill groups
+    wirePills("pre-size-grp",  function(v) { imgSize   = parseInt(v, 10); updateSummary(); });
+    wirePills("pre-norm-grp",  function(v) { normMode  = v;               updateSummary(); });
+    wirePills("pre-batch-grp", function(v) { batchSize = parseInt(v, 10); updateSummary(); });
+
+    // Wire test split pills + live preview of train/test counts
+    function updateSplitPreview() {
+      var pv = document.getElementById("pre-testsplit-preview");
+      if (!pv) return;
+      var nTest  = Math.round(total * parseFloat(testSplit));
+      var nTrain = total - nTest;
+      pv.textContent = _en
+        ? nTrain + " training · " + nTest + " test (of " + total + " total)"
+        : nTrain + " entrenamiento · " + nTest + " test (de " + total + " en total)";
+    }
+    wirePills("pre-testsplit-grp", function(v) {
+      testSplit = v; updateSummary(); updateSplitPreview();
+    });
+    updateSplitPreview();
+
+    // Wire augmentation toggle card
+    // Wire aug toggles
+    function wireAugToggle(id, getter, setter) {
+      var card = document.getElementById(id + "-card");
+      if (!card) return;
+      card.addEventListener("click", function() {
+        setter(!getter());
+        var pill = document.getElementById(id + "-pill");
+        var dot  = pill.querySelector("div");
+        pill.style.background = getter() ? "var(--accent)" : "var(--border)";
+        dot.style.transform   = getter() ? "translateX(18px)" : "translateX(0)";
+        updateFactorDesc();
+        updateSummary();
+      });
+    }
+    wireAugToggle("aug-flip",   function(){ return augFlip; },   function(v){ augFlip = v; });
+    wireAugToggle("aug-rotate", function(){ return augRotate; }, function(v){ augRotate = v; });
+    wireAugToggle("aug-crop",   function(){ return augCrop; },   function(v){ augCrop = v; });
+
+    // Wire augmentation factor pills
+    function updateFactorDesc() {
+      var desc = document.getElementById("aug-factor-desc");
+      if (!desc) return;
+      var anyAug = augFlip || augRotate || augCrop;
+      if (!anyAug) {
+        desc.textContent = _en ? "Activate at least one transform above to use this." : "Activa al menos una transformación arriba para usar esto.";
+        desc.style.color = "#f59e0b";
+        return;
+      }
+      var trainN = Math.round((imgResp.n_train || 0) * (1 - parseFloat(testSplit)));
+      var total  = trainN * augFactor;
+      desc.style.color = "var(--sec)";
+      desc.textContent = _en
+        ? "~" + trainN + " train images × " + augFactor + " = " + total + " samples per epoch."
+        : "~" + trainN + " imágenes de train × " + augFactor + " = " + total + " muestras por época.";
+    }
+    document.getElementById("aug-factor-grp").querySelectorAll(".pill-opt").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        augFactor = parseInt(btn.dataset.val);
+        document.getElementById("aug-factor-grp").querySelectorAll(".pill-opt").forEach(function(b) {
+          b.className = "pill-opt" + (parseInt(b.dataset.val) === augFactor ? " pill-opt-active" : "");
+        });
+        updateFactorDesc();
+        updateSummary();
+      });
+    });
+    updateFactorDesc();
+
+    // Apply button
+    // ── Preview: render random thumbs with preprocessing applied in-browser ───
+    function renderPreview() {
+      var wrap = document.getElementById("pre-img-preview");
+      if (!wrap) return;
+
+      // ── Draw one thumb on a canvas with all active transforms applied ──────
+      function drawThumb(cv, b64) {
+        var SIZE = cv.width;
+        var imgEl = new Image();
+        function doDraw() {
+          var ctx = cv.getContext("2d");
+          ctx.clearRect(0, 0, SIZE, SIZE);
+          ctx.save();
+          // Random crop
+          var cropScale = augCrop ? (0.75 + Math.random() * 0.2) : 1;
+          var sx = augCrop ? Math.random() * imgEl.width  * (1 - cropScale) : 0;
+          var sy = augCrop ? Math.random() * imgEl.height * (1 - cropScale) : 0;
+          var sw = imgEl.width  * cropScale;
+          var sh = imgEl.height * cropScale;
+          // Horizontal flip
+          if (augFlip && Math.random() > 0.5) {
+            ctx.translate(SIZE, 0);
+            ctx.scale(-1, 1);
+          }
+          // Small rotation
+          if (augRotate) {
+            var angle = (Math.random() * 30 - 15) * Math.PI / 180;
+            ctx.translate(SIZE / 2, SIZE / 2);
+            ctx.rotate(angle);
+            ctx.translate(-SIZE / 2, -SIZE / 2);
+          }
+          ctx.drawImage(imgEl, sx, sy, sw, sh, 0, 0, SIZE, SIZE);
+          ctx.restore();
+          // Grayscale for MNIST
+          if (nCh === 1) {
+            var id = ctx.getImageData(0, 0, SIZE, SIZE);
+            for (var pi = 0; pi < id.data.length; pi += 4) {
+              var g = 0.299 * id.data[pi] + 0.587 * id.data[pi+1] + 0.114 * id.data[pi+2];
+              id.data[pi] = id.data[pi+1] = id.data[pi+2] = g;
+            }
+            ctx.putImageData(id, 0, 0);
+          }
+        }
+        // Force draw even if image is already cached
+        imgEl.onload = doDraw;
+        imgEl.src = "data:image/png;base64," + b64;
+        if (imgEl.complete) doDraw();  // already in cache
+      }
+
+      // ── Shuffle pool fresh on every call ────────────────────────────────────
+      var pool = [];
+      (imgResp.thumbs || []).forEach(function(bucket, ci) {
+        (bucket || []).forEach(function(b64) {
+          pool.push({ b64: b64, label: (imgResp.class_names || [])[ci] || String(ci) });
+        });
+      });
+      for (var si = pool.length - 1; si > 0; si--) {
+        var sj = Math.floor(Math.random() * (si + 1));
+        var tmp = pool[si]; pool[si] = pool[sj]; pool[sj] = tmp;
+      }
+      var shown = pool.slice(0, 6);
+      if (!shown.length) { wrap.innerHTML = ""; return; }
+
+      var SIZE = 96;
+      var augActive = [augFlip ? "flip" : "", augRotate ? "rot±15°" : "", augCrop ? "crop" : ""].filter(Boolean);
+      var augNote   = augActive.length ? " · aug: " + augActive.join(", ") : "";
+
+      // Build markup — canvas click opens a bigger version via openZoomPopup directly
+      wrap.innerHTML =
+        '<div class="ptitle" style="margin-bottom:4px">' + (_en ? "Preview after preprocessing" : "Preview tras preprocesado") + '</div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-bottom:10px">' + imgSize + '×' + imgSize + ' px' + augNote + (_en ? ' · <a href="#" id="pre-reshuffle" style="color:var(--accent);text-decoration:none">↻ ' + 'new sample</a>' : ' · <a href="#" id="pre-reshuffle" style="color:var(--accent);text-decoration:none">↻ nueva muestra</a>') + '</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap" id="pre-canvas-row">' +
+          shown.map(function(t, i) {
+            return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' +
+              '<canvas id="prev-cv-' + i + '" width="' + SIZE + '" height="' + SIZE + '" data-b64="' + t.b64 + '" ' +
+                'style="border-radius:8px;border:1.5px solid var(--border);cursor:zoom-in" title="' + t.label + '"></canvas>' +
+              '<span style="font-size:10px;color:var(--sec);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.label + '</span>' +
+            '</div>';
+          }).join("") +
+        '</div>';
+
+      // Draw all canvases
+      shown.forEach(function(t, i) {
+        var cv = document.getElementById("prev-cv-" + i);
+        if (cv) drawThumb(cv, t.b64);
+      });
+
+      // Click to expand: render at 360px into a temp canvas, then open popup
+      document.getElementById("pre-canvas-row").addEventListener("click", function(e) {
+        var cv = e.target.closest("canvas");
+        if (!cv) return;
+        var BIG = 360;
+        var big = document.createElement("canvas");
+        big.width = big.height = BIG;
+        drawThumb(big, cv.dataset.b64);
+        // Give draw time to complete (image already loaded at this point)
+        setTimeout(function() {
+          openZoomPopup(big.toDataURL(), [big.toDataURL()], 0);
+        }, 60);
+      });
+
+      // Reshuffle link
+      var reshuffleEl = document.getElementById("pre-reshuffle");
+      if (reshuffleEl) reshuffleEl.addEventListener("click", function(e) {
+        e.preventDefault();
+        renderPreview();
+      });
+    }
+
+    document.getElementById("btn-pre-img-apply").addEventListener("click", function() {
+      imgSize   = parseInt(getSelected("pre-size-grp"),  10) || imgSize;
+      normMode  = getSelected("pre-norm-grp")  || normMode;
+      batchSize = parseInt(getSelected("pre-batch-grp"), 10) || batchSize;
+      testSplit = getSelected("pre-testsplit-grp") || testSplit;
+      node.data.imgCfg = { imgSize: imgSize, normMode: normMode, batchSize: batchSize,
+                           testSplit: testSplit,
+                           augFlip: augFlip, augRotate: augRotate, augCrop: augCrop,
+                           augFactor: augFactor };
+      node.data.applied = true;
+      node.data.task    = "image";
+      node.data.imgDataNodeId = String(upSrcNode.id);
+      setOK(node.id, true);
+      var augParts = [augFlip?"flip":"", augRotate?"rot":"", augCrop?"crop":""].filter(Boolean);
+      var augBadge = augParts.length ? (" · aug×" + augFactor) : "";
+      setNB(node.id, imgSize + "×" + imgSize + " · bs " + batchSize + augBadge, "badge-ok");
+      toast(_en ? "✅ Preprocessing applied" : "✅ Preprocesado aplicado");
+      document.getElementById("pre-img-preview").style.display = "block";
+      renderPreview();
+    });
+
+    updateSummary();
+    // If already applied (reopened), show preview immediately
+    if (node.data.applied) renderPreview();
+    prepareModalResize()();
+    return;
+  }
+  // ── END IMAGE MODE ────────────────────────────────────────────────────────
 
   // ── 1. Detect tabular vs NLP from upstream node ──────────────────────────
   var qTab = nq(node, "/api/tabular_info");
@@ -6420,8 +7130,6 @@ async function renderPre(node) {
   }
   var hasTabular = tabInfo && !tabInfo.error && tabInfo.cols > 0;
   var hasNLP     = inf.n && inf.n > 0 && (inf.avg_words > 0 || (inf.samples && inf.samples.length > 0));
-
-  var _en = lang === "en";
 
   if (!hasTabular && !hasNLP) {
     mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' + (_en ? "Load a dataset in the Data block first." : "Carga primero un dataset en el bloque Datos.") + '</div>';
@@ -7851,26 +8559,42 @@ async function renderSaveModel(node) {
 
   // ── 6. EVALUACIÓN ─────────────────────────────────────────────────────────
   } else if (upType === "model_eval") {
-    // Recorre hacia atrás desde model_eval para encontrar el node_id del modelo
-    // (linreg, load_model, knn…) cuyo resultado está en _MODEL_STORE del servidor
+    // Walk back from model_eval to find upstream model node
     var evalModelNodeId = null;
+    var evalModelType   = null;
     edges.forEach(function(e) {
       if (String(e.to) === String(upNode.id)) {
         var n = nodeById(e.from);
-        if (n && MODEL_TYPES.indexOf(n.type) !== -1) evalModelNodeId = String(n.id);
+        if (!n) return;
+        if (MODEL_TYPES.indexOf(n.type) !== -1 || n.type === "load_model") {
+          evalModelNodeId = String(n.id); evalModelType = n.type;
+        }
+        if (n.type === "cnn") { evalModelNodeId = String(n.id); evalModelType = "cnn"; }
       }
     });
-    // Fallback: si el bloque model_eval está conectado directamente a load_model
-    if (!evalModelNodeId) {
-      edges.forEach(function(e) {
-        if (String(e.to) === String(upNode.id)) {
-          var n = nodeById(e.from);
-          if (n && n.type === "load_model") evalModelNodeId = String(n.id);
-        }
-      });
-    }
 
-    if (evalModelNodeId) {
+    if (evalModelType === "cnn" && evalModelNodeId) {
+      // ── CNN report ───────────────────────────────────────────────────────
+      var cnnRuns = await fetch("/api/cnn_runs?node=" + encodeURIComponent(evalModelNodeId))
+        .then(function(r){ return r.json(); }).catch(function(){ return { runs: [] }; });
+      var nRuns = (cnnRuns.runs || []).length;
+      if (nRuns) {
+        sectionsHtml += _sHdr(lang === "es" ? "INFORME CNN" : "CNN REPORT");
+        sectionsHtml += _radioRow("cnn_report_lang", "cnn__report__es",
+          "📄 " + (lang === "es" ? "Informe en español" : "Report in Spanish"),
+          (lang === "es" ? `${nRuns} run(s) · incluye métricas, curvas, matriz de confusión` : `${nRuns} run(s) · includes metrics, curves, confusion matrix`),
+          lang === "es");
+        sectionsHtml += _radioRow("cnn_report_lang", "cnn__report__en",
+          "📄 " + (lang === "es" ? "Informe en inglés" : "Report in English"),
+          (lang === "es" ? "Mismo contenido en inglés" : "Same content in English"),
+          lang !== "es");
+        ctx.cnnNodeId = evalModelNodeId;
+        ctx.cnnEvalNode = upNode;
+      } else {
+        sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+          (lang === "es" ? "Entrena al menos un modelo en el bloque CNN primero." : "Train at least one model in the CNN block first.") + '</div>';
+      }
+    } else if (evalModelNodeId) {
       sectionsHtml += _sHdr("save-section-eval");
       sectionsHtml += _radioRow("eval_export", "eval__zip",          T("save-eval-zip"), T("save-eval-zip-sub"), true);
       sectionsHtml += _radioRow("eval_export", "eval__metrics__json", T("save-eval-json"), "", false);
@@ -7879,7 +8603,7 @@ async function renderSaveModel(node) {
       sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
         T("save-eval-run-first") + '</div>';
     }
-    ctx.evalModelNodeId = evalModelNodeId;
+    ctx.evalModelNodeId = evalModelType !== "cnn" ? evalModelNodeId : null;
     ctx.evalNode = upNode;
 
   // ── 7. PLOTS ──────────────────────────────────────────────────────────────
@@ -8179,6 +8903,35 @@ async function renderSaveModel(node) {
             _triggerDownload(zblob, lang==="en"?"evaluation.zip":"evaluacion.zip");
             saved++;
           } catch(e) { errors.push((lang==="en"?"evaluation":"evaluacion") + ".zip: " + (e.message || "error")); }
+        } else { saved++; }
+
+      // ── CNN: informe HTML ────────────────────────────────────────────────
+      } else if (id === "cnn__report__es" || id === "cnn__report__en") {
+        var reportLang = (id === "cnn__report__en") ? "en" : "es";
+        var cnnNid     = ctx.cnnNodeId;
+        if (!cnnNid) { errors.push("cnn_report.html: no CNN node"); continue; }
+        statEl.textContent = lang === "es" ? "Generando informe CNN…" : "Generating CNN report…";
+        var evalNd  = ctx.cnnEvalNode;
+        var imgHist = (evalNd && evalNd.data && evalNd.data.imgHistory) || [];
+        var fname   = "cnn_report_" + reportLang + ".html";
+        // Use pick_export_path so the native OS save dialog appears
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            endpoint:     "/api/cnn_report",
+            default_name: fname,
+            extra:        { node: String(cnnNid), lang: reportLang, img_history: imgHist }
+          })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          // Fallback: generate in client and trigger download
+          var resp = await fetch("/api/cnn_report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node: String(cnnNid), lang: reportLang, img_history: imgHist })
+          });
+          if (resp.ok) { _triggerDownload(await resp.blob(), fname); saved++; }
+          else { errors.push(fname); }
         } else { saved++; }
 
       // ── Evaluación: plot individual ───────────────────────────────────────
@@ -9300,6 +10053,912 @@ function openTopicsWCPopup(topics) {
 }
 
 // ═══════════════════════════════════════════
+// CNN EVALUATION modal
+// ═══════════════════════════════════════════
+// Called either directly (legacy) or from renderModelEval when upstream is CNN.
+// cnnNodeArg is passed from renderModelEval so we skip the edge walk.
+async function renderCNNEval(node, cnnNodeArg) {
+  var _en  = lang === "en";
+  var _anim = prepareModalResize();
+  node.data = node.data || {};
+
+  // Resolve CNN node: use passed arg or walk edges
+  var cnnNode = cnnNodeArg || (function() {
+    var visited = {}, queue = [node.id];
+    while (queue.length) {
+      var cur = queue.shift();
+      if (visited[cur]) continue;
+      visited[cur] = true;
+      for (var i = 0; i < edges.length; i++) {
+        if (edges[i].to === cur) {
+          var fromN = nodeById(edges[i].from);
+          if (!fromN) continue;
+          if (fromN.type === "cnn") return fromN;
+          queue.push(fromN.id);
+        }
+      }
+    }
+    return null;
+  })();
+  if (!cnnNode) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' +
+      (_en ? "Connect a CNN Classification block first." : "Conecta un bloque CNN Clasificación primero.") + '</div>';
+    _anim(); return;
+  }
+
+  // Load runs from server
+  var runsResp = await fetch("/api/cnn_runs?node=" + cnnNode.id).then(function(r) { return r.json(); }).catch(function() { return { runs: [] }; });
+  var runs = runsResp.runs || [];
+
+  if (!runs.length) {
+    mBody.innerHTML =
+      '<div style="padding:32px;text-align:center;color:var(--sec)">' +
+        '<div style="font-size:32px;margin-bottom:12px">🧠</div>' +
+        '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--ink)">' +
+          (_en ? "No runs yet" : "Aún no hay runs") +
+        '</div>' +
+        '<div style="font-size:12px;margin-bottom:16px">' +
+          (_en ? "Open the CNN block, configure the model and click Train. Come back here to see the results."
+               : "Abre el bloque CNN, configura el modelo y pulsa Entrenar. Vuelve aquí para ver los resultados.") +
+        '</div>' +
+        '<button class="btn btn-ghost" onclick="renderCNNEval(window._evalNode, window._evalCnnNode)">↻ ' +
+          (_en ? "Refresh" : "Actualizar") +
+        '</button>' +
+      '</div>';
+    window._evalNode = node;
+    mFoot.innerHTML = '';
+    _anim(); return;
+  }
+
+  // Keep node reference for refresh button
+  window._evalNode = node;
+
+  // Best run
+  var bestF1 = -1, bestRunIdx = runs[0].run_idx;
+  runs.forEach(function(r) { if (r.macro_f1 > bestF1) { bestF1 = r.macro_f1; bestRunIdx = r.run_idx; } });
+
+  var activeRunIdx = node.data.activeRunIdx || bestRunIdx;
+  function getActiveRun() { return runs.find(function(r) { return r.run_idx === activeRunIdx; }) || runs[runs.length - 1]; }
+
+  // ── Tab system ────────────────────────────────────────────────────────────
+  var TABS = [
+    { id: "compare",  label: _en ? "📊 Compare"  : "📊 Comparar" },
+    { id: "report",   label: _en ? "📋 Report"   : "📋 Informe" },
+    { id: "predict",  label: _en ? "🔍 Predict"  : "🔍 Predecir" },
+    { id: "errors",   label: _en ? "❌ Errors"   : "❌ Errores" },
+  ];
+  var activeTab = node.data.activeTab || "compare";
+
+  function tabBar() {
+    return '<div style="display:flex;gap:4px;padding:12px 14px 0;border-bottom:1px solid var(--border);flex-shrink:0">' +
+      TABS.map(function(t) {
+        var on = t.id === activeTab;
+        return '<button type="button" data-tab="' + t.id + '" style="padding:7px 12px;border:none;border-bottom:2px solid ' +
+          (on ? 'var(--accent)' : 'transparent') + ';background:transparent;cursor:pointer;font-size:12px;font-weight:' +
+          (on ? '700' : '400') + ';color:' + (on ? 'var(--accent)' : 'var(--sec)') + ';white-space:nowrap">' + t.label + '</button>';
+      }).join("") +
+    '</div>';
+  }
+
+  function runSelector(selId) {
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="' + selId + '">' +
+      runs.map(function(r) {
+        var on = r.run_idx === activeRunIdx;
+        var best = r.run_idx === bestRunIdx;
+        return '<button type="button" data-run-idx="' + r.run_idx + '" style="padding:6px 12px;border-radius:8px;border:2px solid ' +
+          (on ? 'var(--accent)' : 'var(--border)') + ';background:var(--card);font-size:12px;font-weight:' + (on ? '700' : '400') +
+          ';cursor:pointer;color:var(--ink)">' + r.run_name + (best ? ' ★' : '') + '</button>';
+      }).join("") +
+    '</div>';
+  }
+  function wireRunSelector(selId) {
+    var el = document.getElementById(selId); if (!el) return;
+    el.querySelectorAll("button[data-run-idx]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        activeRunIdx = parseInt(btn.dataset.runIdx);
+        node.data.activeRunIdx = activeRunIdx;
+        renderTab();
+      });
+    });
+  }
+
+  function renderCompare() {
+    var bestRun = getActiveRun(); // best is always highlighted, not filtered
+    var allF1   = runs.map(function(r) { return r.macro_f1; });
+    var maxF1   = Math.max.apply(null, allF1);
+
+    var rows = runs.map(function(r) {
+      var cfg  = r.cfg || {};
+      var best = r.macro_f1 === maxF1;
+      return '<tr style="' + (best ? 'background:var(--tinted)' : '') + '">' +
+        '<td style="padding:5px 8px;font-weight:600">' + r.run_name + (best ? ' <span style="color:var(--accent);font-size:10px">★</span>' : '') + '</td>' +
+        '<td style="padding:5px 8px">' + (cfg.epochs || '—') + '</td>' +
+        '<td style="padding:5px 8px">' + (cfg.lr || '—') + '</td>' +
+        '<td style="padding:5px 8px">' + (cfg.n_conv || '—') + '</td>' +
+        '<td style="padding:5px 8px">' + (cfg.val_split ? (parseFloat(cfg.val_split)*100).toFixed(0)+'%' : '—') + '</td>' +
+        '<td style="padding:5px 8px">' + (cfg.testSplit ? (parseFloat(cfg.testSplit)*100).toFixed(0)+'%' : '—') + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + (r.final_acc * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (r.macro_f1 * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + (r.macro_prec * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + (r.macro_rec * 100).toFixed(1) + '%</td>' +
+      '</tr>';
+    }).join("");
+
+    return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="color:var(--sec);font-size:11px">' +
+        '<th style="padding:5px 8px;text-align:left">' + (_en ? 'Name' : 'Nombre') + '</th>' +
+        '<th style="padding:5px 8px">Epochs</th>' +
+        '<th style="padding:5px 8px">LR</th>' +
+        '<th style="padding:5px 8px">Conv</th>' +
+        '<th style="padding:5px 8px">Val%</th>' +
+        '<th style="padding:5px 8px">Test%</th>' +
+        '<th style="padding:5px 8px;text-align:right">Acc</th>' +
+        '<th style="padding:5px 8px;text-align:right">F1</th>' +
+        '<th style="padding:5px 8px;text-align:right">' + (_en ? 'Prec' : 'Prec') + '</th>' +
+        '<th style="padding:5px 8px;text-align:right">Rec</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function renderReport() {
+    var r = getActiveRun();
+    var pcRows = (r.per_class || []).map(function(pc) {
+      return '<tr>' +
+        '<td style="padding:5px 8px;font-weight:600">' + pc.label + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + (pc.precision * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + (pc.recall * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (pc.f1 * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right;color:var(--sec)">' + pc.support + '</td>' +
+      '</tr>';
+    }).join("") +
+    '<tr style="border-top:1px solid var(--border);color:var(--sec)">' +
+      '<td style="padding:5px 8px;font-style:italic">macro avg</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + (r.macro_prec * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + (r.macro_rec * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (r.macro_f1 * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + (r.n_test || '—') + '</td>' +
+    '</tr>';
+
+    return runSelector("eval-run-sel-report") +
+      '<div class="mgrid" style="margin-bottom:12px">' +
+        '<div class="mcard mcard-hi" style="text-align:center"><div class="mval">' + (r.final_acc*100).toFixed(1) + '%</div><div class="mlbl">' + (_en?'Test accuracy':'Accuracy test') + '</div></div>' +
+        '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_f1*100).toFixed(1) + '%</div><div class="mlbl">Macro F1</div></div>' +
+        '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_prec*100).toFixed(1) + '%</div><div class="mlbl">' + (_en?'Precision':'Precisión') + '</div></div>' +
+        '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_rec*100).toFixed(1) + '%</div><div class="mlbl">Recall</div></div>' +
+      '</div>' +
+      '<div class="psec"><div class="ptitle" style="margin-bottom:6px">' + (_en?'Classification report':'Classification report') + '</div>' +
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="color:var(--sec);font-size:11px">' +
+            '<th style="padding:5px 8px;text-align:left">' + (_en?'Class':'Clase') + '</th>' +
+            '<th style="padding:5px 8px;text-align:right">' + (_en?'Precision':'Precisión') + '</th>' +
+            '<th style="padding:5px 8px;text-align:right">Recall</th>' +
+            '<th style="padding:5px 8px;text-align:right">F1</th>' +
+            '<th style="padding:5px 8px;text-align:right">N</th>' +
+          '</tr></thead><tbody>' + pcRows + '</tbody></table></div>' +
+      '</div>' +
+      (r.curve_img ? '<div class="psec"><div class="ptitle" style="margin-bottom:6px">' + (_en?'Training curves':'Curvas de entrenamiento') + '</div>' +
+        '<img src="data:image/png;base64,' + r.curve_img + '" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)"></div>' : '') +
+      (r.cm_img ? '<div class="psec"><div class="ptitle" style="margin-bottom:6px">' + (_en?'Confusion matrix':'Matriz de confusión') + '</div>' +
+        '<img src="data:image/png;base64,' + r.cm_img + '" style="max-width:320px;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)"></div>' : '');
+  }
+
+  // imgHistory: [{b64, filename, results: [{run_name, pred_class, pred_prob, probs, class_names}]}]
+  node.data.imgHistory = node.data.imgHistory || [];
+
+  function historyThumbsHtml() {
+    if (!node.data.imgHistory.length) return '';
+    return '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;color:var(--sec);margin-bottom:6px">' + (_en ? 'History (click to reload)' : 'Historial (click para recargar)') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap" id="eval-history-row">' +
+        node.data.imgHistory.map(function(h, hi) {
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer" data-hist-idx="' + hi + '">' +
+            '<img src="' + h.b64 + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1.5px solid var(--border)">' +
+            '<span style="font-size:9px;color:var(--sec);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (h.filename || '') + '</span>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderPredict() {
+    return '<div id="eval-drop-zone" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;color:var(--sec);font-size:13px;transition:border-color .15s;margin-bottom:10px" ' +
+        'ondragover="event.preventDefault();this.style.borderColor=\'var(--accent)\'" ' +
+        'ondragleave="this.style.borderColor=\'var(--border)\'" ' +
+        'ondrop="handleEvalDrop(event)">' +
+        '📂 ' + (_en ? 'Drag an image here or ' : 'Arrastra una imagen aquí o ') +
+        '<label style="color:var(--accent);cursor:pointer;text-decoration:underline">' +
+          (_en ? 'browse' : 'selecciona') +
+          '<input type="file" accept="image/*" style="display:none" onchange="handleEvalFile(this)">' +
+        '</label>' +
+      '</div>' +
+      historyThumbsHtml() +
+      '<div id="eval-predict-result"></div>';
+  }
+
+  function wireHistoryThumbs() {
+    var row = document.getElementById("eval-history-row");
+    if (!row) return;
+    row.querySelectorAll("[data-hist-idx]").forEach(function(el) {
+      el.addEventListener("click", function() {
+        var hi = parseInt(el.dataset.histIdx);
+        var h  = node.data.imgHistory[hi];
+        if (h) showHistoryResult(h, hi);
+      });
+    });
+  }
+
+  function showHistoryResult(h, histIdx) {
+    var result = document.getElementById("eval-predict-result");
+    if (!result) return;
+    var previewHtml = '<img src="' + h.b64 + '" style="width:100px;height:100px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border);display:block;margin:0 auto 12px">';
+    // Pass a prefix so IDs don't collide with fresh-predict results
+    result.innerHTML = previewHtml + buildMultiRunResultHtml(h.results, h.class_names, "h" + (histIdx || 0) + "_");
+  }
+
+  function renderErrors() {
+    var r = getActiveRun();
+    var wrongHtml = (r.wrong_samples || []).map(function(w) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+        '<img src="data:image/png;base64,' + w.img + '" style="width:72px;height:72px;border-radius:8px;object-fit:cover;border:2px solid #ef4444;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '<span style="font-size:10px;color:#ef4444;font-weight:600">✗ ' + w.pred_label + '</span>' +
+        '<span style="font-size:10px;color:var(--sec)">→ ' + w.true_label + '</span>' +
+        '<span style="font-size:10px;color:var(--sec)">(' + (w.confidence*100).toFixed(0) + '%)</span>' +
+      '</div>';
+    }).join("");
+
+    return runSelector("eval-run-sel-errors") +
+      (r.cm_img ? '<div class="psec"><div class="ptitle" style="margin-bottom:6px">' + (_en?'Confusion matrix':'Matriz de confusión') + '</div>' +
+        '<img src="data:image/png;base64,' + r.cm_img + '" style="width:100%;max-width:320px;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)"></div>' : '') +
+      (wrongHtml ? '<div class="psec"><div class="ptitle" style="margin-bottom:8px">' + (_en?'Misclassified images (top losses)':'Imágenes mal clasificadas (top losses)') + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' + wrongHtml + '</div></div>' : '');
+  }
+
+  function renderTab() {
+    var content = "";
+    if      (activeTab === "compare") content = renderCompare();
+    else if (activeTab === "report")  content = renderReport();
+    else if (activeTab === "predict") content = renderPredict();
+    else if (activeTab === "errors")  content = renderErrors();
+
+    mBody.innerHTML =
+      tabBar() +
+      '<div style="flex:1;overflow-y:auto;padding:14px">' + content + '</div>';
+
+    // Wire tab buttons
+    mBody.querySelectorAll("button[data-tab]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        activeTab = btn.dataset.tab;
+        node.data.activeTab = activeTab;
+        renderTab();
+      });
+    });
+
+    // Wire run selectors
+    wireRunSelector("eval-run-sel-report");
+    wireRunSelector("eval-run-sel-predict");
+    wireRunSelector("eval-run-sel-errors");
+    wireHistoryThumbs();
+  }
+
+  mBody.style.display    = "flex";
+  mBody.style.flexDirection = "column";
+  mBody.style.height     = "100%";
+  mBody.style.padding    = "0";
+  mBody.style.overflow   = "hidden";
+
+  mFoot.innerHTML =
+    '<button class="btn btn-ghost" onclick="renderCNNEval(window._evalNode, window._evalCnnNode)">↻ ' + (_en ? "Refresh" : "Actualizar") + '</button>';
+
+  renderTab();
+  _anim();
+
+  // Keep cnnNode ref for refresh
+  window._evalCnnNode = cnnNode;
+
+  // ── Drag & drop / file predict helpers (attached to window so ondrop works) ──
+  window.handleEvalDrop = async function(ev) {
+    ev.preventDefault();
+    var dz = document.getElementById("eval-drop-zone");
+    if (dz) dz.style.borderColor = "var(--border)";
+    var file = ev.dataTransfer.files[0];
+    if (file) await doPredict(file);
+  };
+  window.handleEvalFile = async function(input) {
+    if (input.files[0]) await doPredict(input.files[0]);
+  };
+
+  // ── Multi-run probability table (collapsible per run) ────────────────────
+  function buildMultiRunResultHtml(runResults, classNames, pfx) {
+    pfx = pfx || "fresh_";
+    var many = classNames.length > 5;
+    return runResults.map(function(rr) {
+      var uid   = pfx + rr.run_idx;
+      var detId = "probdet-" + uid;
+      var chvId = "chev-pred-" + uid;
+      var probRows = classNames.map(function(cls, i) {
+        var pct = (rr.probs[i] * 100).toFixed(1);
+        var isWinner = cls === rr.pred_class;
+        return '<tr style="' + (isWinner ? 'background:var(--tinted)' : '') + '">' +
+          '<td style="padding:' + (many ? '3px' : '5px') + ' 8px;font-weight:' + (isWinner ? '700' : '400') + ';font-size:12px">' + cls + '</td>' +
+          '<td style="padding:' + (many ? '3px' : '5px') + ' 8px;width:80px">' +
+            '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">' +
+              '<div style="height:100%;width:' + pct + '%;background:' + (isWinner ? 'var(--accent)' : '#94a3b8') + ';border-radius:4px"></div>' +
+            '</div>' +
+          '</td>' +
+          '<td style="padding:' + (many ? '3px' : '5px') + ' 8px;text-align:right;font-size:12px;font-weight:' + (isWinner ? '700' : '400') + '">' + pct + '%</td>' +
+        '</tr>';
+      }).join("");
+      // Toggle inline to avoid quote-escaping hell
+      var toggleFn = "var b=document.getElementById('" + detId + "');var open=b.style.display==='block';b.style.display=open?'none':'block';document.getElementById('" + chvId + "').textContent=open?'▾':'▴';";
+      return '<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
+        '<div style="padding:8px 12px;background:var(--surface);font-size:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none" onclick="' + toggleFn.replace(/"/g, '&quot;') + '">' +
+          '<span style="font-weight:700">' + rr.run_name + '</span>' +
+          '<span style="display:flex;align-items:center;gap:8px">' +
+            '<span style="background:var(--tinted);color:var(--accent);border-radius:6px;padding:2px 8px;font-weight:700">' + rr.pred_class + ' ' + (rr.pred_prob * 100).toFixed(1) + '%</span>' +
+            '<span style="font-size:11px;color:var(--sec)" id="' + chvId + '">▾ ' + (classNames.length > 2 ? classNames.length + ' clases' : '') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div id="' + detId + '" style="display:none;' + (many ? 'max-height:200px;overflow-y:auto;' : '') + '">' +
+          '<table style="width:100%;border-collapse:collapse"><tbody>' + probRows + '</tbody></table>' +
+        '</div>' +
+      '</div>';
+    }).join("");
+  }
+
+  async function doPredict(file) {
+    var result = document.getElementById("eval-predict-result");
+    if (result) result.innerHTML = '<div style="color:var(--sec);font-size:13px">' + (_en ? "Predicting with all runs…" : "Prediciendo con todas las runs…") + '</div>';
+
+    var b64 = await new Promise(function(resolve) {
+      var fr = new FileReader();
+      fr.onload = function(e) { resolve(e.target.result); };
+      fr.readAsDataURL(file);
+    });
+
+    var previewHtml = '<img src="' + b64 + '" style="width:100px;height:100px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border);display:block;margin:0 auto 12px">';
+
+    // Predict with ALL runs in parallel
+    var classNames = runs[0].class_names;
+    var runResults = await Promise.all(runs.map(async function(r) {
+      var d = await fetch("/api/cnn_predict", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node: String(cnnNode.id), run_idx: r.run_idx, image_b64: b64 })
+      }).then(function(res) { return res.json(); }).catch(function() { return { error: true }; });
+      if (d.error) return null;
+      classNames = d.class_names;
+      return { run_name: r.run_name, run_idx: r.run_idx, pred_class: d.pred_class, pred_prob: d.pred_prob, probs: d.probs };
+    }));
+    runResults = runResults.filter(Boolean);
+
+    if (!result) return;
+    if (!runResults.length) {
+      result.innerHTML = previewHtml + '<div style="color:#ef4444">' + (_en ? "Prediction failed" : "Error en la predicción") + '</div>';
+      return;
+    }
+
+    // Save to history
+    node.data.imgHistory.unshift({ b64: b64, filename: file.name, results: runResults, class_names: classNames });
+    if (node.data.imgHistory.length > 12) node.data.imgHistory.pop();
+
+    // Refresh history row without full re-render
+    var histWrap = document.getElementById("eval-history-row");
+    if (!histWrap) {
+      var histContainer = document.createElement("div");
+      histContainer.style.marginBottom = "12px";
+      histContainer.innerHTML = historyThumbsHtml();
+      var dz = document.getElementById("eval-drop-zone");
+      if (dz && dz.parentNode) dz.parentNode.insertBefore(histContainer, dz.nextSibling);
+    } else {
+      histWrap.outerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap" id="eval-history-row">' +
+        node.data.imgHistory.map(function(h, hi) {
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer" data-hist-idx="' + hi + '">' +
+            '<img src="' + h.b64 + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1.5px solid var(--border)">' +
+            '<span style="font-size:9px;color:var(--sec);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (h.filename || '') + '</span>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+    }
+    wireHistoryThumbs();
+
+    result.innerHTML = previewHtml + buildMultiRunResultHtml(runResults, classNames);
+  }
+}
+
+// CNN CLASSIFICATION modal
+// ═══════════════════════════════════════════
+async function renderCNN(node) {
+  var _en  = lang === "en";
+  var _anim = prepareModalResize();
+  node.data = node.data || {};
+
+  // Resolve preprocess node upstream
+  var preNode = upstreamSourceNode(node.id);
+  if (!preNode || preNode.type !== "preprocess" || !preNode.data || !preNode.data.applied) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' +
+      (_en ? "Connect and apply a Preprocessing block first." : "Conecta y aplica un bloque de Preprocesado primero.") +
+      '</div>';
+    _anim(); return;
+  }
+  var imgCfg = preNode.data.imgCfg || {};
+  if (!imgCfg.imgSize) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' +
+      (_en ? "Image preprocessing config not found. Re-open the Preprocessing block and click Apply." : "Configuración de preprocesado no encontrada. Reabre el bloque Preprocesado y pulsa Aplicar.") +
+      '</div>';
+    _anim(); return;
+  }
+
+  // Saved config
+  var cfg      = node.data.cnnCfg || {};
+  var epochs   = cfg.epochs    || 5;
+  var lr       = cfg.lr        || "0.001";
+  var nConv    = cfg.n_conv    || 2;
+  var valSplit = cfg.val_split || "0.2";
+
+  var _lrOpts       = ["0.01","0.001","0.0001"];
+  var _convOpts     = [1, 2, 3];
+  var _valSplitOpts = ["0.1","0.2","0.3"];
+
+  // ── Helper: pill row (reuse same style as preprocess) ───────────────────
+  function cnnPills(groupId, opts, selected) {
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap" id="' + groupId + '">' +
+      opts.map(function(o) {
+        var v = String(o); var active = (v === String(selected));
+        return '<button type="button" data-val="' + v + '" ' +
+          'style="padding:10px 18px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+          'background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? '700' : '500') + ';' +
+          'cursor:pointer;transition:border-color .15s;min-width:60px;text-align:center">' + v + '</button>';
+      }).join("") +
+    '</div>';
+  }
+  function wireCnnPills(groupId, onChange) {
+    var c = document.getElementById(groupId); if (!c) return;
+    c.querySelectorAll("button[data-val]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        c.querySelectorAll("button[data-val]").forEach(function(b) {
+          var me = b === btn;
+          b.style.borderColor = me ? "var(--accent)" : "var(--border)";
+          b.style.fontWeight  = me ? "700" : "500";
+        });
+        onChange(btn.dataset.val);
+      });
+    });
+  }
+  function getCnnPill(groupId) {
+    var a = document.querySelector("#" + groupId + " button[style*='var(--accent)']");
+    return a ? a.dataset.val : null;
+  }
+
+  // ── Explain texts (shown inline under each section on ? click) ──────────
+  var _explain = {
+    epochs: _en
+      ? "One epoch = the model sees every training image once. More epochs → the model learns more, but risks memorising the data (overfitting). Start with 5 and increase if validation accuracy keeps improving."
+      : "Una epoch = el modelo ve todas las imágenes de entrenamiento una vez. Más epochs → aprende más, pero puede memorizar los datos (sobreajuste). Empieza con 5 y sube si el accuracy de validación sigue mejorando.",
+    lr: _en
+      ? "Controls how fast the model adjusts its weights after each error. Too high → training becomes unstable. Too low → learning is very slow. 0.001 works well in most cases."
+      : "Controla la velocidad con la que el modelo ajusta sus pesos tras cada error. Demasiado alto → entrenamiento inestable. Demasiado bajo → aprendizaje muy lento. 0.001 funciona bien en la mayoría de casos.",
+    nconv: _en
+      ? "Each layer learns to detect increasingly complex visual patterns: edges → textures → shapes. More layers = more powerful model, but slower training. For small datasets like ours, 2 layers is a good balance."
+      : "Cada capa aprende a detectar patrones visuales cada vez más complejos: bordes → texturas → formas. Más capas = modelo más potente, pero entrena más despacio. Para datasets pequeños como el nuestro, 2 capas es un buen equilibrio.",
+    valsplit: _en
+      ? "A portion of the training set kept aside during training to monitor progress (validation). The model never trains on these images. The real test set is always kept completely separate and used only for the final evaluation."
+      : "Una parte del conjunto de entrenamiento reservada durante el entrenamiento para monitorizar el progreso (validación). El modelo nunca entrena con estas imágenes. El conjunto de test real siempre se mantiene completamente separado y se usa solo para la evaluación final.",
+  };
+
+  // Inline ? button + collapsible panel
+  function qBtn(key) {
+    return '<button type="button" title="' + (_en ? "What is this?" : "¿Qué es esto?") + '" ' +
+      'onclick="(function(){var p=document.getElementById(\'cnn-tip-' + key + '\');p.style.display=p.style.display===\'none\'?\'block\':\'none\';})()" ' +
+      'style="background:none;border:1.5px solid var(--border);border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;color:var(--sec);line-height:1;padding:0;flex-shrink:0">?</button>' +
+      '<div id="cnn-tip-' + key + '" style="display:none;font-size:11px;color:var(--sec);margin-top:6px;padding:10px 12px;background:var(--tinted);border-radius:8px;line-height:1.5">' +
+        _explain[key] +
+      '</div>';
+  }
+
+  // Section label row with ? button inline
+  function sLabel(text, key) {
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--ink)">' + text + '</span>' +
+      qBtn(key) +
+    '</div>';
+  }
+
+  mBody.innerHTML =
+    '<div class="col2" style="height:100%">' +
+
+    // ── LEFT: config ──────────────────────────────────────────────────────
+    '<div class="col-left" style="overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:20px">' +
+
+      // Dataset info badge
+      '<div style="padding:8px 12px;background:var(--tinted);border-radius:8px;font-size:12px;color:var(--sec)">' +
+        '🖼️ ' + (imgCfg.imgSize || 64) + '×' + (imgCfg.imgSize || 64) + 'px · bs ' + (imgCfg.batchSize || 32) +
+        (imgCfg.augFlip || imgCfg.augRotate || imgCfg.augCrop ? ' · aug ✓' : '') +
+      '</div>' +
+
+      // ── Epochs ──────────────────────────────────────────────────────────
+      '<div>' +
+        sLabel(_en ? "⏱ Epochs" : "⏱ Epochs", "epochs") +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="range" id="cnn-epochs-slider" min="1" max="20" step="1" value="' + epochs + '" style="flex:1">' +
+          '<input type="number" id="cnn-epochs-num" min="1" max="20" value="' + epochs + '" ' +
+            'style="width:52px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;text-align:center;background:var(--card);color:var(--ink)">' +
+        '</div>' +
+      '</div>' +
+
+      // ── Learning rate ────────────────────────────────────────────────────
+      '<div>' +
+        sLabel(_en ? "📈 Learning rate" : "📈 Learning rate", "lr") +
+        '<div style="display:flex;flex-direction:column;gap:6px" id="cnn-lr-grp">' +
+          _lrOpts.map(function(o) {
+            var active = (o === String(lr));
+            return '<button type="button" data-val="' + o + '" style="' +
+              'padding:9px 14px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+              'background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? '700' : '500') + ';' +
+              'cursor:pointer;transition:border-color .15s;text-align:left">' + o + '</button>';
+          }).join("") +
+        '</div>' +
+      '</div>' +
+
+      // ── Conv layers ──────────────────────────────────────────────────────
+      '<div>' +
+        sLabel(_en ? "🔲 Convolutional layers" : "🔲 Capas convolucionales", "nconv") +
+        '<div style="display:flex;flex-direction:column;gap:6px" id="cnn-conv-grp">' +
+          _convOpts.map(function(o) {
+            var active = (o === nConv);
+            return '<button type="button" data-val="' + o + '" style="' +
+              'padding:9px 14px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+              'background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? '700' : '500') + ';' +
+              'cursor:pointer;transition:border-color .15s;text-align:left">' + o + '</button>';
+          }).join("") +
+        '</div>' +
+      '</div>' +
+
+      // ── Validation split ─────────────────────────────────────────────────
+      '<div>' +
+        sLabel(_en ? "✂️ Validation split" : "✂️ Validación split", "valsplit") +
+        '<div style="display:flex;gap:6px" id="cnn-val-grp">' +
+          _valSplitOpts.map(function(o) {
+            var active = (o === String(valSplit));
+            var lbl = (parseFloat(o) * 100).toFixed(0) + "%";
+            return '<button type="button" data-val="' + o + '" style="' +
+              'flex:1;padding:9px 8px;border-radius:10px;border:2px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+              'background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? '700' : '500') + ';' +
+              'cursor:pointer;transition:border-color .15s;text-align:center">' + lbl + '</button>';
+          }).join("") +
+        '</div>' +
+      '</div>' +
+
+    '</div>' +
+
+    // ── RIGHT: results ────────────────────────────────────────────────────
+    '<div class="col-right" style="overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px" id="cnn-right">' +
+      '<div id="cnn-status-area">' +
+        '<div style="color:var(--sec);font-size:13px">' +
+          (_en ? "Configure and click Train to start." : "Configura y pulsa Entrenar para comenzar.") +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '</div>';
+
+  mFoot.innerHTML =
+    '<button class="btn btn-black" id="btn-cnn-train" style="flex:1">▶ ' + (_en ? "Train model" : "Entrenar modelo") + '</button>' +
+    '<button class="btn btn-ghost" id="btn-cnn-newrun" style="display:none">＋ ' + (_en ? "New run" : "Nueva run") + '</button>';
+
+  _anim();
+
+  // Wire epoch slider ↔ number input
+  var sliderEl = document.getElementById("cnn-epochs-slider");
+  var numEl    = document.getElementById("cnn-epochs-num");
+  sliderEl.addEventListener("input", function() { numEl.value = this.value; });
+  numEl.addEventListener("input", function() {
+    var v = Math.max(1, Math.min(20, parseInt(this.value) || 1));
+    this.value = v; sliderEl.value = v;
+  });
+
+  wireCnnPills("cnn-lr-grp",   function(v) { lr       = v; });
+  wireCnnPills("cnn-conv-grp", function(v) { nConv    = parseInt(v); });
+  wireCnnPills("cnn-val-grp",  function(v) { valSplit = v; });
+
+  // ── Poll loop (runs even if modal is closed and reopened) ────────────────
+  var _polling = false;
+
+  async function startPolling() {
+    if (_polling) return;
+    _polling = true;
+    while (true) {
+      await new Promise(function(r) { setTimeout(r, 800); });
+      var resp = await fetch("/api/cnn_poll?node=" + node.id).then(function(r) { return r.json(); }).catch(function() { return null; });
+      if (!resp) { _polling = false; return; }
+      renderProgress(resp);
+      if (resp.status === "done" || resp.status === "error" || resp.status === "cancelled") {
+        _polling = false;
+        if (resp.status === "done") await showResults();
+        return;
+      }
+    }
+  }
+
+  function renderProgress(p) {
+    var area = document.getElementById("cnn-status-area");
+    if (!area) return;
+    var pct  = p.pct || 0;
+    var ep   = p.epoch || 0;
+    var tot  = p.total_epochs || 0;
+    var lastLog = p.log && p.log.length ? p.log[p.log.length - 1] : null;
+
+    var epochInfo = tot > 0
+      ? '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">Epoch ' + ep + ' / ' + tot + (lastLog ? ' — acc ' + (lastLog.acc * 100).toFixed(1) + '% · val_acc ' + (lastLog.val_acc * 100).toFixed(1) + '%' : '') + '</div>'
+      : '';
+
+    var logRows = (p.log || []).map(function(e) {
+      return '<tr><td style="padding:2px 8px">' + e.epoch + '</td>' +
+        '<td style="padding:2px 8px">' + e.loss.toFixed(4) + '</td>' +
+        '<td style="padding:2px 8px">' + (e.acc * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:2px 8px">' + e.val_loss.toFixed(4) + '</td>' +
+        '<td style="padding:2px 8px;font-weight:700">' + (e.val_acc * 100).toFixed(1) + '%</td></tr>';
+    }).join("");
+
+    var logTable = logRows
+      ? '<div style="margin-top:10px;overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse">' +
+          '<thead><tr style="color:var(--sec)">' +
+            '<th style="padding:2px 8px;text-align:left">Epoch</th>' +
+            '<th style="padding:2px 8px;text-align:left">Loss</th>' +
+            '<th style="padding:2px 8px;text-align:left">Acc</th>' +
+            '<th style="padding:2px 8px;text-align:left">Val loss</th>' +
+            '<th style="padding:2px 8px;text-align:left">Val acc</th>' +
+          '</tr></thead><tbody>' + logRows + '</tbody></table></div>'
+      : '';
+
+    area.innerHTML =
+      epochInfo +
+      '<div class="prog-wrap"><div class="prog-bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="prog-lbl" style="margin-top:4px">' + (p.msg || "…") + '</div>' +
+      logTable;
+  }
+
+  async function showResults() {
+    var d = await fetch("/api/cnn_result?node=" + node.id).then(function(r) { return r.json(); }).catch(function() { return null; });
+    if (!d || d.error) return;
+
+    setNB(node.id, "acc " + (d.final_acc * 100).toFixed(1) + "% · F1 " + (d.macro_f1 * 100).toFixed(1) + "%", "badge-ok");
+    setOK(node.id, true);
+    node.data.cnnResult = d;
+    // Restore train button (training finished)
+    var trBtnDone = document.getElementById("btn-cnn-train");
+    if (trBtnDone) { trBtnDone.disabled = false; trBtnDone.style.opacity = ""; trBtnDone.innerHTML = "▶ " + (_en ? "Train model" : "Entrenar modelo"); }
+    await renderRunsList();
+    return; // runs list replaces the inline results
+
+    var area = document.getElementById("cnn-right");
+    if (!area) return;
+
+    // ── Per-class metrics table ───────────────────────────────────────────
+    var pcRows = (d.per_class || []).map(function(pc) {
+      return '<tr>' +
+        '<td style="padding:4px 8px;font-weight:600">' + pc.label + '</td>' +
+        '<td style="padding:4px 8px;text-align:right">' + (pc.precision * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:4px 8px;text-align:right">' + (pc.recall    * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:4px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (pc.f1 * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:4px 8px;text-align:right;color:var(--sec)">' + pc.support + '</td>' +
+      '</tr>';
+    }).join("") +
+    '<tr style="border-top:1px solid var(--border)">' +
+      '<td style="padding:4px 8px;font-style:italic;color:var(--sec)">macro avg</td>' +
+      '<td style="padding:4px 8px;text-align:right">' + (d.macro_prec * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:4px 8px;text-align:right">' + (d.macro_rec  * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:4px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (d.macro_f1   * 100).toFixed(1) + '%</td>' +
+      '<td style="padding:4px 8px;text-align:right;color:var(--sec)">' + (d.n_test || '—') + '</td>' +
+    '</tr>';
+
+    var metricsTable =
+      '<div style="overflow-x:auto;margin-top:4px">' +
+        '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<thead><tr style="color:var(--sec);font-size:11px">' +
+            '<th style="padding:4px 8px;text-align:left">' + (_en ? "Class" : "Clase") + '</th>' +
+            '<th style="padding:4px 8px;text-align:right">' + (_en ? "Precision" : "Precisión") + '</th>' +
+            '<th style="padding:4px 8px;text-align:right">Recall</th>' +
+            '<th style="padding:4px 8px;text-align:right">F1</th>' +
+            '<th style="padding:4px 8px;text-align:right">N</th>' +
+          '</tr></thead>' +
+          '<tbody>' + pcRows + '</tbody>' +
+        '</table>' +
+      '</div>';
+
+    // ── Wrong predictions grid ────────────────────────────────────────────
+    var wrongHtml = (d.wrong_samples || []).map(function(w) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+        '<img src="data:image/png;base64,' + w.img + '" ' +
+          'style="width:72px;height:72px;border-radius:8px;object-fit:cover;border:2px solid #ef4444;cursor:zoom-in" ' +
+          'onclick="expandImg(this.src)" title="' + w.true_label + '">' +
+        '<span style="font-size:10px;color:#ef4444;font-weight:600">✗ ' + w.pred_label + '</span>' +
+        '<span style="font-size:10px;color:var(--sec)">→ ' + w.true_label + '</span>' +
+        '<span style="font-size:10px;color:var(--sec)">(' + (w.confidence * 100).toFixed(0) + '%)</span>' +
+      '</div>';
+    }).join("");
+
+    area.innerHTML =
+      // ── Summary mcards ────────────────────────────────────────────────
+      '<div class="mgrid" style="margin-bottom:8px">' +
+        '<div class="mcard mcard-hi" style="text-align:center">' +
+          '<div class="mval">' + (d.final_acc * 100).toFixed(1) + '%</div>' +
+          '<div class="mlbl">' + (_en ? "Test accuracy" : "Accuracy (test)") + '</div>' +
+        '</div>' +
+        '<div class="mcard" style="text-align:center">' +
+          '<div class="mval">' + (d.macro_f1 * 100).toFixed(1) + '%</div>' +
+          '<div class="mlbl">Macro F1</div>' +
+        '</div>' +
+        '<div class="mcard" style="text-align:center">' +
+          '<div class="mval">' + (d.macro_prec * 100).toFixed(1) + '%</div>' +
+          '<div class="mlbl">' + (_en ? "Precision" : "Precisión") + '</div>' +
+        '</div>' +
+        '<div class="mcard" style="text-align:center">' +
+          '<div class="mval">' + (d.macro_rec * 100).toFixed(1) + '%</div>' +
+          '<div class="mlbl">Recall</div>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Per-class table ───────────────────────────────────────────────
+      '<div class="psec">' +
+        '<div class="ptitle" style="margin-bottom:6px">' + (_en ? "Per-class metrics (test set)" : "Métricas por clase (test set)") + '</div>' +
+        metricsTable +
+      '</div>' +
+
+      // ── Curves ───────────────────────────────────────────────────────
+      (d.curve_img ?
+        '<div class="psec">' +
+          '<div class="ptitle" style="margin-bottom:6px">' + (_en ? "Training curves" : "Curvas de entrenamiento") + '</div>' +
+          '<img src="data:image/png;base64,' + d.curve_img + '" style="width:100%;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '</div>' : '') +
+
+      // ── Confusion matrix ─────────────────────────────────────────────
+      (d.cm_img ?
+        '<div class="psec">' +
+          '<div class="ptitle" style="margin-bottom:6px">' + (_en ? "Confusion matrix" : "Matriz de confusión") + '</div>' +
+          '<img src="data:image/png;base64,' + d.cm_img + '" style="width:100%;max-width:320px;border-radius:8px;cursor:zoom-in" onclick="expandImg(this.src)">' +
+        '</div>' : '') +
+
+      // ── Misclassified images ──────────────────────────────────────────
+      (wrongHtml ?
+        '<div class="psec">' +
+          '<div class="ptitle" style="margin-bottom:8px">' + (_en ? "Misclassified images (highest confidence)" : "Imágenes mal clasificadas (mayor confianza)") + '</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' + wrongHtml + '</div>' +
+        '</div>' : '');
+  }
+
+  // ── Runs list (shown in cnn-right after training) ────────────────────────
+  async function renderRunsList() {
+    var d = await fetch("/api/cnn_runs?node=" + node.id).then(function(r) { return r.json(); }).catch(function() { return null; });
+    if (!d || !d.runs || !d.runs.length) return;
+    var runs = d.runs;
+    var bestIdx = 0;
+    var bestF1  = -1;
+    runs.forEach(function(r, i) { if (r.macro_f1 > bestF1) { bestF1 = r.macro_f1; bestIdx = i; } });
+
+    // Update new-run button visibility
+    var nrBtn = document.getElementById("btn-cnn-newrun");
+    if (nrBtn) nrBtn.style.display = "inline-flex";
+    var trBtn = document.getElementById("btn-cnn-train");
+    if (trBtn) trBtn.style.display = "none";
+
+    var rows = runs.map(function(r, i) {
+      var best = (i === bestIdx);
+      var cfg  = r.cfg || {};
+      return '<tr style="' + (best ? "background:var(--tinted)" : "") + '">' +
+        '<td style="padding:5px 8px">' +
+          '<input type="text" value="' + r.run_name + '" data-run-idx="' + r.run_idx + '" ' +
+            'style="width:100%;border:none;background:transparent;font-size:12px;font-weight:600;color:var(--ink);outline:none;cursor:text" ' +
+            'class="cnn-run-name-input">' +
+          (best ? ' <span style="font-size:10px;color:var(--accent)">★ best</span>' : '') +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:12px;color:var(--sec);white-space:nowrap">' +
+          (cfg.n_conv || '—') + ' conv · lr ' + (cfg.lr || '—') + ' · ' + (cfg.epochs || '—') + ' ep' +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:12px;text-align:right">' + (r.final_acc * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:var(--accent)">' + (r.macro_f1 * 100).toFixed(1) + '%</td>' +
+      '</tr>';
+    }).join("");
+
+    var area = document.getElementById("cnn-right");
+    if (!area) return;
+    area.innerHTML =
+      '<div class="psec">' +
+        '<div class="ptitle" style="margin-bottom:6px">' + (_en ? "Completed runs — click name to rename" : "Runs completadas — haz click en el nombre para renombrar") + '</div>' +
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="color:var(--sec);font-size:11px">' +
+            '<th style="padding:5px 8px;text-align:left">' + (_en ? "Name" : "Nombre") + '</th>' +
+            '<th style="padding:5px 8px;text-align:left">' + (_en ? "Config" : "Config") + '</th>' +
+            '<th style="padding:5px 8px;text-align:right">Acc</th>' +
+            '<th style="padding:5px 8px;text-align:right">F1</th>' +
+          '</tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table></div>' +
+        '<div style="font-size:11px;color:var(--sec);margin-top:6px">' +
+          (_en ? "Go to the Evaluation block to compare runs in detail and predict with your own images."
+               : "Ve al bloque de Evaluación para comparar runs en detalle y predecir con tus propias imágenes.") +
+        '</div>' +
+      '</div>';
+
+    // Wire rename on blur/enter
+    area.querySelectorAll(".cnn-run-name-input").forEach(function(inp) {
+      function doRename() {
+        var idx  = parseInt(inp.dataset.runIdx);
+        var name = inp.value.trim();
+        if (!name) return;
+        fetch("/api/cnn_rename_run", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node: String(node.id), run_idx: idx, name: name })
+        });
+      }
+      inp.addEventListener("blur",    doRename);
+      inp.addEventListener("keydown", function(e) { if (e.key === "Enter") { inp.blur(); } });
+    });
+  }
+
+  // ── Train button ─────────────────────────────────────────────────────────
+  document.getElementById("btn-cnn-train").addEventListener("click", async function() {
+    var trBtn = document.getElementById("btn-cnn-train");
+    // Block if already training
+    if (trBtn && trBtn.disabled) return;
+    if (trBtn) { trBtn.disabled = true; trBtn.style.opacity = "0.5"; trBtn.textContent = (_en ? "⏳ Training…" : "⏳ Entrenando…"); }
+
+    var ep   = parseInt(document.getElementById("cnn-epochs-num").value) || 5;
+    var lrV  = getCnnPill("cnn-lr-grp")   || lr;
+    var ncV  = parseInt(getCnnPill("cnn-conv-grp") || nConv);
+    var vsV  = getCnnPill("cnn-val-grp")  || valSplit;
+
+    node.data.cnnCfg = { epochs: ep, lr: lrV, n_conv: ncV, val_split: vsV };
+    setOK(node.id, false);
+    setNB(node.id, _en ? "Training…" : "Entrenando…", "");
+
+    var area = document.getElementById("cnn-status-area");
+    if (area) area.innerHTML = '<div class="prog-lbl">Starting…</div>';
+
+    var imgDataNodeId = preNode.data ? preNode.data.imgDataNodeId : null;
+    var resp = await fetch("/api/cnn_train", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        node:          String(node.id),
+        pre_node:      String(preNode.id),
+        img_data_node: imgDataNodeId ? String(imgDataNodeId) : null,
+        img_cfg:       preNode.data ? (preNode.data.imgCfg || {}) : {},
+        cfg:           { epochs: ep, lr: parseFloat(lrV), n_conv: ncV, val_split: parseFloat(vsV) }
+      })
+    });
+    var rj = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) {
+      if (trBtn) { trBtn.disabled = false; trBtn.style.opacity = ""; trBtn.innerHTML = "▶ " + (_en ? "Train model" : "Entrenar modelo"); }
+      var area2 = document.getElementById("cnn-status-area");
+      if (area2) area2.innerHTML = '<div style="color:#ef4444;padding:8px">' + (rj.error || "Error starting training") + '</div>';
+      return;
+    }
+    startPolling();
+  });
+
+  // ── New run button: show train btn again, reset right panel ─────────────
+  document.getElementById("btn-cnn-newrun").addEventListener("click", function() {
+    var nrBtn = document.getElementById("btn-cnn-newrun");
+    var trBtn = document.getElementById("btn-cnn-train");
+    if (nrBtn) nrBtn.style.display = "none";
+    if (trBtn) trBtn.style.display = "inline-flex";
+    var area = document.getElementById("cnn-right");
+    if (area) area.innerHTML = '<div id="cnn-status-area"><div style="color:var(--sec);font-size:13px">' +
+      (_en ? "Configure and click Train to start a new run." : "Configura y pulsa Entrenar para empezar una nueva run.") + '</div></div>';
+  });
+
+  // ── On open: resume if already training or done ──────────────────────────
+  var initPoll = await fetch("/api/cnn_poll?node=" + node.id).then(function(r) { return r.json(); }).catch(function() { return null; });
+  if (initPoll) {
+    if (initPoll.status === "training" || initPoll.running) {
+      renderProgress(initPoll);
+      startPolling();
+    } else if (initPoll.status === "done") {
+      await renderRunsList();
+    } else if (initPoll.log && initPoll.log.length) {
+      renderProgress(initPoll);
+    }
+  }
+}
+
 // CLASSIFY modal
 // ═══════════════════════════════════════════
 async function renderClassify(node) {
@@ -9395,6 +11054,8 @@ function canvasFromJSON(json) {
       setNB(n.id, "✅ " + (d.llm_time || ""), "badge-ok");
     } else if (n.type === "data" && d.loaded) {
       setNS(n.id, d.name || (_en ? "loaded" : "cargado")); setOK(n.id, true);
+    } else if (n.type === "data_image" && d.loaded) {
+      setNS(n.id, d.dataset_name || (_en ? "loaded" : "cargado")); setOK(n.id, true);
     } else if (n.type === "preprocess" && d.applied) {
       setNS(n.id, _en ? "applied" : "aplicado"); setOK(n.id, true);
     } else if (n.type === "topicmodel" && d.applied) {

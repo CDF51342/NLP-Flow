@@ -228,6 +228,21 @@ S = dict(
 # NLP fields (texts, labels, model…) stay in S (single pipeline for now).
 _NODE_DATA: dict = {}   # { node_id_str : { columns, raw_rows, dataset_name, task, csv_source } }
 
+# ── Image dataset store keyed by data-node id ────────────────────────────────
+# Each entry: { dataset: "mnist"|"dogs_muffins", class_names: [...], n_train: int,
+#               n_test: int, n_classes: int, img_size: (H,W), loaded: bool,
+#               train_data: [(pil_img, label), ...], test_data: [...] }
+_IMAGE_NODE_DATA: dict = {}
+
+def _image_slot(node_id: str) -> dict:
+    if node_id not in _IMAGE_NODE_DATA:
+        _IMAGE_NODE_DATA[node_id] = {"loaded": False, "dataset": None,
+                                      "class_names": [], "n_train": 0,
+                                      "n_test": 0, "n_classes": 0,
+                                      "img_size": (0, 0),
+                                      "train_data": [], "test_data": []}
+    return _IMAGE_NODE_DATA[node_id]
+
 # ── Pandas DataFrame store (new layer — parallel to _NODE_DATA) ───────────────
 # Keyed by node_id_str. New endpoints read from here; legacy endpoints keep
 # using raw_rows for now. Both are kept in sync on every upload/load.
@@ -6875,6 +6890,31 @@ def pick_export_path():
             default_name = "topic_config.json"
             file_types   = ("JSON File (*.json)", "All files (*.*)")
 
+        elif endpoint == "/api/cnn_report":
+            extra       = body.get("extra", {})
+            _node_id    = str(extra.get("node", "cnn_default"))
+            _lang       = extra.get("lang", "es")
+            _img_hist   = extra.get("img_history", [])
+            # Reuse the cnn_report logic by calling it inline
+            # Build a fake request body and call the function directly
+            import json as _json
+            fake_body = {"node": _node_id, "lang": _lang, "img_history": _img_hist}
+            slot      = _cnn_slot(_node_id)
+            runs      = slot.get("runs", [])
+            if not runs:
+                return jsonify({"error": "No runs to report"}), 400
+            # Call the actual generator function inline
+            with app.test_client() as _tc:
+                _r = _tc.post("/api/cnn_report",
+                              content_type="application/json",
+                              data=_json.dumps(fake_body))
+                if _r.status_code != 200:
+                    return jsonify({"error": "Error generating CNN report"}), 500
+                content_bytes = _r.data
+            _fname = f"cnn_report_{_lang}.html"
+            default_name  = _fname
+            file_types    = ("HTML File (*.html)", "All files (*.*)")
+
         else:
             return jsonify({"error": "Unknown endpoint"}), 400
 
@@ -8781,3 +8821,1248 @@ def rag_columns():
         "max_text_len": max_text_len,
         "n_docs":       len(rows),
     })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# IMAGE DATA BLOCK  — load MNIST or Dogs-vs-Muffins, return info + class chart
+# ════════════════════════════════════════════════════════════════════════════
+
+_IMAGE_LOAD_LOCK = threading.Lock()
+_IMAGE_LOAD_PROGRESS: dict = {}   # { node_id: {pct, msg, done, error} }
+
+
+def _img_progress(node_id, pct, msg, done=False, error=None):
+    _IMAGE_LOAD_PROGRESS[node_id] = {"pct": pct, "msg": msg, "done": done, "error": error}
+
+
+def _class_dist_b64(class_names, counts, title="Class distribution"):
+    """Bar chart (horizontal) of class counts — returns base64 PNG."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    # Use the same app-wide palette so colours match every other chart
+    colors = [PALETTE[i % len(PALETTE)] for i in range(len(class_names))]
+    fig, ax = plt.subplots(figsize=(5, max(2.2, len(class_names) * 0.55)))
+    bars = ax.barh(class_names, counts, color=colors, edgecolor="none", height=0.6)
+    ax.set_xlabel("Images", fontsize=10)
+    ax.set_title(title, fontsize=11, fontweight="bold", pad=8)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.tick_params(left=False, labelsize=9)
+    ax.xaxis.grid(True, linestyle="--", alpha=0.4)
+    for bar, cnt in zip(bars, counts):
+        ax.text(bar.get_width() + max(counts) * 0.01, bar.get_y() + bar.get_height() / 2,
+                str(cnt), va="center", fontsize=8, color="#555")
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+@app.route("/api/image_reset", methods=["POST"])
+def image_reset():
+    """
+    Clears the loaded image state for a node so the picker UI is shown again.
+    Body: { node: <node_id> }
+    """
+    data    = request.get_json(force=True)
+    node_id = data.get("node", "img_default")
+    if node_id in _IMAGE_NODE_DATA:
+        _IMAGE_NODE_DATA[node_id] = {
+            "loaded": False, "dataset": None, "class_names": [],
+            "n_train": 0, "n_test": 0, "n_classes": 0, "img_size": [0, 0],
+            "train_data": [], "test_data": []
+        }
+    _node_slot(node_id).pop("task", None)
+    _node_slot(node_id).pop("dataset_name", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/image_load", methods=["POST"])
+def image_load():
+    """
+    Body: { node: <node_id>, dataset: "mnist" | "dogs_muffins" | "cats_vs_dogs" }
+    Spawns a background thread; poll /api/image_load_progress?node=<id> for updates.
+    """
+    body    = request.json or {}
+    node_id = str(body.get("node", "img_default"))
+    dataset = body.get("dataset", "mnist")
+
+    if _IMAGE_LOAD_LOCK.locked():
+        return jsonify({"error": "Another dataset is already loading. Please wait."}), 429
+
+    slot = _image_slot(node_id)
+    slot["loaded"] = False
+
+    def _worker():
+        with _IMAGE_LOAD_LOCK:
+            try:
+                _img_progress(node_id, 2, "Initializing…")
+
+                if dataset == "mnist":
+                    # ── MNIST via torchvision ──────────────────────────────
+                    try:
+                        import torchvision
+                        import torchvision.transforms as T_tv
+                        from PIL import Image as PILImage
+                    except ImportError:
+                        _img_progress(node_id, 0, "", done=True,
+                                      error="torchvision not installed. Run: pip install torchvision pillow")
+                        return
+
+                    _img_progress(node_id, 10, "Downloading MNIST (first time only)…")
+                    cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "nlpflow_images")
+                    os.makedirs(cache_dir, exist_ok=True)
+
+                    tf = T_tv.Compose([T_tv.ToTensor()])
+                    train_ds = torchvision.datasets.MNIST(cache_dir, train=True,  download=True, transform=tf)
+                    test_ds  = torchvision.datasets.MNIST(cache_dir, train=False, download=True, transform=tf)
+
+                    _img_progress(node_id, 70, "Preparing samples…")
+                    class_names = [str(i) for i in range(10)]
+
+                    # Store a compact sample (2000 train + 500 test PIL images) to keep RAM low
+                    import random as _rnd
+                    _rnd.seed(42)
+                    sample_train_idx = _rnd.sample(range(len(train_ds)), min(2000, len(train_ds)))
+                    sample_test_idx  = _rnd.sample(range(len(test_ds)),  min(500,  len(test_ds)))
+
+                    def _to_pil(ds, idx):
+                        img_t, lbl = ds[idx]
+                        # img_t shape: (1, H, W) for MNIST
+                        arr = (img_t.numpy().squeeze() * 255).astype("uint8")
+                        return PILImage.fromarray(arr, mode="L").convert("RGB"), int(lbl)
+
+                    train_data = [_to_pil(train_ds, i) for i in sample_train_idx]
+                    test_data  = [_to_pil(test_ds,  i) for i in sample_test_idx]
+                    all_data   = train_data + test_data   # combined for dynamic test split
+                    img_size   = (28, 28)
+                    n_train_total = len(train_ds)
+                    n_test_total  = len(test_ds)
+
+                elif dataset == "dogs_muffins":
+                    # ── Dogs vs Muffins via Hugging Face datasets ──────────
+                    try:
+                        from datasets import load_dataset as hf_load
+                        from PIL import Image as PILImage
+                    except ImportError:
+                        _img_progress(node_id, 0, "", done=True,
+                                      error="'datasets' package not installed. Run: pip install datasets pillow")
+                        return
+
+                    _img_progress(node_id, 10, "Downloading Chihuahua vs Muffin from Hugging Face (first time only)…")
+                    # sasha/chihuahua-muffin — 299 rows, train split only, cols: image + label
+                    # labels: 0 = blueberry muffin, 1 = chihuahua
+                    hf_ds = hf_load("sasha/chihuahua-muffin")
+
+                    _img_progress(node_id, 60, "Preparing samples…")
+                    # Only has train split — store all data; split is applied later per testSplit cfg
+                    full = hf_ds["train"]
+                    split = full.train_test_split(test_size=0.2, seed=42)  # default 80/20 for display counts
+                    train_split = split["train"]
+                    test_split  = split["test"]
+
+                    # Fixed columns and class names for this dataset
+                    img_col   = "image"
+                    label_col = "label"
+                    feat = train_split.features
+                    if hasattr(feat.get(label_col, None), "names"):
+                        class_names = feat[label_col].names
+                    else:
+                        class_names = ["blueberry muffin", "chihuahua"]
+
+                    import random as _rnd
+                    _rnd.seed(42)
+
+                    def _extract(split, max_n):
+                        idxs = list(range(len(split)))
+                        if len(idxs) > max_n:
+                            idxs = _rnd.sample(idxs, max_n)
+                        out = []
+                        for i in idxs:
+                            row = split[i]
+                            img = row[img_col]
+                            lbl = row[label_col]
+                            if not isinstance(img, PILImage.Image):
+                                try:
+                                    img = PILImage.fromarray(img)
+                                except Exception:
+                                    continue
+                            out.append((img.convert("RGB").resize((64, 64)), int(lbl)))
+                        return out
+
+                    all_data   = _extract(full,       2000)  # full dataset for dynamic splitting
+                    train_data = _extract(train_split, 2000)  # default split for display
+                    test_data  = _extract(test_split,  500)
+                    img_size   = (64, 64)
+                    n_train_total = len(train_split)
+                    n_test_total  = len(test_split)
+
+                elif dataset == "cats_vs_dogs":
+                    # microsoft/cats_vs_dogs — ~23K images, ~722MB download
+                    _img_progress(node_id, 5, "Downloading Cats vs Dogs (~720 MB)…")
+                    from datasets import load_dataset as hf_load
+                    hf_ds = hf_load("microsoft/cats_vs_dogs")
+                    full = hf_ds["train"]   # only split available
+                    img_col   = "image"
+                    label_col = "labels"
+                    feat = full.features
+                    if hasattr(feat.get(label_col, None), "names"):
+                        class_names = feat[label_col].names
+                    else:
+                        class_names = ["cat", "dog"]
+
+                    import random as _rnd2
+                    _rnd2.seed(42)
+
+                    # Cap to 2000 samples for performance on CPU student machines
+                    CAP = 2000
+                    idxs = list(range(len(full)))
+                    if len(idxs) > CAP:
+                        idxs = _rnd2.sample(idxs, CAP)
+                    all_items = []
+                    for ii, i in enumerate(idxs):
+                        if ii % 200 == 0:
+                            _img_progress(node_id, 10 + int(70 * ii / len(idxs)), f"Loading images {ii}/{len(idxs)}…")
+                        row = full[i]
+                        img = row[img_col]
+                        lbl = row[label_col]
+                        if not isinstance(img, PILImage.Image):
+                            try:
+                                img = PILImage.fromarray(img)
+                            except Exception:
+                                continue
+                        all_items.append((img.convert("RGB").resize((64, 64)), int(lbl)))
+
+                    _rnd2.shuffle(all_items)
+                    split_at = int(len(all_items) * 0.8)
+                    all_data   = all_items
+                    train_data = all_items[:split_at]
+                    test_data  = all_items[split_at:]
+                    img_size   = (64, 64)
+                    n_train_total = len(train_data)
+                    n_test_total  = len(test_data)
+
+                else:
+                    _img_progress(node_id, 0, "", done=True, error=f"Unknown dataset: {dataset}")
+                    return
+
+                _img_progress(node_id, 90, "Finalizing…")
+                slot["loaded"]      = True
+                slot["dataset"]     = dataset
+                slot["class_names"] = list(class_names)
+                slot["n_classes"]   = len(class_names)
+                slot["img_size"]    = img_size
+                slot["all_data"]    = all_data if 'all_data' in dir() else (train_data + test_data)
+                slot["train_data"]  = train_data
+                slot["test_data"]   = test_data
+                slot["n_train"]     = n_train_total
+                slot["n_test"]      = n_test_total
+                # Also write a lightweight marker into _NODE_DATA so inspect/preprocess
+                # blocks know this node carries image data (task = "image")
+                nd = _node_slot(node_id)
+                nd["task"]         = "image"
+                _dsname_map = {"mnist": "MNIST", "dogs_muffins": "Chihuahua vs Muffin", "cats_vs_dogs": "Cats vs Dogs"}
+                nd["dataset_name"] = _dsname_map.get(dataset, dataset)
+                nd["raw_rows"]     = []   # no CSV rows for image datasets
+                _img_progress(node_id, 100, "Done", done=True)
+
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                _img_progress(node_id, 0, "", done=True, error=str(exc))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    return jsonify({"started": True})
+
+
+@app.route("/api/image_load_progress")
+def image_load_progress():
+    node_id = request.args.get("node", "img_default")
+    info = _IMAGE_LOAD_PROGRESS.get(node_id, {"pct": 0, "msg": "Waiting…", "done": False, "error": None})
+    return jsonify(info)
+
+
+@app.route("/api/image_info")
+def image_info():
+    """
+    Returns summary info + base64 class-distribution chart for a loaded image node.
+    Query: ?node=<node_id>
+    """
+    node_id = request.args.get("node", "img_default")
+    slot    = _IMAGE_NODE_DATA.get(node_id)
+    if not slot or not slot.get("loaded"):
+        return jsonify({"error": "No image dataset loaded for this node"}), 400
+
+    _es = (_UI_LANG == "es")
+    class_names = slot["class_names"]
+    train_data  = slot["train_data"]
+    test_data   = slot["test_data"]
+
+    # Per-class counts in our sample
+    from collections import Counter as _Counter
+    train_counts = _Counter(lbl for _, lbl in train_data)
+    test_counts  = _Counter(lbl for _, lbl in test_data)
+
+    train_count_list = [train_counts.get(i, 0) for i in range(len(class_names))]
+    test_count_list  = [test_counts.get(i,  0) for i in range(len(class_names))]
+
+    # Generate distribution chart (train split)
+    title = ("Distribución de clases (train)" if _es else "Class distribution (train)")
+    img_b64 = _class_dist_b64(class_names, train_count_list, title=title)
+
+    # Thumbnail grid — up to 3 examples per class at 96px
+    THUMBS_PER_CLASS = 3
+    import random as _rnd_thumb
+    shuffled = list(train_data)
+    _rnd_thumb.shuffle(shuffled)   # random sample each time the block is opened
+    thumbs = {}  # {class_idx: [b64, ...]}
+    for img, lbl in shuffled:
+        bucket = thumbs.setdefault(lbl, [])
+        if len(bucket) < THUMBS_PER_CLASS:
+            buf = io.BytesIO()
+            img.resize((160, 160)).save(buf, format="PNG")
+            bucket.append(base64.b64encode(buf.getvalue()).decode())
+        if all(len(thumbs.get(i, [])) >= THUMBS_PER_CLASS for i in range(len(class_names))):
+            break
+    # Flatten: [[b64, b64, b64], [b64, b64, b64], ...] — one list per class
+    thumbs_list = [thumbs.get(i, []) for i in range(len(class_names))]
+
+    return jsonify({
+        "dataset":       slot["dataset"],
+        "dataset_name":  {"mnist": "MNIST", "dogs_muffins": "Chihuahua vs Muffin", "cats_vs_dogs": "Cats vs Dogs"}.get(slot.get("dataset",""), slot.get("dataset","")),
+        "class_names":   class_names,
+        "n_classes":     slot["n_classes"],
+        "img_size":      list(slot["img_size"]),
+        "n_train":       slot["n_train"],
+        "n_test":        slot["n_test"],
+        "train_counts":  train_count_list,
+        "test_counts":   test_count_list,
+        "dist_img":      img_b64,
+        "thumbs":        thumbs_list,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CNN CLASSIFICATION BLOCK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Per-node CNN state ─────────────────────────────────────────────────────────
+_CNN_STATE: dict = {}   # node_id → state dict
+_CNN_THREADS: dict = {} # node_id → Thread
+
+def _cnn_slot(node_id: str) -> dict:
+    if node_id not in _CNN_STATE:
+        _CNN_STATE[node_id] = {
+            "status": "idle",       # idle | training | done | error
+            "cfg": {},
+            "log": [],
+            "result": None,
+            "error": None,
+            "epoch": 0,
+            "total_epochs": 0,
+            "pct": 0,
+            "msg": "",
+            "runs": [],            # list of completed run dicts (name, cfg, metrics, model_state, class_names, norm_mode, img_size, n_ch)
+            "run_counter": 0,      # increments for default names
+        }
+    return _CNN_STATE[node_id]
+
+
+def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list,
+                       class_names: list):
+    """Background thread: trains a small CNN on the pre-loaded image data."""
+    slot = _cnn_slot(node_id)
+    print(f"[CNN] worker started  node={node_id}  train={len(train_data)}  test={len(test_data)}  classes={class_names}", flush=True)
+    try:
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        from torch.utils.data import DataLoader, TensorDataset
+        import numpy as np
+        from PIL import Image as PILImage
+
+        epochs     = int(cfg.get("epochs", 5))
+        lr         = float(cfg.get("lr", 0.001))
+        n_conv     = int(cfg.get("n_conv", 2))
+        img_size   = int(cfg.get("img_size", 64))
+        batch_size = int(cfg.get("batch_size", 32))
+        norm_mode  = cfg.get("norm_mode", "01")
+        aug_flip   = bool(cfg.get("aug_flip", False))
+        aug_rotate = bool(cfg.get("aug_rotate", False))
+        aug_crop   = bool(cfg.get("aug_crop", False))
+        aug_factor = max(1, min(10, int(cfg.get("aug_factor", 1))))
+        n_classes  = len(class_names)
+        n_ch       = 1 if (len(train_data) > 0 and train_data[0][0].mode == "L") else 3
+
+        print(f"[CNN] cfg → epochs={epochs} lr={lr} n_conv={n_conv} img_size={img_size} bs={batch_size} norm={norm_mode} n_classes={n_classes} n_ch={n_ch}", flush=True)
+        slot["total_epochs"] = epochs
+        slot["log"] = []
+
+        def _augment_one(img):
+            """Apply random augmentations to a single PIL image."""
+            import random
+            if aug_flip and random.random() > 0.5:
+                img = img.transpose(PILImage.FLIP_LEFT_RIGHT)
+            if aug_rotate:
+                angle = random.uniform(-15, 15)
+                img = img.rotate(angle, resample=PILImage.BILINEAR, expand=False)
+            if aug_crop:
+                w, h = img.size
+                scale = random.uniform(0.75, 0.95)
+                nw, nh = int(w * scale), int(h * scale)
+                x0 = random.randint(0, w - nw)
+                y0 = random.randint(0, h - nh)
+                img = img.crop((x0, y0, x0 + nw, y0 + nh)).resize((img_size, img_size), PILImage.BILINEAR)
+            return img
+
+        def _img_to_arr(img):
+            arr = np.array(img, dtype=np.float32)
+            if n_ch == 1:
+                arr = arr[..., np.newaxis]
+            if norm_mode == "01":
+                arr = arr / 255.0
+            elif norm_mode == "meanstd":
+                arr = (arr / 255.0 - 0.5) / 0.5
+            return arr.transpose(2, 0, 1)  # HWC → CHW
+
+        def _to_tensor(data, augment=False):
+            xs, ys = [], []
+            do_aug = augment and (aug_flip or aug_rotate or aug_crop)
+            for img, lbl in data:
+                # Prepare base image
+                img = img.resize((img_size, img_size), PILImage.BILINEAR)
+                img = img.convert("L" if n_ch == 1 else "RGB")
+                # Always include the original (no augmentation)
+                xs.append(_img_to_arr(img))
+                ys.append(int(lbl))
+                # Add aug_factor-1 augmented copies (only for training)
+                if do_aug:
+                    for _ in range(aug_factor - 1):
+                        xs.append(_img_to_arr(_augment_one(img)))
+                        ys.append(int(lbl))
+            X = torch.tensor(np.stack(xs), dtype=torch.float32)
+            Y = torch.tensor(ys, dtype=torch.long)
+            return TensorDataset(X, Y)
+
+        val_pct  = max(0.05, min(0.4, float(cfg.get("val_split", 0.2))))
+
+        slot["msg"] = "Preparing data…"
+        slot["pct"] = 2
+        print("[CNN] converting images to tensors…", flush=True)
+
+        # Split train_data → actual_train + val (stratified by label)
+        import random as _rnd
+        by_class = {}
+        for item in train_data:
+            by_class.setdefault(item[1], []).append(item)
+        actual_train, val_data = [], []
+        for lbl, items in by_class.items():
+            _rnd.shuffle(items)
+            n_val = max(1, round(len(items) * val_pct))
+            val_data.extend(items[:n_val])
+            actual_train.extend(items[n_val:])
+
+        print(f"[CNN] split → train={len(actual_train)}  val={len(val_data)}  test(held-out)={len(test_data)}", flush=True)
+
+        do_aug   = aug_flip or aug_rotate or aug_crop
+        train_ds = _to_tensor(actual_train, augment=do_aug)
+        val_ds   = _to_tensor(val_data,     augment=False)
+        test_ds  = _to_tensor(test_data,    augment=False)
+        n_train_aug = len(train_ds)
+        print(f"[CNN] tensors ready — train={n_train_aug} (x{aug_factor if do_aug else 1} aug)  val={len(val_ds)}  test={len(test_ds)}", flush=True)
+        train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        val_dl   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False)
+        test_dl  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False)
+
+        # ── Build CNN ────────────────────────────────────────────────────────
+        filters = [32, 64, 128]
+        layers = []
+        in_ch = n_ch
+        for i in range(n_conv):
+            out_ch = filters[i]
+            layers += [
+                nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+            ]
+            in_ch = out_ch
+
+        # Compute flatten size
+        feat_size = img_size // (2 ** n_conv)
+        flatten   = in_ch * feat_size * feat_size
+
+        layers += [
+            nn.Flatten(),
+            nn.Linear(flatten, 128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, n_classes),
+        ]
+        model = nn.Sequential(*layers)
+
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss()
+
+        slot["msg"] = "Training…"
+        print(f"[CNN] model built — flatten={flatten}  starting training…", flush=True)
+
+        for ep in range(1, epochs + 1):
+            if slot["status"] == "cancelled":
+                return
+
+            # Train
+            model.train()
+            train_loss, train_correct, train_total = 0.0, 0, 0
+            for xb, yb in train_dl:
+                optimizer.zero_grad()
+                out  = model(xb)
+                loss = criterion(out, yb)
+                loss.backward()
+                optimizer.step()
+                train_loss    += loss.item() * len(yb)
+                train_correct += (out.argmax(1) == yb).sum().item()
+                train_total   += len(yb)
+
+            # Validate on held-out val split
+            model.eval()
+            val_loss, val_correct, val_total = 0.0, 0, 0
+            with torch.no_grad():
+                for xb, yb in val_dl:
+                    out  = model(xb)
+                    loss = criterion(out, yb)
+                    val_loss    += loss.item() * len(yb)
+                    val_correct += (out.argmax(1) == yb).sum().item()
+                    val_total   += len(yb)
+
+            ep_log = {
+                "epoch":    ep,
+                "loss":     round(train_loss / train_total, 4),
+                "acc":      round(train_correct / train_total, 4),
+                "val_loss": round(val_loss / val_total, 4),
+                "val_acc":  round(val_correct / val_total, 4),
+            }
+            slot["log"].append(ep_log)
+            slot["epoch"] = ep
+            slot["pct"]   = int(ep / epochs * 90)
+            slot["msg"]   = f"Epoch {ep}/{epochs} — acc {ep_log['acc']:.1%} val_acc {ep_log['val_acc']:.1%}"
+            print(f"[CNN] {slot['msg']}", flush=True)
+
+        # ── Final evaluation + confusion matrix ──────────────────────────────
+        slot["msg"] = "Computing results…"
+        slot["pct"] = 92
+
+        model.eval()
+        all_preds, all_labels, all_probs = [], [], []
+        wrong_samples = []  # (img_tensor, true_lbl, pred_lbl, confidence)
+
+        with torch.no_grad():
+            for xb, yb in test_dl:
+                probs = torch.softmax(model(xb), dim=1)
+                preds = probs.argmax(1)
+                all_preds.extend(preds.tolist())
+                all_labels.extend(yb.tolist())
+                all_probs.extend(probs.tolist())
+
+        # Confusion matrix as list of lists
+        cm = [[0] * n_classes for _ in range(n_classes)]
+        for true, pred in zip(all_labels, all_preds):
+            cm[true][pred] += 1
+
+        final_acc = sum(1 for t, p in zip(all_labels, all_preds) if t == p) / len(all_labels)
+
+        # Per-class precision, recall, F1
+        per_class = []
+        for c in range(n_classes):
+            tp = cm[c][c]
+            fp = sum(cm[r][c] for r in range(n_classes) if r != c)
+            fn = sum(cm[c][r] for r in range(n_classes) if r != c)
+            prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+            per_class.append({
+                "label":     class_names[c],
+                "precision": round(prec, 4),
+                "recall":    round(rec,  4),
+                "f1":        round(f1,   4),
+                "support":   sum(cm[c]),
+            })
+
+        # Macro averages
+        macro_prec = round(sum(p["precision"] for p in per_class) / n_classes, 4)
+        macro_rec  = round(sum(p["recall"]    for p in per_class) / n_classes, 4)
+        macro_f1   = round(sum(p["f1"]        for p in per_class) / n_classes, 4)
+        print(f"[CNN] test acc={final_acc:.1%}  macro-F1={macro_f1:.3f}", flush=True)
+
+        # Confusion matrix image
+        cm_b64 = _cnn_cm_b64(cm, class_names)
+
+        # Wrong predictions: pick up to 8, sorted by confidence of wrong class
+        wrong_idxs = [i for i, (t, p) in enumerate(zip(all_labels, all_preds)) if t != p]
+        wrong_idxs.sort(key=lambda i: all_probs[i][all_preds[i]], reverse=True)
+        wrong_samples_b64 = []
+        for i in wrong_idxs[:8]:
+            img_t, lbl_t = test_ds[i]
+            # Convert tensor CHW → PIL
+            arr = img_t.numpy().transpose(1, 2, 0)
+            if norm_mode == "01":
+                arr = (arr * 255).clip(0, 255).astype(np.uint8)
+            elif norm_mode == "meanstd":
+                arr = ((arr * 0.5 + 0.5) * 255).clip(0, 255).astype(np.uint8)
+            else:
+                arr = arr.clip(0, 255).astype(np.uint8)
+            if arr.shape[2] == 1:
+                arr = arr[:, :, 0]
+            pil = PILImage.fromarray(arr).resize((96, 96))
+            buf = io.BytesIO()
+            pil.save(buf, format="PNG")
+            wrong_samples_b64.append({
+                "img":        base64.b64encode(buf.getvalue()).decode(),
+                "true_label": class_names[all_labels[i]],
+                "pred_label": class_names[all_preds[i]],
+                "confidence": round(all_probs[i][all_preds[i]], 3),
+            })
+
+        # Loss/acc curve image
+        curve_b64 = _cnn_curve_b64(slot["log"])
+
+        # Save model state dict in memory for prediction later
+        import copy
+        model_state = copy.deepcopy(model.state_dict())
+
+        slot["run_counter"] = slot.get("run_counter", 0) + 1
+        run_idx  = slot["run_counter"]
+        run_name = f"Run {run_idx}"
+
+        # Serialisable result (safe for jsonify)
+        result_dict = {
+            "run_idx":       run_idx,
+            "run_name":      run_name,
+            "final_acc":     round(final_acc, 4),
+            "macro_f1":      macro_f1,
+            "macro_prec":    macro_prec,
+            "macro_rec":     macro_rec,
+            "per_class":     per_class,
+            "log":           slot["log"],
+            "cm":            cm,
+            "class_names":   class_names,
+            "cm_img":        cm_b64,
+            "curve_img":     curve_b64,
+            "wrong_samples": wrong_samples_b64,
+            "n_val":         len(val_data),
+            "n_test":        len(test_data),
+            "cfg":           cfg,
+        }
+        # Non-serialisable model data stored separately under _ keys
+        result_dict["_model_state"] = model_state
+        result_dict["_arch"] = {
+            "n_conv":    n_conv,
+            "n_ch":      n_ch,
+            "img_size":  img_size,
+            "n_classes": n_classes,
+            "filters":   [32, 64, 128],
+        }
+        result_dict["_norm_mode"] = norm_mode
+
+        slot["result"] = result_dict
+        slot["runs"].append(result_dict)
+        slot["status"] = "done"
+        slot["pct"]    = 100
+        slot["msg"]    = f"Done — test accuracy {final_acc:.1%}"
+        print(f"[CNN] run '{run_name}' saved. Total runs: {len(slot['runs'])}", flush=True)
+
+    except Exception as exc:
+        import traceback
+        slot["status"] = "error"
+        slot["error"]  = str(exc)
+        slot["msg"]    = f"Error: {exc}"
+        print(f"[CNN] error: {traceback.format_exc()}", flush=True)
+
+
+def _cnn_cm_b64(cm, class_names):
+    """Render confusion matrix as base64 PNG."""
+    import numpy as np
+    n = len(class_names)
+    fig, ax = plt.subplots(figsize=(max(3.5, n * 1.1), max(3, n * 1.0)))
+    arr = np.array(cm)
+    im = ax.imshow(arr, cmap="Blues")
+    ax.set_xticks(range(n)); ax.set_yticks(range(n))
+    ax.set_xticklabels(class_names, rotation=30, ha="right", fontsize=9)
+    ax.set_yticklabels(class_names, fontsize=9)
+    ax.set_xlabel("Predicted", fontsize=10)
+    ax.set_ylabel("True", fontsize=10)
+    ax.set_title("Confusion matrix", fontsize=11, fontweight="bold", pad=8)
+    thresh = arr.max() / 2.0
+    for i in range(n):
+        for j in range(n):
+            ax.text(j, i, str(arr[i, j]), ha="center", va="center",
+                    fontsize=10, color="white" if arr[i, j] > thresh else "black")
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _cnn_curve_b64(log):
+    """Render loss+accuracy curves as base64 PNG."""
+    if not log:
+        return ""
+    epochs   = [e["epoch"]   for e in log]
+    tr_loss  = [e["loss"]    for e in log]
+    val_loss = [e["val_loss"] for e in log]
+    tr_acc   = [e["acc"]     for e in log]
+    val_acc  = [e["val_acc"] for e in log]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3))
+    ax1.plot(epochs, tr_loss,  color=PALETTE[0], label="Train",      linewidth=1.8)
+    ax1.plot(epochs, val_loss, color=PALETTE[1], label="Validation", linewidth=1.8, linestyle="--")
+    ax1.set_title("Loss", fontsize=10, fontweight="bold")
+    ax1.set_xlabel("Epoch"); ax1.legend(fontsize=8)
+    ax1.spines[["top","right"]].set_visible(False)
+    ax1.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+    ax2.plot(epochs, tr_acc,  color=PALETTE[0], label="Train",      linewidth=1.8)
+    ax2.plot(epochs, val_acc, color=PALETTE[1], label="Validation", linewidth=1.8, linestyle="--")
+    ax2.set_title("Accuracy", fontsize=10, fontweight="bold")
+    ax2.set_xlabel("Epoch"); ax2.legend(fontsize=8)
+    ax2.set_ylim(0, 1)
+    ax2.spines[["top","right"]].set_visible(False)
+    ax2.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+@app.route("/api/cnn_train", methods=["POST"])
+def cnn_train():
+    """
+    Start CNN training in background.
+    Body: { node, pre_node, img_data_node, img_cfg: {...}, cfg: {...} }
+    img_data_node and img_cfg are sent from the frontend (JS node.data).
+    """
+    body             = request.get_json(force=True)
+    node_id          = body.get("node", "cnn_default")
+    cfg              = body.get("cfg", {})
+    img_data_node_id = body.get("img_data_node") or cfg.get("imgDataNodeId")
+    img_cfg          = body.get("img_cfg") or {}
+
+    print(f"[CNN] /api/cnn_train  node={node_id}  img_data_node={img_data_node_id}  cfg={cfg}  img_cfg={img_cfg}", flush=True)
+
+    # Check a thread isn't already running for this node
+    existing = _CNN_THREADS.get(node_id)
+    if existing and existing.is_alive():
+        print("[CNN] already training, rejecting", flush=True)
+        return jsonify({"error": "Already training"}), 409
+
+    img_slot = _IMAGE_NODE_DATA.get(img_data_node_id) if img_data_node_id else None
+    print(f"[CNN] img_slot keys={list(img_slot.keys()) if img_slot else None}  loaded={img_slot.get('loaded') if img_slot else None}", flush=True)
+
+    if not img_slot or not img_slot.get("loaded"):
+        print(f"[CNN] ERROR: no image dataset. _IMAGE_NODE_DATA keys={list(_IMAGE_NODE_DATA.keys())}", flush=True)
+        return jsonify({"error": "No image dataset loaded. Connect and load an Image Data block."}), 400
+
+    merged_cfg = {**img_cfg, **cfg}
+
+    # Apply configurable test split from preprocess config
+    test_split_pct = max(0.05, min(0.4, float(merged_cfg.get("testSplit", 0.2))))
+    all_data    = img_slot.get("all_data") or (img_slot["train_data"] + img_slot["test_data"])
+    class_names = img_slot["class_names"]
+    n_classes_total = len(class_names)
+
+    import random as _rnd_split
+    by_class_split = {}
+    for item in all_data:
+        by_class_split.setdefault(item[1], []).append(item)
+    train_data, test_data = [], []
+    _rnd_split.seed(42)
+    for lbl in sorted(by_class_split.keys()):
+        items = by_class_split[lbl][:]
+        _rnd_split.shuffle(items)
+        n_test = max(1, round(len(items) * test_split_pct))
+        test_data.extend(items[:n_test])
+        train_data.extend(items[n_test:])
+
+    print(f"[CNN] test_split={test_split_pct:.0%} → train={len(train_data)}  test={len(test_data)}", flush=True)
+
+    # Reset slot
+    slot = _cnn_slot(node_id)
+    slot.update({"status": "training", "cfg": merged_cfg, "log": [], "result": None,
+                  "error": None, "epoch": 0, "total_epochs": int(merged_cfg.get("epochs", 5)),
+                  "pct": 0, "msg": "Starting…"})
+
+    t = threading.Thread(
+        target=_cnn_train_worker,
+        args=(node_id, merged_cfg, train_data, test_data, class_names),
+        daemon=True
+    )
+    _CNN_THREADS[node_id] = t
+    t.start()
+    return jsonify({"started": True})
+
+
+@app.route("/api/cnn_poll")
+def cnn_poll():
+    """Poll training progress. Query: ?node=<node_id>"""
+    node_id = request.args.get("node", "cnn_default")
+    slot    = _cnn_slot(node_id)
+    running = _CNN_THREADS.get(node_id) is not None and _CNN_THREADS[node_id].is_alive()
+    return jsonify({
+        "status":       slot["status"],
+        "pct":          slot["pct"],
+        "msg":          slot["msg"],
+        "epoch":        slot["epoch"],
+        "total_epochs": slot["total_epochs"],
+        "log":          slot["log"],
+        "running":      running,
+    })
+
+
+@app.route("/api/cnn_result")
+def cnn_result():
+    """Return final result once training is done. Query: ?node=<node_id>"""
+    node_id = request.args.get("node", "cnn_default")
+    slot    = _cnn_slot(node_id)
+    if slot["status"] != "done":
+        return jsonify({"error": "Not ready", "status": slot["status"]}), 400
+    # Strip non-serialisable keys (PyTorch tensors in _model_state, _arch, _norm_mode)
+    safe = {k: v for k, v in slot["result"].items() if not k.startswith("_")}
+    return jsonify(safe)
+
+
+@app.route("/api/cnn_cancel", methods=["POST"])
+def cnn_cancel():
+    """Cancel an ongoing training run."""
+    body    = request.get_json(force=True)
+    node_id = body.get("node", "cnn_default")
+    slot    = _cnn_slot(node_id)
+    slot["status"] = "cancelled"
+    return jsonify({"ok": True})
+
+
+# ── CNN: list runs ────────────────────────────────────────────────────────────
+@app.route("/api/cnn_runs")
+def cnn_runs():
+    """Return all completed runs for a CNN node (without model state / large images)."""
+    node_id = request.args.get("node", "cnn_default")
+    slot    = _cnn_slot(node_id)
+    safe = []
+    for r in slot.get("runs", []):
+        safe.append({
+            "run_idx":    r["run_idx"],
+            "run_name":   r["run_name"],
+            "final_acc":  r["final_acc"],
+            "macro_f1":   r["macro_f1"],
+            "macro_prec": r["macro_prec"],
+            "macro_rec":  r["macro_rec"],
+            "per_class":  r["per_class"],
+            "cm_img":     r["cm_img"],
+            "curve_img":  r["curve_img"],
+            "wrong_samples": r["wrong_samples"],
+            "log":        r["log"],
+            "class_names": r["class_names"],
+            "n_val":      r["n_val"],
+            "n_test":     r["n_test"],
+            "cfg":        r["cfg"],
+        })
+    return jsonify({"runs": safe, "status": slot["status"]})
+
+
+# ── CNN: rename a run ─────────────────────────────────────────────────────────
+@app.route("/api/cnn_rename_run", methods=["POST"])
+def cnn_rename_run():
+    body     = request.get_json(force=True)
+    node_id  = body.get("node", "cnn_default")
+    run_idx  = int(body.get("run_idx", -1))
+    new_name = str(body.get("name", "")).strip()[:60]
+    slot     = _cnn_slot(node_id)
+    for r in slot.get("runs", []):
+        if r["run_idx"] == run_idx:
+            r["run_name"] = new_name or r["run_name"]
+            print(f"[CNN] run {run_idx} renamed → '{r['run_name']}'", flush=True)
+            return jsonify({"ok": True, "name": r["run_name"]})
+    return jsonify({"error": "Run not found"}), 404
+
+
+# ── CNN: predict a single image with a saved run's model ─────────────────────
+@app.route("/api/cnn_predict", methods=["POST"])
+def cnn_predict():
+    """
+    Body: { node, run_idx, image_b64 }
+    Returns: { class_names, probs, pred_class, pred_prob }
+    """
+    body      = request.get_json(force=True)
+    node_id   = body.get("node", "cnn_default")
+    run_idx   = int(body.get("run_idx", -1))
+    img_b64   = body.get("image_b64", "")
+
+    slot = _cnn_slot(node_id)
+    run  = next((r for r in slot.get("runs", []) if r["run_idx"] == run_idx), None)
+    if not run:
+        # fallback: use last run
+        run = slot["runs"][-1] if slot.get("runs") else None
+    if not run or "_model_state" not in run:
+        return jsonify({"error": "No trained model found for this run"}), 400
+
+    try:
+        import torch, torch.nn as nn
+        import numpy as np
+        from PIL import Image as PILImage
+        import base64, io as _io
+
+        arch      = run["_arch"]
+        n_conv    = arch["n_conv"]
+        n_ch      = arch["n_ch"]
+        img_size  = arch["img_size"]
+        n_classes = arch["n_classes"]
+        filters   = arch["filters"]
+        norm_mode = run["_norm_mode"]
+
+        # Rebuild model
+        layers = []
+        in_ch  = n_ch
+        for i in range(n_conv):
+            out_ch = filters[i]
+            layers += [nn.Conv2d(in_ch, out_ch, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2)]
+            in_ch  = out_ch
+        feat_size = img_size // (2 ** n_conv)
+        flatten   = in_ch * feat_size * feat_size
+        layers   += [nn.Flatten(), nn.Linear(flatten, 128), nn.ReLU(),
+                     nn.Dropout(0.3), nn.Linear(128, n_classes)]
+        model = nn.Sequential(*layers)
+        model.load_state_dict(run["_model_state"])
+        model.eval()
+
+        # Decode image
+        if "," in img_b64:
+            img_b64 = img_b64.split(",", 1)[1]
+        img = PILImage.open(_io.BytesIO(base64.b64decode(img_b64)))
+        img = img.convert("L" if n_ch == 1 else "RGB").resize((img_size, img_size), PILImage.BILINEAR)
+        arr = np.array(img, dtype=np.float32)
+        if n_ch == 1:
+            arr = arr[..., np.newaxis]
+        if norm_mode == "01":
+            arr = arr / 255.0
+        elif norm_mode == "meanstd":
+            arr = (arr / 255.0 - 0.5) / 0.5
+        arr = arr.transpose(2, 0, 1)
+        x   = torch.tensor(arr[np.newaxis], dtype=torch.float32)
+
+        with torch.no_grad():
+            probs = torch.softmax(model(x), dim=1)[0].tolist()
+
+        pred_idx = int(np.argmax(probs))
+        return jsonify({
+            "class_names": run["class_names"],
+            "probs":       [round(p, 4) for p in probs],
+            "pred_class":  run["class_names"][pred_idx],
+            "pred_prob":   round(probs[pred_idx], 4),
+        })
+
+    except Exception as exc:
+        import traceback
+        print(f"[CNN predict] {traceback.format_exc()}", flush=True)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── CNN: export evaluation report as HTML (POST: node, lang, img_history) ────
+@app.route("/api/cnn_report", methods=["GET", "POST"])
+def cnn_report():
+    """Generate a self-contained HTML report for all runs of a CNN node.
+    POST body: { node, lang: 'es'|'en', img_history: [{b64, filename, results, class_names}] }
+    GET (legacy): ?node=... (no images, lang=es)
+    """
+    if request.method == "POST":
+        body    = request.get_json(force=True) or {}
+        node_id = body.get("node", "cnn_default")
+        lang    = body.get("lang", "es")
+        img_history = body.get("img_history", [])
+    else:
+        node_id     = request.args.get("node", "cnn_default")
+        lang        = request.args.get("lang", "es")
+        img_history = []
+
+    en = (lang == "en")
+    slot = _cnn_slot(node_id)
+    runs = slot.get("runs", [])
+    if not runs:
+        return jsonify({"error": "No runs to report"}), 400
+
+    # ── Labels ───────────────────────────────────────────────────────────────
+    L = {
+        "title":      "CNN Classification — Informe de Evaluación" if not en else "CNN Classification — Evaluation Report",
+        "generated":  f"Generado por NLP Flow · {len(runs)} run(s)" if not en else f"Generated by NLP Flow · {len(runs)} run(s)",
+        "comparison": "Comparativa de runs" if not en else "Run comparison",
+        "name":       "Nombre" if not en else "Name",
+        "epochs":     "Epochs",
+        "lr":         "Learning rate",
+        "conv":       "Capas conv" if not en else "Conv layers",
+        "valsplit":   "Val split",
+        "testsplit":  "Test split",
+        "acc":        "Accuracy",
+        "detail":     "Detalle por run" if not en else "Run details",
+        "perclass":   "Métricas por clase" if not en else "Per-class metrics",
+        "cls":        "Clase" if not en else "Class",
+        "prec":       "Precisión" if not en else "Precision",
+        "recall":     "Recall",
+        "f1":         "F1",
+        "curves":     "Curvas de entrenamiento" if not en else "Training curves",
+        "cm":         "Matriz de confusión" if not en else "Confusion matrix",
+        "images":     "Imágenes predichas por el usuario" if not en else "User-uploaded predictions",
+        "pred":       "Predicción" if not en else "Prediction",
+        "conf":       "Confianza" if not en else "Confidence",
+        "show":       "Ver detalles ▾" if not en else "Show details ▾",
+        "hide":       "Ocultar ▴" if not en else "Hide ▴",
+        "disclaimer": "Este contenido ha sido generado con IA." if not en else "This content was generated using AI.",
+        "testimg":    "Imágenes de test" if not en else "Test images",
+    }
+
+    # ── Comparison table ─────────────────────────────────────────────────────
+    best_f1  = max(r["macro_f1"] for r in runs)
+    comp_rows = ""
+    for r in runs:
+        cfg  = r.get("cfg", {})
+        best = r["macro_f1"] == best_f1
+        vs   = f"{float(cfg.get('val_split',0.2))*100:.0f}%" if cfg.get("val_split") else "—"
+        ts   = f"{float(cfg.get('testSplit',0.2))*100:.0f}%" if cfg.get("testSplit") else "—"
+        comp_rows += f"""<tr{'style="background:#f0f4ff"' if best else ''}>
+          <td>{'★ ' if best else ''}<b>{r['run_name']}</b></td>
+          <td>{cfg.get('epochs','—')}</td><td>{cfg.get('lr','—')}</td>
+          <td>{cfg.get('n_conv','—')}</td><td>{vs}</td><td>{ts}</td>
+          <td>{r['final_acc']*100:.1f}%</td>
+          <td><b>{r['macro_f1']*100:.1f}%</b></td>
+          <td>{r['macro_prec']*100:.1f}%</td>
+          <td>{r['macro_rec']*100:.1f}%</td>
+        </tr>"""
+
+    # ── Run detail panels (pill selector + single visible panel) ─────────────
+    run_pills = ""
+    run_panels = ""
+    for idx, r in enumerate(runs):
+        cfg      = r.get("cfg", {})
+        is_best  = r['macro_f1'] == best_f1
+        is_first = idx == 0
+        pc_rows  = "".join(
+            f"<tr><td>{p['label']}</td><td>{p['precision']*100:.1f}%</td>"
+            f"<td>{p['recall']*100:.1f}%</td><td><b>{p['f1']*100:.1f}%</b></td><td>{p['support']}</td></tr>"
+            for p in r.get("per_class", [])
+        )
+        pc_macro = (
+            f"<tr style='border-top:2px solid #ddd;color:#666'><td><i>macro avg</i></td>"
+            f"<td>{r['macro_prec']*100:.1f}%</td><td>{r['macro_rec']*100:.1f}%</td>"
+            f"<td><b>{r['macro_f1']*100:.1f}%</b></td><td>{r.get('n_test','—')}</td></tr>"
+        )
+        curve_tag = (f'<img src="data:image/png;base64,{r["curve_img"]}" '
+                     f'style="max-width:640px;width:100%;border-radius:8px;margin:6px 0">')  if r.get("curve_img") else ""
+        cm_tag    = (f'<img src="data:image/png;base64,{r["cm_img"]}" '
+                     f'style="max-width:340px;border-radius:8px;margin:6px 0">')              if r.get("cm_img")    else ""
+        vs = f"{float(cfg.get('val_split', 0.2))*100:.0f}%" if cfg.get("val_split") else "—"
+        ts = f"{float(cfg.get('testSplit', 0.2))*100:.0f}%" if cfg.get("testSplit") else "—"
+        best_star = "★ " if is_best else ""
+
+        active_pill  = "run-pill-active"  if is_first else "run-pill"
+        active_panel = "block"            if is_first else "none"
+
+        run_pills += (
+            f'<button class="{active_pill}" id="rpill-{idx}" onclick="selectRun({idx})">'
+            f'{best_star}{r["run_name"]}</button>'
+        )
+        run_panels += f"""
+        <div class="run-panel" id="rpanel-{idx}" style="display:{active_panel}">
+          <div class="cfg-pills" style="margin-bottom:14px">
+            <span class="pill">Epochs: {cfg.get('epochs','—')}</span>
+            <span class="pill">LR: {cfg.get('lr','—')}</span>
+            <span class="pill">Conv: {cfg.get('n_conv','—')}</span>
+            <span class="pill">Val: {vs}</span>
+            <span class="pill">Test: {ts}</span>
+            <span class="pill">{L['testimg']}: {r.get('n_test','—')}</span>
+          </div>
+          <div class="metric-row">
+            <div class="metric-card {('metric-card-best' if is_best else '')}">
+              <div class="metric-val">{r['final_acc']*100:.1f}%</div>
+              <div class="metric-lbl">{L['acc']}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-val">{r['macro_f1']*100:.1f}%</div>
+              <div class="metric-lbl">Macro F1</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-val">{r['macro_prec']*100:.1f}%</div>
+              <div class="metric-lbl">{L['prec']}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-val">{r['macro_rec']*100:.1f}%</div>
+              <div class="metric-lbl">{L['recall']}</div>
+            </div>
+          </div>
+          <h3>{L['perclass']}</h3>
+          <table><thead><tr>
+            <th>{L['cls']}</th><th>{L['prec']}</th><th>{L['recall']}</th><th>{L['f1']}</th><th>N</th>
+          </tr></thead><tbody>{pc_rows}{pc_macro}</tbody></table>
+          <h3>{L['curves']}</h3>{curve_tag if curve_tag else '<p style="color:#aaa;font-size:12px">—</p>'}
+          <h3>{L['cm']}</h3>{cm_tag if cm_tag else '<p style="color:#aaa;font-size:12px">—</p>'}
+        </div>"""
+
+    detail_block = f"""
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px">
+      <div class="run-pills" id="run-pill-bar">{run_pills}</div>
+      {run_panels}
+    </div>"""
+
+    # ── User image predictions — clickable rows open prob modal ──────────────
+    img_section = ""
+    if img_history:
+        # Serialise all prob data as JS so the modal can read it
+        import json as _json
+        modal_data_js = "var IMG_DATA = " + _json.dumps([
+            {
+                "b64":      h.get("b64", ""),
+                "filename": h.get("filename", ""),
+                "results":  [
+                    {
+                        "run_name":   rr.get("run_name", ""),
+                        "pred_class": rr.get("pred_class", ""),
+                        "pred_prob":  rr.get("pred_prob", 0),
+                        "probs":      rr.get("probs", []),
+                    }
+                    for rr in h.get("results", [])
+                ],
+                "class_names": h.get("class_names", []),
+            }
+            for h in img_history
+        ]) + ";"
+
+        img_rows = ""
+        for hi, h in enumerate(img_history):
+            top_run = h["results"][0] if h.get("results") else {}
+            img_rows += (
+                f'<tr class="img-row" onclick="openImgModal({hi})" style="cursor:pointer">'
+                f'<td><img src="{h["b64"]}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;vertical-align:middle"></td>'
+                f'<td>{h.get("filename","")}</td>'
+                f'<td><b>{top_run.get("pred_class","—")}</b></td>'
+                f'<td>{top_run.get("pred_prob",0)*100:.1f}%</td>'
+                f'<td style="color:#5B7FDB;font-size:12px">{len(h.get("results",[]))} run(s) →</td>'
+                f'</tr>'
+            )
+
+        img_section = f"""
+<h2>{L['images']}</h2>
+<table>
+  <thead><tr>
+    <th></th>
+    <th>{L.get('file','Archivo') if not en else 'File'}</th>
+    <th>{L['pred']}</th>
+    <th>{L['conf']}</th>
+    <th></th>
+  </tr></thead>
+  <tbody>{img_rows}</tbody>
+</table>
+
+<!-- Modal overlay -->
+<div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;max-width:520px;width:90%;padding:24px;position:relative;max-height:85vh;overflow-y:auto">
+    <button onclick="closeImgModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:#666">✕</button>
+    <div id="modal-content"></div>
+  </div>
+</div>"""
+
+    # ── Inline JS for run selector + image modal ──────────────────────────────
+    n_runs = len(runs)
+    report_js = f"""
+{modal_data_js if img_history else ''}
+function selectRun(idx) {{
+  for (var i = 0; i < {n_runs}; i++) {{
+    var p = document.getElementById('rpanel-' + i);
+    var b = document.getElementById('rpill-'  + i);
+    if (p) p.style.display = 'none';
+    if (b) b.className = 'run-pill';
+  }}
+  var active = document.getElementById('rpanel-' + idx);
+  var activePill = document.getElementById('rpill-' + idx);
+  if (active) {{
+    active.style.display = 'block';
+    void active.offsetWidth; /* force reflow so grid recalculates */
+  }}
+  if (activePill) activePill.className = 'run-pill-active';
+}}
+function openImgModal(hi) {{
+  var h = IMG_DATA[hi];
+  var cls = h.class_names;
+  var html = '<img src="' + h.b64 + '" style="width:90px;height:90px;object-fit:cover;border-radius:8px;display:block;margin:0 auto 14px">';
+  html += '<div style="font-size:12px;color:#888;text-align:center;margin-bottom:14px">' + (h.filename || '') + '</div>';
+  h.results.forEach(function(rr) {{
+    var probRows = cls.map(function(c, i) {{
+      var pct = (rr.probs[i] * 100).toFixed(1);
+      var win = c === rr.pred_class;
+      return '<tr style="' + (win ? 'background:#f0f4ff' : '') + '">'
+        + '<td style="padding:5px 10px;font-weight:' + (win ? '700' : '400') + '">' + c + '</td>'
+        + '<td style="padding:5px 10px;width:90px"><div style="height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">'
+        + '<div style="height:100%;width:' + pct + '%;background:' + (win ? '#5B7FDB' : '#94a3b8') + ';border-radius:4px"></div></div></td>'
+        + '<td style="padding:5px 10px;text-align:right;font-weight:' + (win ? '700' : '400') + '">' + pct + '%</td></tr>';
+    }}).join('');
+    html += '<div style="margin-bottom:12px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">'
+      + '<div style="padding:7px 12px;background:#f8faff;font-size:12px;font-weight:700;display:flex;justify-content:space-between">'
+      + '<span>' + rr.run_name + '</span>'
+      + '<span style="color:#5B7FDB">' + rr.pred_class + ' ' + (rr.pred_prob * 100).toFixed(1) + '%</span></div>'
+      + '<table style="margin:0"><tbody>' + probRows + '</tbody></table></div>';
+  }});
+  document.getElementById('modal-content').innerHTML = html;
+  var m = document.getElementById('img-modal');
+  m.style.display = 'flex';
+}}
+function closeImgModal() {{
+  document.getElementById('img-modal').style.display = 'none';
+}}
+document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') closeImgModal(); }});
+"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="{lang}"><head><meta charset="utf-8">
+<title>{L['title']}</title>
+<style>
+  *{{box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:940px;margin:40px auto;padding:0 20px;color:#1a1a1a;background:#fafafa}}
+  h1{{font-size:22px;border-bottom:2px solid #5B7FDB;padding-bottom:10px;color:#1a1a1a}}
+  h2{{font-size:16px;margin:32px 0 12px;color:#5B7FDB;font-weight:700}}
+  h3{{font-size:13px;color:#666;margin:14px 0 6px;font-weight:600}}
+  table{{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:14px;background:#fff;border-radius:8px;overflow:hidden}}
+  th{{background:#f0f4ff;padding:8px 10px;text-align:left;font-weight:600;font-size:12px}}
+  td{{padding:7px 10px;border-bottom:1px solid #f0f0f0}}
+  img{{display:block}}
+  .img-row:hover{{background:#f8faff}}
+  .run-pills{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}}
+  .run-pill{{background:#f0f4ff;color:#5B7FDB;border:1.5px solid #c7d4f7;border-radius:8px;padding:5px 14px;font-size:13px;font-weight:600;cursor:pointer}}
+  .run-pill:hover{{background:#e0eaff}}
+  .run-pill-active{{background:#5B7FDB;color:#fff;border:1.5px solid #5B7FDB;border-radius:8px;padding:5px 14px;font-size:13px;font-weight:600;cursor:pointer}}
+  .cfg-pills{{display:flex;flex-wrap:wrap;gap:6px}}
+  .pill{{background:#f0f4ff;color:#5B7FDB;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:600}}
+  .run-panel{{width:100%;box-sizing:border-box}}
+  .metric-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;width:100%}}
+  .metric-card{{background:#f8faff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center;min-width:0}}
+  .metric-card-best{{border-color:#5B7FDB;background:#f0f4ff}}
+  .metric-val{{font-size:20px;font-weight:800;color:#1a1a1a}}
+  .metric-lbl{{font-size:11px;color:#888;margin-top:2px}}
+</style>
+</head><body>
+<h1>{L['title']}</h1>
+<p style="color:#666;font-size:13px">{L['generated']}</p>
+
+<h2>{L['comparison']}</h2>
+<table><thead><tr>
+  <th>{L['name']}</th><th>{L['epochs']}</th><th>{L['lr']}</th><th>{L['conv']}</th>
+  <th>{L['valsplit']}</th><th>{L['testsplit']}</th>
+  <th>{L['acc']}</th><th>Macro F1</th><th>{L['prec']}</th><th>{L['recall']}</th>
+</tr></thead><tbody>{comp_rows}</tbody></table>
+
+<h2>{L['detail']}</h2>
+{detail_block}
+{img_section}
+<p style="color:#aaa;font-size:11px;margin-top:48px;border-top:1px solid #eee;padding-top:12px">{L['disclaimer']}</p>
+<script>{report_js}</script>
+</body></html>"""
+
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}

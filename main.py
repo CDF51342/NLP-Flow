@@ -98,8 +98,10 @@ if __name__ == "__main__":
 
     window.events.loaded += _on_loaded
 
+    import inspect as _inspect
     start_kwargs = dict(debug=False)
-    # pywebview ≥ 4.x accepts icon= in start(); older versions ignore it gracefully
-    if os.path.exists(ICON):
+    # icon= was added in pywebview 4.5 — check signature before passing it
+    _start_params = _inspect.signature(webview.start).parameters
+    if os.path.exists(ICON) and "icon" in _start_params:
         start_kwargs["icon"] = ICON
     webview.start(**start_kwargs)
