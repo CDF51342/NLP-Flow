@@ -512,7 +512,7 @@ def _dataset_summary():
 def index(): return send_from_directory("static", "index.html")
 
 @app.route("/favicon.ico")
-def favicon(): return send_from_directory("static", "favicon.png", mimetype="image/png")
+def favicon(): return send_from_directory("static", "icon-nlpflow.png", mimetype="image/png")
 
 @app.route("/api/status")
 def status():
@@ -8887,6 +8887,7 @@ def image_load():
     body    = request.json or {}
     node_id = str(body.get("node", "img_default"))
     dataset = body.get("dataset", "mnist")
+    cap     = int(body.get("cap", 0))   # 0 = no cap; >0 = max images to load (dogs_muffins only)
 
     if _IMAGE_LOAD_LOCK.locked():
         return jsonify({"error": "Another dataset is already loading. Please wait."}), 429
@@ -8897,6 +8898,7 @@ def image_load():
     def _worker():
         with _IMAGE_LOAD_LOCK:
             try:
+                from PIL import Image as PILImage
                 _img_progress(node_id, 2, "Initializing…")
 
                 if dataset == "mnist":
@@ -8904,7 +8906,6 @@ def image_load():
                     try:
                         import torchvision
                         import torchvision.transforms as T_tv
-                        from PIL import Image as PILImage
                     except ImportError:
                         _img_progress(node_id, 0, "", done=True,
                                       error="torchvision not installed. Run: pip install torchvision pillow")
@@ -8941,66 +8942,157 @@ def image_load():
                     n_test_total  = len(test_ds)
 
                 elif dataset == "dogs_muffins":
-                    # ── Dogs vs Muffins via Hugging Face datasets ──────────
-                    try:
-                        from datasets import load_dataset as hf_load
-                        from PIL import Image as PILImage
-                    except ImportError:
-                        _img_progress(node_id, 0, "", done=True,
-                                      error="'datasets' package not installed. Run: pip install datasets pillow")
-                        return
-
-                    _img_progress(node_id, 10, "Downloading Chihuahua vs Muffin from Hugging Face (first time only)…")
-                    # sasha/chihuahua-muffin — 299 rows, train split only, cols: image + label
-                    # labels: 0 = blueberry muffin, 1 = chihuahua
-                    hf_ds = hf_load("sasha/chihuahua-muffin")
-
-                    _img_progress(node_id, 60, "Preparing samples…")
-                    # Only has train split — store all data; split is applied later per testSplit cfg
-                    full = hf_ds["train"]
-                    split = full.train_test_split(test_size=0.2, seed=42)  # default 80/20 for display counts
-                    train_split = split["train"]
-                    test_split  = split["test"]
-
-                    # Fixed columns and class names for this dataset
-                    img_col   = "image"
-                    label_col = "label"
-                    feat = train_split.features
-                    if hasattr(feat.get(label_col, None), "names"):
-                        class_names = feat[label_col].names
-                    else:
-                        class_names = ["blueberry muffin", "chihuahua"]
-
+                    # ── Dogs vs Muffins (Kaggle or HuggingFace fallback) ───
                     import random as _rnd
                     _rnd.seed(42)
 
-                    def _extract(split, max_n):
-                        idxs = list(range(len(split)))
-                        if len(idxs) > max_n:
-                            idxs = _rnd.sample(idxs, max_n)
-                        out = []
-                        for i in idxs:
-                            row = split[i]
+                    # ── Try Kaggle first (if credentials are available in .env) ──────────
+                    kaggle_user = os.environ.get("KAGGLE_USERNAME", "").strip()
+                    kaggle_key  = os.environ.get("KAGGLE_KEY", "").strip()
+                    kaggle_ok   = False
+                    combined    = []
+                    class_names = ["muffin", "chihuahua"]
+
+                    if kaggle_user and kaggle_key:
+                        try:
+                            import kaggle as _kaggle_api
+                            # Set credentials programmatically (avoids needing kaggle.json on disk)
+                            import kaggle.api as _kapi
+                            os.environ["KAGGLE_USERNAME"] = kaggle_user
+                            os.environ["KAGGLE_KEY"]      = kaggle_key
+                            _kapi.authenticate()
+
+                            _KAGGLE_DATASET  = "samuelcortinhas/muffin-vs-chihuahua-image-classification"
+                            _KAGGLE_CACHE    = os.path.join(os.path.expanduser("~"), ".cache", "nlpflow_images", "chihuahua_muffin_kaggle")
+
+                            if not os.path.isdir(_KAGGLE_CACHE):
+                                _img_progress(node_id, 8, "Downloading Chihuahua vs Muffin from Kaggle (~500 MB, first time only)…")
+                                os.makedirs(_KAGGLE_CACHE, exist_ok=True)
+                                _kapi.dataset_download_files(_KAGGLE_DATASET, path=_KAGGLE_CACHE, unzip=True, quiet=False)
+                                _img_progress(node_id, 35, "Download complete. Unzipping…")
+                            else:
+                                _img_progress(node_id, 35, "Kaggle dataset already cached. Reading images…")
+
+                            # Walk the downloaded folder: expects train/muffin, train/chihuahua, test/muffin, test/chihuahua
+                            _img_progress(node_id, 40, "Scanning image folders…")
+                            _all_files = []
+                            for _root, _dirs, _files in os.walk(_KAGGLE_CACHE):
+                                _folder = os.path.basename(_root).lower()
+                                if _folder in ("muffin", "muffins"):
+                                    _lbl = 0
+                                elif _folder in ("chihuahua", "chihuahuas"):
+                                    _lbl = 1
+                                else:
+                                    continue
+                                for _fname in _files:
+                                    if _fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                                        _all_files.append((os.path.join(_root, _fname), _lbl))
+
+                            _total_files = len(_all_files)
+                            print(f"[IMG] Kaggle: found {_total_files} image files", flush=True)
+                            for _ii, (_fpath, _lbl) in enumerate(_all_files):
+                                if _ii % 300 == 0:
+                                    _pct = 40 + int(30 * _ii / max(_total_files, 1))
+                                    _img_progress(node_id, _pct, f"Loading images {_ii}/{_total_files}…")
+                                try:
+                                    _img = PILImage.open(_fpath).convert("RGB").resize((64, 64))
+                                    combined.append((_img, _lbl))
+                                except Exception:
+                                    continue
+
+                            if combined:
+                                kaggle_ok = True
+                                _img_progress(node_id, 72, f"Kaggle dataset ready — {len(combined)} images loaded.")
+                                print(f"[IMG] Kaggle dataset loaded: {len(combined)} images", flush=True)
+                            else:
+                                print("[IMG] Kaggle dataset downloaded but no images found — falling back to HuggingFace", flush=True)
+
+                        except Exception as _ke:
+                            print(f"[IMG] Kaggle download failed ({_ke}) — falling back to HuggingFace", flush=True)
+
+                    # ── Fallback: combine sasha/chihuahua-muffin + VatsaDev/cnn_muffins ──
+                    if not kaggle_ok:
+                        try:
+                            from datasets import load_dataset as hf_load
+                        except ImportError:
+                            _img_progress(node_id, 0, "", done=True,
+                                          error="'datasets' package not installed. Run: pip install datasets pillow")
+                            return
+
+                        def _load_hf_img_label(row, img_col, label_col, target_size=(64, 64)):
                             img = row[img_col]
                             lbl = row[label_col]
                             if not isinstance(img, PILImage.Image):
                                 try:
                                     img = PILImage.fromarray(img)
                                 except Exception:
-                                    continue
-                            out.append((img.convert("RGB").resize((64, 64)), int(lbl)))
-                        return out
+                                    return None
+                            return (img.convert("RGB").resize(target_size), int(lbl))
 
-                    all_data   = _extract(full,       2000)  # full dataset for dynamic splitting
-                    train_data = _extract(train_split, 2000)  # default split for display
-                    test_data  = _extract(test_split,  500)
+                        _img_progress(node_id, 10, "Downloading Chihuahua vs Muffin from Hugging Face (first time only)…")
+
+                        # Source 1: sasha/chihuahua-muffin (labels: 0=muffin, 1=chihuahua)
+                        try:
+                            ds1 = hf_load("sasha/chihuahua-muffin")["train"]
+                            _img_progress(node_id, 35, f"Loaded sasha/chihuahua-muffin ({len(ds1)} images)…")
+                            for i in range(len(ds1)):
+                                item = _load_hf_img_label(ds1[i], "image", "label")
+                                if item:
+                                    combined.append(item)
+                        except Exception as e:
+                            print(f"[IMG] sasha/chihuahua-muffin failed: {e}", flush=True)
+
+                        # Source 2: VatsaDev/cnn_muffins (labels: 0=chihuahua→1, 1=muffin→0 — remap)
+                        try:
+                            ds2 = hf_load("VatsaDev/cnn_muffins")
+                            splits2 = list(ds2.keys())
+                            _img_progress(node_id, 55, f"Loaded VatsaDev/cnn_muffins ({splits2})…")
+                            for sname in splits2:
+                                if sname == "hard_16":
+                                    continue
+                                sp = ds2[sname]
+                                img_col2   = "image" if "image" in sp.features else list(sp.features.keys())[0]
+                                label_col2 = "label" if "label" in sp.features else "labels"
+                                for i in range(len(sp)):
+                                    item = _load_hf_img_label(sp[i], img_col2, label_col2)
+                                    if item:
+                                        remapped_lbl = 1 - item[1]  # VatsaDev: 0=chihuahua→1, 1=muffin→0
+                                        combined.append((item[0], remapped_lbl))
+                        except Exception as e:
+                            print(f"[IMG] VatsaDev/cnn_muffins failed: {e}", flush=True)
+
+                        _img_progress(node_id, 70, f"HuggingFace fallback — {len(combined)} total images.")
+
+                    if not combined:
+                        _img_progress(node_id, 0, "", done=True, error="Could not load any chihuahua-muffin images.")
+                        return
+
+                    _rnd.shuffle(combined)
+
+                    # Apply optional cap — balanced across classes
+                    if cap and cap > 0 and len(combined) > cap:
+                        _img_progress(node_id, 74, f"Applying cap: {cap} images from {len(combined)} total…")
+                        _by_cls_cap = {}
+                        for _item in combined:
+                            _by_cls_cap.setdefault(_item[1], []).append(_item)
+                        _per_cls_cap = cap // len(_by_cls_cap)
+                        combined = []
+                        for _lbl_items in _by_cls_cap.values():
+                            combined.extend(_lbl_items[:_per_cls_cap])
+                        _rnd.shuffle(combined)
+                        print(f"[IMG] Cap applied: {len(combined)} images kept", flush=True)
+
+                    split_at = int(len(combined) * 0.8)
+                    all_data   = combined
+                    train_data = combined[:split_at]
+                    test_data  = combined[split_at:]
                     img_size   = (64, 64)
-                    n_train_total = len(train_split)
-                    n_test_total  = len(test_split)
+                    n_train_total = len(train_data)
+                    n_test_total  = len(test_data)
 
                 elif dataset == "cats_vs_dogs":
-                    # microsoft/cats_vs_dogs — ~23K images, ~722MB download
-                    _img_progress(node_id, 5, "Downloading Cats vs Dogs (~720 MB)…")
+                    # microsoft/cats_vs_dogs — ~23K images, ~722MB download (full dataset, no cap)
+                    _img_progress(node_id, 5, "Downloading Cats vs Dogs (~720 MB, first time only)…")
                     from datasets import load_dataset as hf_load
                     hf_ds = hf_load("microsoft/cats_vs_dogs")
                     full = hf_ds["train"]   # only split available
@@ -9015,16 +9107,13 @@ def image_load():
                     import random as _rnd2
                     _rnd2.seed(42)
 
-                    # Cap to 2000 samples for performance on CPU student machines
-                    CAP = 2000
-                    idxs = list(range(len(full)))
-                    if len(idxs) > CAP:
-                        idxs = _rnd2.sample(idxs, CAP)
+                    # Load ALL images (no cap) — resize to 64×64 to keep RAM manageable
+                    total_cvd = len(full)
                     all_items = []
-                    for ii, i in enumerate(idxs):
-                        if ii % 200 == 0:
-                            _img_progress(node_id, 10 + int(70 * ii / len(idxs)), f"Loading images {ii}/{len(idxs)}…")
-                        row = full[i]
+                    for ii in range(total_cvd):
+                        if ii % 500 == 0:
+                            _img_progress(node_id, 10 + int(75 * ii / total_cvd), f"Loading images {ii}/{total_cvd}…")
+                        row = full[ii]
                         img = row[img_col]
                         lbl = row[label_col]
                         if not isinstance(img, PILImage.Image):
@@ -9192,7 +9281,7 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
         aug_flip   = bool(cfg.get("aug_flip", False))
         aug_rotate = bool(cfg.get("aug_rotate", False))
         aug_crop   = bool(cfg.get("aug_crop", False))
-        aug_factor = max(1, min(10, int(cfg.get("aug_factor", 1))))
+        aug_n_cfg  = max(0, int(cfg.get("aug_factor", 0)))  # absolute number of extra augmented images to add
         n_classes  = len(class_names)
         n_ch       = 1 if (len(train_data) > 0 and train_data[0][0].mode == "L") else 3
 
@@ -9227,21 +9316,37 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
                 arr = (arr / 255.0 - 0.5) / 0.5
             return arr.transpose(2, 0, 1)  # HWC → CHW
 
-        def _to_tensor(data, augment=False):
+        def _to_tensor(data, augment=False, aug_n_extra=0):
+            """Convert (PIL, label) list to TensorDataset.
+            aug_n_extra: total extra augmented samples to add across the dataset,
+                         distributed proportionally across classes.
+            """
             xs, ys = [], []
-            do_aug = augment and (aug_flip or aug_rotate or aug_crop)
+            do_aug = augment and (aug_flip or aug_rotate or aug_crop) and aug_n_extra > 0
+            # Always add all originals first
+            base_imgs = []
             for img, lbl in data:
-                # Prepare base image
                 img = img.resize((img_size, img_size), PILImage.BILINEAR)
                 img = img.convert("L" if n_ch == 1 else "RGB")
-                # Always include the original (no augmentation)
                 xs.append(_img_to_arr(img))
                 ys.append(int(lbl))
-                # Add aug_factor-1 augmented copies (only for training)
-                if do_aug:
-                    for _ in range(aug_factor - 1):
-                        xs.append(_img_to_arr(_augment_one(img)))
-                        ys.append(int(lbl))
+                base_imgs.append((img, int(lbl)))
+            # Add augmented extras balanced across classes
+            if do_aug and aug_n_extra > 0:
+                import random as _aug_rnd
+                # Distribute extras proportionally across classes
+                by_cls = {}
+                for img, lbl in base_imgs:
+                    by_cls.setdefault(lbl, []).append(img)
+                n_cls = len(by_cls)
+                per_cls = max(1, aug_n_extra // n_cls) if n_cls > 0 else 0
+                for lbl, imgs in by_cls.items():
+                    added = 0
+                    while added < per_cls:
+                        src = _aug_rnd.choice(imgs)
+                        xs.append(_img_to_arr(_augment_one(src)))
+                        ys.append(lbl)
+                        added += 1
             X = torch.tensor(np.stack(xs), dtype=torch.float32)
             Y = torch.tensor(ys, dtype=torch.long)
             return TensorDataset(X, Y)
@@ -9266,12 +9371,13 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
 
         print(f"[CNN] split → train={len(actual_train)}  val={len(val_data)}  test(held-out)={len(test_data)}", flush=True)
 
-        do_aug   = aug_flip or aug_rotate or aug_crop
-        train_ds = _to_tensor(actual_train, augment=do_aug)
-        val_ds   = _to_tensor(val_data,     augment=False)
-        test_ds  = _to_tensor(test_data,    augment=False)
+        do_aug      = aug_flip or aug_rotate or aug_crop
+        aug_n_extra = aug_n_cfg if (do_aug and aug_n_cfg > 0) else 0
+        train_ds    = _to_tensor(actual_train, augment=do_aug, aug_n_extra=aug_n_extra)
+        val_ds      = _to_tensor(val_data,     augment=False)
+        test_ds     = _to_tensor(test_data,    augment=False)
         n_train_aug = len(train_ds)
-        print(f"[CNN] tensors ready — train={n_train_aug} (x{aug_factor if do_aug else 1} aug)  val={len(val_ds)}  test={len(test_ds)}", flush=True)
+        print(f"[CNN] tensors ready — train={n_train_aug} (+{aug_n_extra} aug extra)  val={len(val_ds)}  test={len(test_ds)}", flush=True)
         train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
         val_dl   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False)
         test_dl  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False)
@@ -9308,9 +9414,21 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
         slot["msg"] = "Training…"
         print(f"[CNN] model built — flatten={flatten}  starting training…", flush=True)
 
+        import time as _time
+        _train_start = _time.time()
+        _epoch_times = []
+
+        def _fmt_seconds(s):
+            s = int(s)
+            if s < 60:
+                return f"{s}s"
+            return f"{s // 60}m {s % 60:02d}s"
+
         for ep in range(1, epochs + 1):
             if slot["status"] == "cancelled":
                 return
+
+            _ep_start = _time.time()
 
             # Train
             model.train()
@@ -9336,18 +9454,34 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
                     val_correct += (out.argmax(1) == yb).sum().item()
                     val_total   += len(yb)
 
+            _ep_elapsed = _time.time() - _ep_start
+            _epoch_times.append(_ep_elapsed)
+            _avg_ep_time = sum(_epoch_times) / len(_epoch_times)
+            _epochs_left = epochs - ep
+            _eta_seconds = _avg_ep_time * _epochs_left
+            _elapsed_total = _time.time() - _train_start
+
             ep_log = {
-                "epoch":    ep,
-                "loss":     round(train_loss / train_total, 4),
-                "acc":      round(train_correct / train_total, 4),
-                "val_loss": round(val_loss / val_total, 4),
-                "val_acc":  round(val_correct / val_total, 4),
+                "epoch":       ep,
+                "loss":        round(train_loss / train_total, 4),
+                "acc":         round(train_correct / train_total, 4),
+                "val_loss":    round(val_loss / val_total, 4),
+                "val_acc":     round(val_correct / val_total, 4),
+                "epoch_time":  round(_ep_elapsed, 2),
+                "elapsed":     round(_elapsed_total, 2),
+                "eta":         round(_eta_seconds, 2),
             }
             slot["log"].append(ep_log)
-            slot["epoch"] = ep
-            slot["pct"]   = int(ep / epochs * 90)
-            slot["msg"]   = f"Epoch {ep}/{epochs} — acc {ep_log['acc']:.1%} val_acc {ep_log['val_acc']:.1%}"
+            slot["epoch"]   = ep
+            slot["pct"]     = int(ep / epochs * 90)
+            slot["eta"]     = round(_eta_seconds, 2)
+            slot["elapsed"] = round(_elapsed_total, 2)
+            _eta_str = ("ETA " + _fmt_seconds(_eta_seconds)) if _epochs_left > 0 else ("Total " + _fmt_seconds(_elapsed_total))
+            slot["msg"] = f"Epoch {ep}/{epochs} — acc {ep_log['acc']:.1%} val_acc {ep_log['val_acc']:.1%} · {_eta_str}"
             print(f"[CNN] {slot['msg']}", flush=True)
+
+        _total_elapsed = _time.time() - _train_start
+        slot["total_elapsed"] = round(_total_elapsed, 2)
 
         # ── Final evaluation + confusion matrix ──────────────────────────────
         slot["msg"] = "Computing results…"
@@ -9437,22 +9571,23 @@ def _cnn_train_worker(node_id: str, cfg: dict, train_data: list, test_data: list
 
         # Serialisable result (safe for jsonify)
         result_dict = {
-            "run_idx":       run_idx,
-            "run_name":      run_name,
-            "final_acc":     round(final_acc, 4),
-            "macro_f1":      macro_f1,
-            "macro_prec":    macro_prec,
-            "macro_rec":     macro_rec,
-            "per_class":     per_class,
-            "log":           slot["log"],
-            "cm":            cm,
-            "class_names":   class_names,
-            "cm_img":        cm_b64,
-            "curve_img":     curve_b64,
-            "wrong_samples": wrong_samples_b64,
-            "n_val":         len(val_data),
-            "n_test":        len(test_data),
-            "cfg":           cfg,
+            "run_idx":        run_idx,
+            "run_name":       run_name,
+            "final_acc":      round(final_acc, 4),
+            "macro_f1":       macro_f1,
+            "macro_prec":     macro_prec,
+            "macro_rec":      macro_rec,
+            "per_class":      per_class,
+            "log":            slot["log"],
+            "cm":             cm,
+            "class_names":    class_names,
+            "cm_img":         cm_b64,
+            "curve_img":      curve_b64,
+            "wrong_samples":  wrong_samples_b64,
+            "n_val":          len(val_data),
+            "n_test":         len(test_data),
+            "cfg":            cfg,
+            "total_elapsed":  slot.get("total_elapsed", 0),
         }
         # Non-serialisable model data stored separately under _ keys
         result_dict["_model_state"] = model_state
@@ -9652,22 +9787,27 @@ def cnn_runs():
     slot    = _cnn_slot(node_id)
     safe = []
     for r in slot.get("runs", []):
+        _log = r.get("log", [])
+        _epoch_times = [e.get("epoch_time") for e in _log if e.get("epoch_time") is not None]
+        _avg_epoch = round(sum(_epoch_times) / len(_epoch_times), 2) if _epoch_times else None
         safe.append({
-            "run_idx":    r["run_idx"],
-            "run_name":   r["run_name"],
-            "final_acc":  r["final_acc"],
-            "macro_f1":   r["macro_f1"],
-            "macro_prec": r["macro_prec"],
-            "macro_rec":  r["macro_rec"],
-            "per_class":  r["per_class"],
-            "cm_img":     r["cm_img"],
-            "curve_img":  r["curve_img"],
+            "run_idx":       r["run_idx"],
+            "run_name":      r["run_name"],
+            "final_acc":     r["final_acc"],
+            "macro_f1":      r["macro_f1"],
+            "macro_prec":    r["macro_prec"],
+            "macro_rec":     r["macro_rec"],
+            "per_class":     r["per_class"],
+            "cm_img":        r["cm_img"],
+            "curve_img":     r["curve_img"],
             "wrong_samples": r["wrong_samples"],
-            "log":        r["log"],
-            "class_names": r["class_names"],
-            "n_val":      r["n_val"],
-            "n_test":     r["n_test"],
-            "cfg":        r["cfg"],
+            "log":           _log,
+            "class_names":   r["class_names"],
+            "n_val":         r["n_val"],
+            "n_test":        r["n_test"],
+            "cfg":           r["cfg"],
+            "total_elapsed": r.get("total_elapsed", 0),
+            "avg_epoch_time": _avg_epoch,
         })
     return jsonify({"runs": safe, "status": slot["status"]})
 
@@ -9804,6 +9944,8 @@ def cnn_report():
         "valsplit":   "Val split",
         "testsplit":  "Test split",
         "acc":        "Accuracy",
+        "total_time": "Tiempo total" if not en else "Total time",
+        "avg_epoch":  "Media/epoch" if not en else "Avg/epoch",
         "detail":     "Detalle por run" if not en else "Run details",
         "perclass":   "Métricas por clase" if not en else "Per-class metrics",
         "cls":        "Clase" if not en else "Class",
@@ -9819,7 +9961,15 @@ def cnn_report():
         "hide":       "Ocultar ▴" if not en else "Hide ▴",
         "disclaimer": "Este contenido ha sido generado con IA." if not en else "This content was generated using AI.",
         "testimg":    "Imágenes de test" if not en else "Test images",
+        "val_note":   ("El val split se extrae del train, por lo que el % global efectivo sobre el total de datos es menor."
+                       if not en else
+                       "The val split is taken from the train set, so the effective global percentage over total data is lower."),
     }
+
+    def _fmt_secs(s):
+        s = round(s or 0)
+        if s < 60: return f"{s}s"
+        return f"{s // 60}m {s % 60:02d}s"
 
     # ── Comparison table ─────────────────────────────────────────────────────
     best_f1  = max(r["macro_f1"] for r in runs)
@@ -9829,6 +9979,10 @@ def cnn_report():
         best = r["macro_f1"] == best_f1
         vs   = f"{float(cfg.get('val_split',0.2))*100:.0f}%" if cfg.get("val_split") else "—"
         ts   = f"{float(cfg.get('testSplit',0.2))*100:.0f}%" if cfg.get("testSplit") else "—"
+        log  = r.get("log", [])
+        ep_times = [e.get("epoch_time") for e in log if e.get("epoch_time") is not None]
+        avg_ep   = _fmt_secs(sum(ep_times) / len(ep_times)) if ep_times else "—"
+        total_t  = _fmt_secs(r.get("total_elapsed", 0)) if r.get("total_elapsed") else "—"
         comp_rows += f"""<tr{'style="background:#f0f4ff"' if best else ''}>
           <td>{'★ ' if best else ''}<b>{r['run_name']}</b></td>
           <td>{cfg.get('epochs','—')}</td><td>{cfg.get('lr','—')}</td>
@@ -9837,6 +9991,8 @@ def cnn_report():
           <td><b>{r['macro_f1']*100:.1f}%</b></td>
           <td>{r['macro_prec']*100:.1f}%</td>
           <td>{r['macro_rec']*100:.1f}%</td>
+          <td>{total_t}</td>
+          <td>{avg_ep}/ep</td>
         </tr>"""
 
     # ── Run detail panels (pill selector + single visible panel) ─────────────
@@ -9871,16 +10027,29 @@ def cnn_report():
             f'<button class="{active_pill}" id="rpill-{idx}" onclick="selectRun({idx})">'
             f'{best_star}{r["run_name"]}</button>'
         )
+        r_log     = r.get("log", [])
+        r_eptimes = [e.get("epoch_time") for e in r_log if e.get("epoch_time") is not None]
+        r_avg_ep  = _fmt_secs(sum(r_eptimes) / len(r_eptimes)) if r_eptimes else "—"
+        r_total_t = _fmt_secs(r.get("total_elapsed", 0)) if r.get("total_elapsed") else "—"
+        # Effective val% over total data: val_split is taken from train, so global = (1-test)*(val)
+        try:
+            _vs_f  = float(cfg.get("val_split", 0.2))
+            _ts_f  = float(cfg.get("testSplit", 0.2))
+            _eff_v = f"{(1 - _ts_f) * _vs_f * 100:.1f}%"
+        except Exception:
+            _eff_v = vs
+
         run_panels += f"""
         <div class="run-panel" id="rpanel-{idx}" style="display:{active_panel}">
           <div class="cfg-pills" style="margin-bottom:14px">
             <span class="pill">Epochs: {cfg.get('epochs','—')}</span>
             <span class="pill">LR: {cfg.get('lr','—')}</span>
             <span class="pill">Conv: {cfg.get('n_conv','—')}</span>
-            <span class="pill">Val: {vs}</span>
+            <span class="pill">Val: {vs} <span style="color:#888;font-size:10px">({_eff_v} {"global" if en else "global"})</span></span>
             <span class="pill">Test: {ts}</span>
             <span class="pill">{L['testimg']}: {r.get('n_test','—')}</span>
           </div>
+          <p style="font-size:11px;color:#888;margin:0 0 10px">{L['val_note']}</p>
           <div class="metric-row">
             <div class="metric-card {('metric-card-best' if is_best else '')}">
               <div class="metric-val">{r['final_acc']*100:.1f}%</div>
@@ -9897,6 +10066,14 @@ def cnn_report():
             <div class="metric-card">
               <div class="metric-val">{r['macro_rec']*100:.1f}%</div>
               <div class="metric-lbl">{L['recall']}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-val">{r_total_t}</div>
+              <div class="metric-lbl">{L['total_time']}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-val">{r_avg_ep}</div>
+              <div class="metric-lbl">{L['avg_epoch']}</div>
             </div>
           </div>
           <h3>{L['perclass']}</h3>
@@ -10056,6 +10233,7 @@ document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') clos
   <th>{L['name']}</th><th>{L['epochs']}</th><th>{L['lr']}</th><th>{L['conv']}</th>
   <th>{L['valsplit']}</th><th>{L['testsplit']}</th>
   <th>{L['acc']}</th><th>Macro F1</th><th>{L['prec']}</th><th>{L['recall']}</th>
+  <th>{L['total_time']}</th><th>{L['avg_epoch']}</th>
 </tr></thead><tbody>{comp_rows}</tbody></table>
 
 <h2>{L['detail']}</h2>

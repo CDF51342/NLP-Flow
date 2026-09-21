@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NLP Flow v4</title>
+<title>NLP Flow</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="icon" href="/static/favicon.png" type="image/png">
+<link rel="icon" href="/static/icon-nlpflow.png" type="image/png">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
   <header id="topbar">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="6" height="6" rx="2" fill="#121212"/><rect x="12" y="2" width="6" height="6" rx="2" fill="#19e68c"/><rect x="2" y="12" width="6" height="6" rx="2" fill="#19e68c"/><rect x="12" y="12" width="6" height="6" rx="2" fill="#121212"/></svg>
     <span style="font-weight:700;font-size:15px;letter-spacing:-.01em">NLP Flow</span>
-    <span style="font-size:12px;color:var(--sec);margin-left:2px">v4</span>
+    
     <div id="ws" style="display:none;margin-left:12px;align-items:center;gap:6px;font-size:12px;color:var(--sec)">
       <span class="spinner"></span><span id="ws-msg">Working...</span>
     </div>
@@ -537,7 +537,7 @@ var I18N = {
     "img-error":"Error al cargar el dataset.",
     "img-target":"Variable objetivo","img-target-hint":"Cada subcarpeta / etiqueta = una clase a predecir.",
     "img-mnist-desc":"Dígitos escritos a mano (0–9). 70 000 imágenes en escala de grises 28×28. Descarga automática.",
-    "img-dogs-desc":"Chihuahuas vs. magdalenas (muffins). 299 imágenes a color. Descarga automática desde Hugging Face.",
+    "img-dogs-desc":"Chihuahuas vs. magdalenas (muffins). ~6.000 imágenes a color (~500 MB, solo primera vez). Con credenciales Kaggle en .env; si no, fallback a ~833 imágenes desde Hugging Face.",
     "img-cats-desc":"Gatos vs perros. ~23 000 imágenes a color. ⚠️ Descarga pesada (~720 MB).",
     "select-model":"Selecciona al menos un modelo",
     "training":"Entrenando…",
@@ -859,7 +859,7 @@ var I18N = {
     "img-target":"Target variable","img-target-hint":"Each subfolder / label = one class to predict.",
     "img-load-cats":"🐱 Load Cats vs Dogs",
     "img-mnist-desc":"Handwritten digits (0–9). 70 000 grayscale images 28×28. Downloads automatically.",
-    "img-dogs-desc":"Chihuahuas vs blueberry muffins. 299 colour images. Downloads automatically from Hugging Face.",
+    "img-dogs-desc":"Chihuahuas vs blueberry muffins. ~6,000 colour images (~500 MB, first time only). Requires Kaggle credentials in .env; falls back to ~833 images from Hugging Face if not set.",
     "img-cats-desc":"Cats vs dogs. ~23 000 colour images. ⚠️ Large download (~720 MB).",
     "select-model":"Select at least one model",
     "training":"Training…",
@@ -3518,13 +3518,6 @@ async function renderImbalance(node) {
   };
 }
 
-// ─── OLD renderTabClassify placeholder (now replaced by individual blocks) ───
-async function renderTabClassify(node) {
-  mBody.innerHTML = '<div style="padding:20px;color:var(--sec)">Este bloque ha sido reemplazado. Usa los bloques individuales: 🧠 Clasificador → 📋 Evaluación → 🔲 Conf. Matrix.</div>';
-}
-
-
-
 // ═══════════════════════════════════════════════════════════════════
 // LINREG MODAL — Bloque Modelo: Regresión Lineal
 // ═══════════════════════════════════════════════════════════════════
@@ -6041,13 +6034,17 @@ async function renderDataImage(node) {
         '</div>' +
 
         // Chihuahua vs Muffin card
-        '<div class="psec" style="cursor:pointer;border:2px solid var(--border);transition:border-color .15s" id="img-card-dogs"' +
+        '<div class="psec" style="border:2px solid var(--border);transition:border-color .15s" id="img-card-dogs"' +
           ' onmouseenter="this.style.borderColor=\'var(--accent)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
           '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
             '<span style="font-size:22px">🐶🧁</span>' +
             '<div><div style="font-weight:700;font-size:13px">Chihuahua vs Muffin</div>' +
             '<div style="font-size:11px;color:var(--sec)">' + T("img-dogs-desc") + '</div></div>' +
           '</div>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--sec);margin-bottom:8px;cursor:pointer">' +
+            '<input type="checkbox" id="chk-dogs-cap" checked style="cursor:pointer">' +
+            (lang === "en" ? 'Limit to 2,000 images (faster, recommended for CPU)' : 'Limitar a 2.000 imágenes (más rápido, recomendado para CPU)') +
+          '</label>' +
           '<button class="btn btn-black" id="btn-load-dogs" style="width:100%">' + T("img-load-dogs") + '</button>' +
         '</div>' +
 
@@ -6075,11 +6072,15 @@ async function renderDataImage(node) {
     _anim();
 
     document.getElementById("btn-load-mnist").onclick = function() { startLoad("mnist"); };
-    document.getElementById("btn-load-dogs").onclick  = function() { startLoad("dogs_muffins"); };
+    document.getElementById("btn-load-dogs").onclick  = function() {
+      var cap = document.getElementById("chk-dogs-cap");
+      startLoad("dogs_muffins", { cap: cap && cap.checked ? 2000 : 0 });
+    };
     document.getElementById("btn-load-cats").onclick  = function() { startLoad("cats_vs_dogs"); };
   }
 
-  async function startLoad(dataset) {
+  async function startLoad(dataset, opts) {
+    opts = opts || {};
     document.getElementById("img-prog-wrap").style.display = "block";
     document.getElementById("btn-load-mnist").disabled = true;
     document.getElementById("btn-load-dogs").disabled  = true;
@@ -6089,10 +6090,13 @@ async function renderDataImage(node) {
     if (bar) bar.style.width = "0%";
     if (lbl) lbl.textContent = T("img-loading");
 
+    var body = { node: node.id, dataset: dataset };
+    if (opts.cap !== undefined) body.cap = opts.cap;
+
     await fetch("/api/image_load", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ node: node.id, dataset: dataset })
+      body: JSON.stringify(body)
     });
     await pollLoad(dataset);
   }
@@ -6725,7 +6729,7 @@ async function renderPre(node) {
     var augFlip    = cfg.augFlip    || false;
     var augRotate  = cfg.augRotate  || false;
     var augCrop    = cfg.augCrop    || false;
-    var augFactor  = cfg.augFactor  || 1;
+    var augFactor  = cfg.augFactor !== undefined ? cfg.augFactor : 0;
     var nCh        = (imgResp.dataset === "mnist") ? 1 : 3;
     var total     = imgResp.n_train + imgResp.n_test;
 
@@ -6884,20 +6888,32 @@ async function renderPre(node) {
             _augToggleHtml("aug-crop",   augCrop,   _en ? "Random crop" : "Recorte aleatorio",
               _en ? "Crops a random region then resizes back — the model learns that the subject can appear anywhere." : "Recorta una región aleatoria y redimensiona — el modelo aprende que el objeto puede aparecer en cualquier parte.") +
           '</div>' +
-          // Augmentation factor
-          '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">' +
-            '<div style="font-size:12px;font-weight:600;margin-bottom:4px">' +
-              (_en ? "Copies per image" : "Copias por imagen") +
-            '</div>' +
-            '<div style="font-size:11px;color:var(--sec);margin-bottom:8px" id="aug-factor-desc"></div>' +
-            '<div style="display:flex;gap:6px;flex-wrap:wrap" id="aug-factor-grp">' +
-              [1,2,3,5].map(function(v) {
-                var active = augFactor === v;
-                return '<button class="pill-opt' + (active ? ' pill-opt-active' : '') + '" data-val="' + v + '" data-grp="aug-factor-grp">' +
-                  'x' + v + '</button>';
-              }).join('') +
-            '</div>' +
-          '</div>' +
+          // Augmentation factor — slider from 0 to trainN
+          (function() {
+            var _tot   = imgResp.n_train + imgResp.n_test;
+            var _tSpl  = parseFloat(cfg.testSplit  || 0.2);
+            var _vSpl  = parseFloat(cfg.val_split  || 0.2);
+            var _trainN = Math.round(_tot * (1 - _tSpl) * (1 - _vSpl));
+            var _slMax  = Math.max(_trainN, 1);
+            var _slStep = Math.max(1, Math.round(_slMax / 200));
+            var _slVal  = Math.min(augFactor, _slMax);
+            return '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">' +
+              '<div style="font-size:12px;font-weight:600;margin-bottom:4px">' +
+                (_en ? "Extra augmented images to add" : "Imágenes aumentadas a añadir") +
+              '</div>' +
+              '<div style="font-size:11px;color:var(--sec);margin-bottom:8px">' +
+                (_en
+                  ? "Slide to add augmented copies to the train set (0 = none). High values can cause the model to overfit synthetic data and hurt real test performance."
+                  : "Desliza para añadir copias aumentadas al train (0 = ninguna). Valores altos pueden provocar sobreajuste a datos sintéticos y empeorar los resultados en test.") +
+              '</div>' +
+              '<input type="range" id="aug-factor-input" min="0" max="' + _slMax + '" step="' + _slStep + '" value="' + _slVal + '" ' +
+                'style="width:100%;accent-color:var(--accent);margin-bottom:6px">' +
+              '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sec);margin-bottom:4px">' +
+                '<span>0</span><span>' + _slMax + '</span>' +
+              '</div>' +
+              '<div style="font-size:11px;color:var(--sec)" id="aug-factor-desc"></div>' +
+            '</div>';
+          })() +
         '</div>' +
 
         // Output summary
@@ -6953,33 +6969,40 @@ async function renderPre(node) {
     wireAugToggle("aug-rotate", function(){ return augRotate; }, function(v){ augRotate = v; });
     wireAugToggle("aug-crop",   function(){ return augCrop; },   function(v){ augCrop = v; });
 
-    // Wire augmentation factor pills
+    // Wire augmentation factor input (augFactor = absolute number of extra images to add)
     function updateFactorDesc() {
       var desc = document.getElementById("aug-factor-desc");
       if (!desc) return;
       var anyAug = augFlip || augRotate || augCrop;
       if (!anyAug) {
-        desc.textContent = _en ? "Activate at least one transform above to use this." : "Activa al menos una transformación arriba para usar esto.";
+        desc.textContent = _en ? "⚠ Activate at least one transform above." : "⚠ Activa al menos una transformación arriba.";
         desc.style.color = "#f59e0b";
         return;
       }
+      if (augFactor === 0) {
+        desc.style.color = "var(--sec)";
+        desc.textContent = _en ? "No augmented copies will be added." : "No se añadirán copias aumentadas.";
+        return;
+      }
       var trainN = Math.round((imgResp.n_train || 0) * (1 - parseFloat(testSplit)));
-      var total  = trainN * augFactor;
-      desc.style.color = "var(--sec)";
+      var total  = trainN + augFactor;
+      var ratio  = trainN > 0 ? (augFactor / trainN * 100).toFixed(0) : 0;
+      desc.style.color = augFactor > trainN ? "#ef4444" : "var(--sec)";
       desc.textContent = _en
-        ? "~" + trainN + " train images × " + augFactor + " = " + total + " samples per epoch."
-        : "~" + trainN + " imágenes de train × " + augFactor + " = " + total + " muestras por época.";
+        ? trainN + " train + " + augFactor + " aug = " + total + " samples (" + ratio + "% extra)"
+        : trainN + " train + " + augFactor + " aug = " + total + " muestras (" + ratio + "% extra)";
     }
-    document.getElementById("aug-factor-grp").querySelectorAll(".pill-opt").forEach(function(btn) {
-      btn.addEventListener("click", function() {
-        augFactor = parseInt(btn.dataset.val);
-        document.getElementById("aug-factor-grp").querySelectorAll(".pill-opt").forEach(function(b) {
-          b.className = "pill-opt" + (parseInt(b.dataset.val) === augFactor ? " pill-opt-active" : "");
-        });
+    var _augInput = document.getElementById("aug-factor-input");
+    if (_augInput) {
+      _augInput.addEventListener("input", function() {
+        augFactor = Math.max(0, parseInt(this.value) || 0);
         updateFactorDesc();
         updateSummary();
       });
-    });
+      // Sync stored augFactor to slider max in case it exceeds the current train size
+      if (augFactor > parseInt(_augInput.max)) augFactor = parseInt(_augInput.max);
+      _augInput.value = augFactor;
+    }
     updateFactorDesc();
 
     // Apply button
@@ -7106,7 +7129,7 @@ async function renderPre(node) {
       node.data.imgDataNodeId = String(upSrcNode.id);
       setOK(node.id, true);
       var augParts = [augFlip?"flip":"", augRotate?"rot":"", augCrop?"crop":""].filter(Boolean);
-      var augBadge = augParts.length ? (" · aug×" + augFactor) : "";
+      var augBadge = (augParts.length && augFactor > 0) ? (" · aug+" + augFactor) : "";
       setNB(node.id, imgSize + "×" + imgSize + " · bs " + batchSize + augBadge, "badge-ok");
       toast(_en ? "✅ Preprocessing applied" : "✅ Preprocesado aplicado");
       document.getElementById("pre-img-preview").style.display = "block";
@@ -10170,6 +10193,8 @@ async function renderCNNEval(node, cnnNodeArg) {
     var rows = runs.map(function(r) {
       var cfg  = r.cfg || {};
       var best = r.macro_f1 === maxF1;
+      var totalSec = r.total_elapsed  ? _fmtSecs(r.total_elapsed)  : '—';
+      var avgEpSec = r.avg_epoch_time ? _fmtSecs(r.avg_epoch_time) : '—';
       return '<tr style="' + (best ? 'background:var(--tinted)' : '') + '">' +
         '<td style="padding:5px 8px;font-weight:600">' + r.run_name + (best ? ' <span style="color:var(--accent);font-size:10px">★</span>' : '') + '</td>' +
         '<td style="padding:5px 8px">' + (cfg.epochs || '—') + '</td>' +
@@ -10181,6 +10206,8 @@ async function renderCNNEval(node, cnnNodeArg) {
         '<td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--accent)">' + (r.macro_f1 * 100).toFixed(1) + '%</td>' +
         '<td style="padding:5px 8px;text-align:right">' + (r.macro_prec * 100).toFixed(1) + '%</td>' +
         '<td style="padding:5px 8px;text-align:right">' + (r.macro_rec * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;text-align:right;color:var(--sec)">' + totalSec + '</td>' +
+        '<td style="padding:5px 8px;text-align:right;color:var(--sec)">' + avgEpSec + '/ep</td>' +
       '</tr>';
     }).join("");
 
@@ -10196,6 +10223,8 @@ async function renderCNNEval(node, cnnNodeArg) {
         '<th style="padding:5px 8px;text-align:right">F1</th>' +
         '<th style="padding:5px 8px;text-align:right">' + (_en ? 'Prec' : 'Prec') + '</th>' +
         '<th style="padding:5px 8px;text-align:right">Rec</th>' +
+        '<th style="padding:5px 8px;text-align:right">' + (_en ? 'Total' : 'Total') + '</th>' +
+        '<th style="padding:5px 8px;text-align:right">' + (_en ? 'Avg/ep' : 'Media/ep') + '</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -10218,12 +10247,16 @@ async function renderCNNEval(node, cnnNodeArg) {
       '<td style="padding:5px 8px;text-align:right">' + (r.n_test || '—') + '</td>' +
     '</tr>';
 
+    var _rTotalSec = r.total_elapsed  ? _fmtSecs(r.total_elapsed)  : '—';
+    var _rAvgEpSec = r.avg_epoch_time ? _fmtSecs(r.avg_epoch_time) : '—';
     return runSelector("eval-run-sel-report") +
       '<div class="mgrid" style="margin-bottom:12px">' +
         '<div class="mcard mcard-hi" style="text-align:center"><div class="mval">' + (r.final_acc*100).toFixed(1) + '%</div><div class="mlbl">' + (_en?'Test accuracy':'Accuracy test') + '</div></div>' +
         '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_f1*100).toFixed(1) + '%</div><div class="mlbl">Macro F1</div></div>' +
         '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_prec*100).toFixed(1) + '%</div><div class="mlbl">' + (_en?'Precision':'Precisión') + '</div></div>' +
         '<div class="mcard" style="text-align:center"><div class="mval">' + (r.macro_rec*100).toFixed(1) + '%</div><div class="mlbl">Recall</div></div>' +
+        '<div class="mcard" style="text-align:center"><div class="mval">' + _rTotalSec + '</div><div class="mlbl">' + (_en?'Total time':'Tiempo total') + '</div></div>' +
+        '<div class="mcard" style="text-align:center"><div class="mval">' + _rAvgEpSec + '</div><div class="mlbl">' + (_en?'Avg/epoch':'Media/epoch') + '</div></div>' +
       '</div>' +
       '<div class="psec"><div class="ptitle" style="margin-bottom:6px">' + (_en?'Classification report':'Classification report') + '</div>' +
         '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
@@ -10463,6 +10496,13 @@ async function renderCNNEval(node, cnnNodeArg) {
   }
 }
 
+// ── Shared time formatter (used by renderCNN and renderCNNEval) ───────────────
+function _fmtSecs(s) {
+  s = Math.round(s || 0);
+  if (s < 60) return s + "s";
+  return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+}
+
 // CNN CLASSIFICATION modal
 // ═══════════════════════════════════════════
 async function renderCNN(node) {
@@ -10680,13 +10720,35 @@ async function renderCNN(node) {
   function renderProgress(p) {
     var area = document.getElementById("cnn-status-area");
     if (!area) return;
+
+    // Keep train button disabled while training is active
+    var trBtn = document.getElementById("btn-cnn-train");
+    if (trBtn && (p.status === "training" || p.running)) {
+      trBtn.disabled = true;
+      trBtn.style.opacity = "0.5";
+      trBtn.textContent = (_en ? "⏳ Training…" : "⏳ Entrenando…");
+    }
+
     var pct  = p.pct || 0;
     var ep   = p.epoch || 0;
     var tot  = p.total_epochs || 0;
     var lastLog = p.log && p.log.length ? p.log[p.log.length - 1] : null;
 
+    // ETA / elapsed timing row
+    var timingStr = "";
+    if (lastLog && lastLog.eta !== undefined && lastLog.epoch_time !== undefined) {
+      var epochSec = _fmtSecs(lastLog.epoch_time);
+      var etaSec   = ep < tot ? ("ETA " + _fmtSecs(lastLog.eta)) : ("Total " + _fmtSecs(p.total_elapsed || lastLog.elapsed));
+      timingStr = ' · ' + epochSec + '/epoch · ' + etaSec;
+    } else if (p.eta !== undefined && ep > 0) {
+      timingStr = ' · ' + (ep < tot ? "ETA " + _fmtSecs(p.eta) : "Total " + _fmtSecs(p.elapsed));
+    }
+
     var epochInfo = tot > 0
-      ? '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">Epoch ' + ep + ' / ' + tot + (lastLog ? ' — acc ' + (lastLog.acc * 100).toFixed(1) + '% · val_acc ' + (lastLog.val_acc * 100).toFixed(1) + '%' : '') + '</div>'
+      ? '<div style="font-size:12px;color:var(--sec);margin-bottom:8px">Epoch ' + ep + ' / ' + tot +
+          (lastLog ? ' — acc ' + (lastLog.acc * 100).toFixed(1) + '% · val_acc ' + (lastLog.val_acc * 100).toFixed(1) + '%' : '') +
+          timingStr +
+        '</div>'
       : '';
 
     var logRows = (p.log || []).map(function(e) {
@@ -10694,7 +10756,8 @@ async function renderCNN(node) {
         '<td style="padding:2px 8px">' + e.loss.toFixed(4) + '</td>' +
         '<td style="padding:2px 8px">' + (e.acc * 100).toFixed(1) + '%</td>' +
         '<td style="padding:2px 8px">' + e.val_loss.toFixed(4) + '</td>' +
-        '<td style="padding:2px 8px;font-weight:700">' + (e.val_acc * 100).toFixed(1) + '%</td></tr>';
+        '<td style="padding:2px 8px;font-weight:700">' + (e.val_acc * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:2px 8px;color:var(--sec)">' + (e.epoch_time !== undefined ? _fmtSecs(e.epoch_time) : '—') + '</td></tr>';
     }).join("");
 
     var logTable = logRows
@@ -10705,6 +10768,7 @@ async function renderCNN(node) {
             '<th style="padding:2px 8px;text-align:left">Acc</th>' +
             '<th style="padding:2px 8px;text-align:left">Val loss</th>' +
             '<th style="padding:2px 8px;text-align:left">Val acc</th>' +
+            '<th style="padding:2px 8px;text-align:left">' + (_en ? "Time" : "Tiempo") + '</th>' +
           '</tr></thead><tbody>' + logRows + '</tbody></table></div>'
       : '';
 
@@ -10842,6 +10906,8 @@ async function renderCNN(node) {
     var rows = runs.map(function(r, i) {
       var best = (i === bestIdx);
       var cfg  = r.cfg || {};
+      var totalSec   = r.total_elapsed   ? _fmtSecs(r.total_elapsed)   : '—';
+      var avgEpSec   = r.avg_epoch_time  ? _fmtSecs(r.avg_epoch_time)  : '—';
       return '<tr style="' + (best ? "background:var(--tinted)" : "") + '">' +
         '<td style="padding:5px 8px">' +
           '<input type="text" value="' + r.run_name + '" data-run-idx="' + r.run_idx + '" ' +
@@ -10854,6 +10920,8 @@ async function renderCNN(node) {
         '</td>' +
         '<td style="padding:5px 8px;font-size:12px;text-align:right">' + (r.final_acc * 100).toFixed(1) + '%</td>' +
         '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:var(--accent)">' + (r.macro_f1 * 100).toFixed(1) + '%</td>' +
+        '<td style="padding:5px 8px;font-size:12px;text-align:right;color:var(--sec)">' + totalSec + '</td>' +
+        '<td style="padding:5px 8px;font-size:12px;text-align:right;color:var(--sec)">' + avgEpSec + '/ep</td>' +
       '</tr>';
     }).join("");
 
@@ -10868,6 +10936,8 @@ async function renderCNN(node) {
             '<th style="padding:5px 8px;text-align:left">' + (_en ? "Config" : "Config") + '</th>' +
             '<th style="padding:5px 8px;text-align:right">Acc</th>' +
             '<th style="padding:5px 8px;text-align:right">F1</th>' +
+            '<th style="padding:5px 8px;text-align:right">' + (_en ? "Total" : "Total") + '</th>' +
+            '<th style="padding:5px 8px;text-align:right">' + (_en ? "Avg/ep" : "Media/ep") + '</th>' +
           '</tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
         '</table></div>' +

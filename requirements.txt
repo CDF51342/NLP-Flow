@@ -14,6 +14,7 @@ datasets>=2.18.0
 torch>=2.0.0
 torchvision>=0.15.0
 pillow>=9.5.0
+kaggle>=1.6.0
 pyobjc-core>=9.0,<11.0
 pyobjc-framework-Cocoa>=9.0,<11.0
 pyobjc-framework-WebKit>=9.0,<11.0

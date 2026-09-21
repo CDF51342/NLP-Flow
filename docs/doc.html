@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NLP Flow v4 — Documentación</title>
+<title>NLP Flow — Documentación</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="shortcut icon" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -250,7 +250,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
     <span style="background:#121212"></span><span style="background:#19e68c"></span>
     <span style="background:#19e68c"></span><span style="background:#121212"></span>
   </div>
-  <span class="topbar-name">NLP Flow</span><span class="topbar-ver hide-mobile">v4</span>
+  <span class="topbar-name">NLP Flow</span>
   <div class="topbar-divider hide-mobile"></div>
   <nav class="topbar-nav">
     <a class="topbar-nav-link active" href="doc.html" id="nav-home">Home</a>
@@ -268,7 +268,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
   <!-- TOC sidebar -->
   <nav class="toc" id="tocNav">
     <div class="toc-group" id="tocGroupEs" style="display:none">
-      <div class="toc-group-label">NLP Flow v4</div>
+      <div class="toc-group-label">NLP Flow</div>
       <a class="toc-link" href="#es-start"     onclick="tocClick(this)">Inicio</a>
       <a class="toc-link" href="#es-setup"     onclick="tocClick(this)">Arranque</a>
       <a class="toc-link" href="#es-blocks"    onclick="tocClick(this)">Bloques</a>
@@ -276,7 +276,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <a class="toc-link" href="#es-more"      onclick="tocClick(this)">Más info</a>
     </div>
     <div class="toc-group" id="tocGroupEn">
-      <div class="toc-group-label">NLP Flow v4</div>
+      <div class="toc-group-label">NLP Flow</div>
       <a class="toc-link" href="#en-start"     onclick="tocClick(this)">Start</a>
       <a class="toc-link" href="#en-setup"     onclick="tocClick(this)">Setup</a>
       <a class="toc-link" href="#en-blocks"    onclick="tocClick(this)">Blocks</a>
@@ -291,7 +291,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
 
       <span class="sec-anchor" id="es-start"></span>
       <div class="hero">
-        <h1>NLP Flow <span>v4</span></h1>
+        <h1>NLP Flow</h1>
         <p>Entorno visual de machine learning basado en pipelines. Conecta bloques en un canvas, configura cada uno con doble clic y ejecuta el flujo completo con un botón. Sin código.</p>
         <div class="hero-badges">
           <span class="badge badge-green">Sin código</span>
@@ -397,7 +397,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
             <span style="background:#121212"></span><span style="background:#19e68c"></span>
             <span style="background:#19e68c"></span><span style="background:#121212"></span>
           </div>
-          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow</span>
         </div>
       </div>
     </div><!-- /es -->
@@ -406,7 +406,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
 
       <span class="sec-anchor" id="en-start"></span>
       <div class="hero">
-        <h1>NLP Flow <span>v4</span></h1>
+        <h1>NLP Flow</h1>
         <p>Visual machine learning environment based on pipelines. Connect blocks on a canvas, configure each one with a double-click, and run the full flow with a single button. No coding required.</p>
         <div class="hero-badges">
           <span class="badge badge-green">No code</span>
@@ -512,7 +512,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
             <span style="background:#121212"></span><span style="background:#19e68c"></span>
             <span style="background:#19e68c"></span><span style="background:#121212"></span>
           </div>
-          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow v4</span>
+          <span style="font-size:12px;font-weight:700;color:var(--ter)">NLP Flow</span>
         </div>
       </div>
     </div><!-- /en -->
@@ -581,8 +581,8 @@ var BLOCKS = {
     ],
     proc: [
       {id:'prep', icon:'🔧', name:'Preprocesado',
-       tagline:'Tabular: imputa, escala y codifica. NLP: limpieza y stopwords. Imagen: resize, normalización y data augmentation.',
-       desc:'Bloque compartido que se adapta al tipo de datos upstream. Tabular: imputa nulos, escala y codifica categóricas. NLP: lowercase, stopwords EN/ES, stemming o lemmatización. Imagen: resize, normalización, test split y data augmentation solo en train (x1–x5 copias). Vista previa en tiempo real.',
+       tagline:'Tabular: imputa, escala y codifica. NLP: limpieza y stopwords. Imagen: resize, batch size, normalización y data augmentation.',
+       desc:'Bloque compartido que se adapta al tipo de datos upstream. Tabular: imputa nulos, escala y codifica categóricas. NLP: lowercase, stopwords EN/ES, stemming o lemmatización, preview en vivo con filtro de clase. Imagen: resize (28–128 px), normalización ([0,1] o media/std), batch size configurable, test split (10/15/20/25%), data augmentation solo en train (flip horizontal, rotación ±15°, recorte aleatorio) con factor x1–x5. Vista previa en tiempo real.',
        ins:['Datos tabulares','Corpus de texto','Imágenes'], outs:['Datos procesados','Imágenes procesadas'],
        canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🔧',name:'Preprocesado',status:'Pipeline listo',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
@@ -624,11 +624,11 @@ var BLOCKS = {
        desc:'Interfaz de predicción en tiempo real. Escribe un texto en el modal y el modelo devuelve la clase predicha con la distribución de probabilidades por clase.',
        ins:['Modelo NLP'], outs:[],
        canvas:[{icon:'🧠',name:'Entrena (NLP)',out:true},{icon:'🎯',name:'Clasifica',status:'Predice aquí →',inp:true}]},
-      {id:'lda', icon:'🗂', name:'LDA',
-       tagline:'Topic modeling — extrae temas latentes del corpus.',
-       desc:'Aplica Latent Dirichlet Allocation con scikit-learn. Configurable: número de tópicos y palabras por tópico. Muestra las palabras más relevantes de cada tema.',
+      {id:'lda', icon:'🗂', name:'Topic Model',
+       tagline:'LDA — extrae temas latentes del corpus sin necesitar etiquetas.',
+       desc:'Aplica Latent Dirichlet Allocation con scikit-learn. Configurable: número de tópicos, tamaño de vocabulario e iteraciones. Muestra las palabras más relevantes de cada tema con coherencia C_V individual por tópico. Etiquetado automático de tópicos con LLM (Groq). El selector de documentos del Preprocesado upstream incluye filtro de clase para explorar documentos por categoría.',
        ins:['Datos tabulares'], outs:[],
-       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🗂',name:'LDA',status:'Temas →',inp:true}]},
+       canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🗂️',name:'Topic Model',status:'Temas →',inp:true}]},
     ],
     rag: [
       {id:'rag-chunk', icon:'✂️', name:'Chunking',
@@ -647,8 +647,8 @@ var BLOCKS = {
        ins:['Vectores'], outs:['Fragmentos'],
        canvas:[{icon:'🧬',name:'Embeddings',out:true},{icon:'🔎',name:'Retriever',status:'Consulta →',out:true,inp:true,rag:true}]},
       {id:'rag-llm', icon:'🤖', name:'LLM (RAG)',
-       tagline:'Genera respuesta sin RAG y con RAG en paralelo.',
-       desc:'Llama a Qwen/Qwen2.5-7B-Instruct vía el router de Hugging Face (requiere HF_TOKEN en .env). Genera dos respuestas en paralelo: sin contexto (sin RAG) y con los fragmentos recuperados como contexto (con RAG). Ambas respuestas se muestran lado a lado con markdown renderizado. El system prompt es editable.',
+       tagline:'Genera respuesta sin RAG y con RAG en paralelo. Soporta Groq y Hugging Face.',
+       desc:'Soporta dos proveedores configurables en .env: Groq (GROQ_API_KEY, default llama-3.1-8b-instant) y Hugging Face (HF_TOKEN, default Qwen/Qwen2.5-7B-Instruct). Genera dos respuestas en paralelo: sin contexto (sin RAG) y con los fragmentos recuperados como contexto (con RAG). Ambas se muestran lado a lado con markdown renderizado. El system prompt es editable.',
        ins:['Fragmentos'], outs:['Respuesta LLM'],
        canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Respuesta →',out:true,inp:true,rag:true}]},
     ],
@@ -680,8 +680,8 @@ var BLOCKS = {
     ],
     proc: [
       {id:'prep', icon:'🔧', name:'Preprocessing',
-       tagline:'Tabular: impute, scale, encode. NLP: cleaning and stopwords. Image: resize, normalisation and data augmentation.',
-       desc:'Shared block that adapts to upstream data. Tabular: impute nulls, scale and encode categoricals. NLP: lowercase, EN/ES stopwords, stemming or lemmatisation. Image: resize, normalisation, test split and data augmentation on train only (x1–x5 copies). Real-time preview.',
+       tagline:'Tabular: impute, scale, encode. NLP: cleaning and stopwords. Image: resize, batch size, normalisation and data augmentation.',
+       desc:'Shared block that adapts to upstream data. Tabular: impute nulls, scale and encode categoricals. NLP: lowercase, EN/ES stopwords, stemming or lemmatisation, live preview with class filter. Image: resize (28–128 px), normalisation ([0,1] or mean/std), configurable batch size, test split (10/15/20/25%), data augmentation on train only (horizontal flip, ±15° rotation, random crop) with x1–x5 factor. Real-time preview.',
        ins:['Tabular data','Text corpus','Images'], outs:['Processed data','Processed images'],
        canvas:[{icon:'📂',name:'Data',out:true},{icon:'🔧',name:'Preprocessing',status:'Pipeline ready',out:true,inp:true}]},
       {id:'plots', icon:'📊', name:'Plots',
@@ -723,11 +723,11 @@ var BLOCKS = {
        desc:'Real-time prediction interface. Type a text in the modal and the model returns the predicted class with per-class probability distribution.',
        ins:['NLP model'], outs:[],
        canvas:[{icon:'🧠',name:'Train (NLP)',out:true},{icon:'🎯',name:'Classify',status:'Predict here →',inp:true}]},
-      {id:'lda', icon:'🗂', name:'LDA',
-       tagline:'Topic modelling — extract latent topics from the corpus.',
-       desc:'Applies Latent Dirichlet Allocation with scikit-learn. Configurable: number of topics and words per topic. Shows the most relevant words for each theme.',
+      {id:'lda', icon:'🗂', name:'Topic Model',
+       tagline:'LDA — extract latent topics from the corpus with no labels needed.',
+       desc:'Applies Latent Dirichlet Allocation with scikit-learn. Configurable: number of topics, vocabulary size and iterations. Shows the most relevant words per topic with individual C_V coherence. Automatic topic labelling with LLM (Groq). The upstream Preprocessing document selector includes a class filter to browse documents by category.',
        ins:['Tabular data'], outs:[],
-       canvas:[{icon:'📂',name:'Data',out:true},{icon:'🗂',name:'LDA',status:'Topics →',inp:true}]},
+       canvas:[{icon:'📂',name:'Data',out:true},{icon:'🗂️',name:'Topic Model',status:'Topics →',inp:true}]},
     ],
     rag: [
       {id:'rag-chunk', icon:'✂️', name:'Chunking',
@@ -746,8 +746,8 @@ var BLOCKS = {
        ins:['Vectors'], outs:['Fragments'],
        canvas:[{icon:'🧬',name:'Embeddings',out:true},{icon:'🔎',name:'Retriever',status:'Query →',out:true,inp:true,rag:true}]},
       {id:'rag-llm', icon:'🤖', name:'LLM (RAG)',
-       tagline:'Generate responses without and with RAG in parallel.',
-       desc:'Calls Qwen/Qwen2.5-7B-Instruct via the Hugging Face router (requires HF_TOKEN in .env). Generates two responses in parallel: without context (without RAG) and with the retrieved fragments as context (with RAG). Both responses are shown side by side with rendered markdown. The system prompt is editable.',
+       tagline:'Generate responses without and with RAG in parallel. Supports Groq and Hugging Face.',
+       desc:'Supports two configurable providers via .env: Groq (GROQ_API_KEY, default llama-3.1-8b-instant) and Hugging Face (HF_TOKEN, default Qwen/Qwen2.5-7B-Instruct). Generates two responses in parallel: without context (without RAG) and with the retrieved fragments as context (with RAG). Both are shown side by side with rendered markdown. The system prompt is editable.',
        ins:['Fragments'], outs:['LLM response'],
        canvas:[{icon:'🔎',name:'Retriever',out:true},{icon:'🤖',name:'LLM (RAG)',status:'Response →',out:true,inp:true,rag:true}]},
     ],

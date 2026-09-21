@@ -3,7 +3,7 @@ import threading, time, os, queue as _queue_mod
 import webview
 from server import app, PORT, cleanup_hf_cache, _DIALOG_REQ, _DIALOG_RES
 
-ICON = os.path.join(os.path.dirname(__file__), "icon.png")
+ICON = os.path.join(os.path.dirname(__file__), "static", "icon-nlpflow.png")
 
 def start_server():
     app.run(port=PORT, debug=False, use_reloader=False, threaded=True)

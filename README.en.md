@@ -1,4 +1,4 @@
-# NLP Flow v4
+# NLP Flow
 
 > [🇪🇸 Español](README.md) | 🇬🇧 English | [📖 Interactive docs](https://cdf51342.github.io/NLP-flow/doc.html)
 
@@ -36,10 +36,16 @@ nlp-flow4/
 ├── main.py              # Launcher: Flask + native window
 ├── server.py            # Flask backend — 80+ ML routes
 ├── requirements.txt     # Python dependencies
-├── .env                 # Environment variables (GROQ_API_KEY, etc.)
-└── static/
-    ├── index.html       # SPA frontend — canvas, blocks, modals
-    └── style.css        # Styles
+├── .env                 # Environment variables (GROQ_API_KEY, HF_TOKEN, etc.)
+├── static/
+│   ├── index.html       # SPA frontend — canvas, blocks, modals
+│   ├── favicon.png      # App icon
+│   └── style.css        # Styles
+└── docs/
+    ├── index.html       # Documentation landing page
+    ├── doc.html         # Interactive block reference
+    ├── pipelines.html   # Typical pipeline guide
+    └── favicon.svg      # Icon for the documentation site
 ```
 
 ---
@@ -213,11 +219,16 @@ The app supports **Spanish and English**. Switch language from the selector in t
 
 ## Environment setup (RAG / LLM)
 
-The LLM (RAG) block uses **Groq** as its provider. Create a `.env` file in the project root:
+The LLM (RAG) block supports two providers. Create a `.env` file in the project root:
 
 ```
+# Groq provider (default)
 GROQ_API_KEY=your_groq_key
 GROQ_MODEL=llama-3.1-8b-instant   # optional, this is the default
+
+# Hugging Face provider (alternative)
+HF_TOKEN=your_hf_token
+HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct   # optional, this is the default HF model
 ```
 
 Embeddings (🧬 Embeddings block) work without a key — they use `all-MiniLM-L6-v2` from Sentence Transformers.
