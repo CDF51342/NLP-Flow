@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "NLP Flow"
+authors:
+  - family-names: Díez-Fenoy
+    given-names: Carlos
+    orcid: "https://orcid.org/0009-0008-5225-3575"
+repository-code: "https://github.com/CDF51342/NLP-flow"
+license: MIT
+year: 2026
