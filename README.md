@@ -8,56 +8,56 @@
   &nbsp;NLP Flow
 </h1>
 
-🇪🇸 Español | [🇬🇧 English](README.en.md) | [📖 Documentación interactiva](https://cdf51342.github.io/NLP-flow/doc.html)
+[🇪🇸 Español](README.md) | 🇬🇧 English | [📖 Interactive docs](https://cdf51342.github.io/NLP-Flow/doc.html)
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-64748b?style=for-the-badge)]()
 
-Entorno visual de machine learning basado en pipelines — sin escribir código.
+A visual, node-based machine learning environment — no code required.
 
-![Demo de NLP Flow](docs/assets/demo.gif)
+![NLP Flow demo](docs/assets/demo.gif)
 
 </div>
 
 ---
 
-## ¿Qué es?
+## What is it?
 
-NLP Flow es una herramienta educativa y de investigación para explorar modelos de machine learning de forma visual. Diseñada para estudiantes, docentes e investigadores que quieren experimentar con pipelines de datos, NLP, visión artificial y RAG sin necesidad de programar.
+NLP Flow is an educational and research tool for exploring machine learning models visually. Designed for students, teachers, and researchers who want to experiment with data, NLP, computer vision, and RAG pipelines without programming.
 
-**Casos de uso:**
-- Enseñanza de ML en aula sin entorno de programación
-- Prototipado rápido de pipelines de NLP o visión por computador
-- Exploración exploratoria de datasets tabulares y de texto
-- Demostración de conceptos (Topic Model, Autoencoder, RAG)
+**Use cases:**
+- Teaching ML in the classroom without a coding environment
+- Rapid prototyping of NLP or computer vision pipelines
+- Exploratory analysis of tabular and text datasets
+- Demonstrating concepts (Topic Models, Autoencoders, RAG)
 
 ---
 
-## Estructura del proyecto
+## Project structure
 
 ```
 NLP-flow/
-├── main.py              # Lanzador — Flask + ventana nativa (pywebview)
-├── server.py            # Backend Flask — rutas de ML, entrenamiento, exportación
-├── requirements.txt     # Dependencias Python
-├── .env                 # Variables de entorno (no incluido en el repo)
+├── main.py              # Launcher — Flask + native window (pywebview)
+├── server.py            # Flask backend — ML routes, training, export
+├── requirements.txt     # Python dependencies
+├── .env                 # Environment variables (not included in repo)
 ├── static/
-│   ├── index.html       # Frontend SPA — canvas, bloques, modales
-│   ├── icon-nlpflow.png # Icono de la app
-│   └── style.css        # Estilos
+│   ├── index.html       # SPA frontend — canvas, blocks, modals
+│   ├── icon-nlpflow.png # App icon
+│   └── style.css        # Styles
 └── docs/
-    ├── index.html       # Página de inicio de la documentación
-    ├── doc.html         # Documentación interactiva de bloques
-    ├── pipelines.html   # Guía de pipelines
-    └── assets/          # Imágenes, GIFs y vídeos para documentación
+    ├── index.html       # Documentation landing page
+    ├── doc.html         # Interactive block documentation
+    ├── pipelines.html   # Pipeline guide
+    └── assets/          # Images, GIFs, and videos for documentation
 ```
 
 ---
 
-## Instalación
+## Installation
 
-**Requisitos:** Python 3.10 o superior.
+**Requirements:** Python 3.10 or higher.
 
 ```bash
 git clone https://github.com/CDF51342/NLP-flow.git
@@ -65,67 +65,67 @@ cd NLP-flow
 pip install -r requirements.txt
 ```
 
-Crea un fichero `.env` en la raíz si quieres usar el bloque LLM (RAG):
+Create a `.env` file in the project root if you want to use the LLM (RAG) block:
 
 ```
-GROQ_API_KEY=tu_clave_groq        # https://console.groq.com
-HF_TOKEN=tu_token_hf              # alternativa: Hugging Face
+GROQ_API_KEY=your_groq_key        # https://console.groq.com
+HF_TOKEN=your_hf_token            # alternative: Hugging Face
 ```
 
-Los embeddings funcionan sin clave — usan `all-MiniLM-L6-v2` de Sentence Transformers.
+Embeddings work without any key — they use `all-MiniLM-L6-v2` from Sentence Transformers.
 
 ---
 
-## Uso
+## Usage
 
-**Modo escritorio** (ventana nativa):
+**Desktop mode** (native window):
 
 ```bash
 python main.py
 ```
 
-**Solo navegador** (sin dependencia de pywebview):
+**Browser only** (no pywebview dependency):
 
 ```bash
 python server.py
-# Abre http://localhost:5053
+# Open http://localhost:5053
 ```
 
 ---
 
-## Configuración de entorno
+## Environment configuration
 
-El bloque **🤖 LLM (RAG)** admite dos proveedores. Crea un fichero `.env` en la raíz:
+The **🤖 LLM (RAG)** block supports two providers. Create a `.env` file in the project root:
 
 ```
-# Proveedor Groq (por defecto)
-GROQ_API_KEY=tu_clave_groq
-GROQ_MODEL=llama-3.1-8b-instant   # opcional
+# Groq provider (default)
+GROQ_API_KEY=your_groq_key
+GROQ_MODEL=llama-3.1-8b-instant   # optional
 
-# Proveedor Hugging Face (alternativo)
-HF_TOKEN=tu_token_hf
+# Hugging Face provider (alternative)
+HF_TOKEN=your_hf_token
 HF_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
 ```
 
 ---
 
-## Guardar y cargar el canvas
+## Saving and loading the canvas
 
-- **💾 Guardar sesión (.zip)** — exporta canvas + configuración + estado de los bloques
-- **📂 Cargar sesión (.zip)** — restaura un canvas guardado
-- **🗺 Exportar canvas (.json)** — solo estructura de bloques y conexiones
+- **💾 Save session (.zip)** — exports canvas + configuration + block state
+- **📂 Load session (.zip)** — restores a saved canvas
+- **🗺 Export canvas (.json)** — block structure and connections only
 
-> Los datos cargados en el servidor no se persisten entre sesiones. Al restaurar un canvas, vuelve a cargar el CSV en el bloque Datos.
+> Server-side data is not persisted between sessions. When restoring a canvas, reload the CSV in the Data block.
 
 ---
 
-## Licencia
+## License
 
-Distribuido bajo la licencia [MIT](LICENSE) © 2026 Carlos Díez-Fenoy.
+Distributed under the [MIT](LICENSE) license © 2026 Carlos Díez-Fenoy.
 
-La licencia MIT permite usar, copiar, modificar y distribuir este software libremente. La única condición es mantener el aviso de copyright original en cualquier copia o redistribución.
+The MIT license allows you to use, copy, modify, and distribute this software freely. The only requirement is to keep the original copyright notice in any copy or redistribution.
 
-Para citar este software en trabajos académicos, usa el botón **"Cite this repository"** de GitHub (archivo `CITATION.cff`) o el siguiente formato BibTeX:
+To cite this software in academic work, use the **"Cite this repository"** button on GitHub (via `CITATION.cff`) or the following BibTeX entry:
 
 ```bibtex
 @software{diezfenoy2026nlpflow,
@@ -139,7 +139,7 @@ Para citar este software en trabajos académicos, usa el botón **"Cite this rep
 
 ---
 
-## Créditos
+## Credits
 
 <p>
 <strong>Carlos Díez-Fenoy</strong> &nbsp;
