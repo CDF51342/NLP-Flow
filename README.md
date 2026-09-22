@@ -82,7 +82,7 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 | Bloque | Puertos | Descripción |
 |--------|---------|-------------|
 | 🧠 **Entrenamiento NLP** | entrada + salida | Pipeline TF-IDF + clasificador (Naive Bayes, Regresión Logística, KNN, Random Forest, SVM). Validación cruzada y grid search de hiperparámetros. |
-| 🗂️ **Topic Model** | entrada + salida | LDA para descubrir temas latentes en corpus de texto. Configurable: nº de tópicos, vocabulario, iteraciones. Coherencia C_V individual por tópico. Etiquetado automático de tópicos con LLM (Groq). |
+| 🗂️ **Topic Model** | entrada + salida | LDA, NMF y LSA para descubrir temas latentes en corpus de texto sin etiquetas. Configurable: nº de tópicos, vocabulario, iteraciones, min_df, max_df, alpha y beta (LDA). Coherencia C_V y C_NPMI por tópico, topic diversity. Etiquetado automático de tópicos con LLM (Groq). |
 | 🎯 **Clasificar NLP** | solo entrada | Clasifica nuevas muestras de texto con el modelo NLP entrenado. Muestra clase predicha y distribución de probabilidades. |
 
 ### Pipeline RAG
@@ -100,6 +100,7 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 |--------|---------|-------------|
 | 📷 **Datos Imagen** | solo salida | Descarga automática de MNIST (70 000 imágenes, dígitos 0–9), Chihuahua vs Muffin (299 imgs, color) o Cats vs Dogs (~23 000 imgs, ~720 MB, muestra de 2 000). Muestra distribución de clases y ejemplos por clase. |
 | 🧠 **CNN Clasificación** | entrada + salida | CNN entrenada desde cero con PyTorch en CPU. Configurable: épocas (1–20), learning rate, capas conv (1–3), val split. Progreso en tiempo real con curvas de loss/accuracy. Sistema de runs: múltiples configuraciones comparables y renombrables. El botón Train se bloquea durante el entrenamiento. |
+| 🔄 **Autoencoder** | entrada + salida | Autoencoder convolucional entrenado desde cero con PyTorch. Aprende a comprimir y reconstruir imágenes sin etiquetas. Configurable: bottleneck (nº de neuronas en el cuello de botella), épocas (1–30), learning rate, arquitectura (auto/wide/deep), función de pérdida (MSE o BCE). Exploración interactiva del espacio latente con slider de ruido. Comparativa de runs por MSE de test. Informe HTML exportable. |
 
 ---
 
@@ -136,6 +137,11 @@ Cada bloque tiene puertos de **entrada** (●—) y/o **salida** (—●). Se co
 **Clasificación de imagen (CNN):**
 ```
 📷 Datos Imagen → 🔧 Preprocesado → 🧠 CNN Clasificación → 📋 Evaluación → 💾 Guardar
+```
+
+**Autoencoder (compresión y reconstrucción):**
+```
+📷 Datos Imagen → 🔧 Preprocesado → 🔄 Autoencoder → 💾 Guardar
 ```
 
 ---

@@ -625,8 +625,8 @@ var BLOCKS = {
        ins:['Modelo NLP'], outs:[],
        canvas:[{icon:'🧠',name:'Entrena (NLP)',out:true},{icon:'🎯',name:'Clasifica',status:'Predice aquí →',inp:true}]},
       {id:'lda', icon:'🗂', name:'Topic Model',
-       tagline:'LDA — extrae temas latentes del corpus sin necesitar etiquetas.',
-       desc:'Aplica Latent Dirichlet Allocation con scikit-learn. Configurable: número de tópicos, tamaño de vocabulario e iteraciones. Muestra las palabras más relevantes de cada tema con coherencia C_V individual por tópico. Etiquetado automático de tópicos con LLM (Groq). El selector de documentos del Preprocesado upstream incluye filtro de clase para explorar documentos por categoría.',
+       tagline:'LDA, NMF y LSA — extrae temas latentes del corpus sin necesitar etiquetas.',
+       desc:'Soporta tres algoritmos: LDA (probabilístico, ideal para corpus grandes), NMF (factorización matricial, tópicos más limpios) y LSA (álgebra lineal/SVD, captura sinónimos). Configurable: número de tópicos, vocabulario, iteraciones, min_df, max_df, stopwords, alpha y beta (solo LDA). Muestra coherencia C_V y C_NPMI por tópico, topic diversity global y distribución de documentos. Etiquetado automático de tópicos con LLM (Groq). El selector upstream incluye filtro de clase.',
        ins:['Datos tabulares'], outs:[],
        canvas:[{icon:'📂',name:'Datos',out:true},{icon:'🗂️',name:'Topic Model',status:'Temas →',inp:true}]},
     ],
@@ -663,6 +663,11 @@ var BLOCKS = {
        desc:'Entrena una CNN convolucional desde cero con PyTorch sobre CPU. Configurable: épocas (1–20), learning rate (0.01/0.001/0.0001), número de capas conv (1–3) y val split (10/20/30%). El entrenamiento muestra progreso epoch a epoch con curvas de loss y accuracy en tiempo real. Al terminar: accuracy de test, F1 macro, precisión y recall por clase, matriz de confusión e imágenes mal clasificadas. Sistema de runs: entrena varias configuraciones y compáralas. El botón Train se bloquea durante el entrenamiento.',
        ins:['Imágenes procesadas'], outs:['Modelo CNN'],
        canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'🧠',name:'CNN',status:'acc 94.2% · F1 93.8%',out:true,inp:true}]},
+      {id:'autoencoder', icon:'🔄', name:'Autoencoder',
+       tagline:'Comprime y reconstruye imágenes sin etiquetas. Explora el espacio latente.',
+       desc:'Autoencoder convolucional entrenado desde cero con PyTorch. Aprende a comprimir cada imagen en un vector latente y reconstruirla. Configurable: bottleneck (neuronas en el cuello de botella, 8–128), épocas (1–30), learning rate, arquitectura (auto/wide/deep) y función de pérdida (MSE o BCE). Pestaña Explorar: selecciona una imagen y añade ruido con un slider para ver cómo varía la reconstrucción en tiempo real. Pestaña Comparar: comparativa de runs por MSE de test. Informe HTML exportable en ES/EN.',
+       ins:['Imágenes procesadas'], outs:['Modelo AE'],
+       canvas:[{icon:'🔧',name:'Preprocesado',out:true},{icon:'🔄',name:'Autoencoder',status:'MSE 0.012',out:true,inp:true}]},
     ]
   },
   en: {
@@ -724,8 +729,8 @@ var BLOCKS = {
        ins:['NLP model'], outs:[],
        canvas:[{icon:'🧠',name:'Train (NLP)',out:true},{icon:'🎯',name:'Classify',status:'Predict here →',inp:true}]},
       {id:'lda', icon:'🗂', name:'Topic Model',
-       tagline:'LDA — extract latent topics from the corpus with no labels needed.',
-       desc:'Applies Latent Dirichlet Allocation with scikit-learn. Configurable: number of topics, vocabulary size and iterations. Shows the most relevant words per topic with individual C_V coherence. Automatic topic labelling with LLM (Groq). The upstream Preprocessing document selector includes a class filter to browse documents by category.',
+       tagline:'LDA, NMF and LSA — extract latent topics from the corpus with no labels needed.',
+       desc:'Supports three algorithms: LDA (probabilistic, ideal for large corpora), NMF (matrix factorisation, cleaner topics) and LSA (linear algebra/SVD, captures synonyms). Configurable: number of topics, vocabulary, iterations, min_df, max_df, stopwords, alpha and beta (LDA only). Shows C_V and C_NPMI coherence per topic, global topic diversity and document distribution. Automatic topic labelling with LLM (Groq). The upstream selector includes a class filter.',
        ins:['Tabular data'], outs:[],
        canvas:[{icon:'📂',name:'Data',out:true},{icon:'🗂️',name:'Topic Model',status:'Topics →',inp:true}]},
     ],
@@ -762,6 +767,11 @@ var BLOCKS = {
        desc:'Trains a convolutional neural network from scratch with PyTorch on CPU. Configurable: epochs (1–20), learning rate (0.01/0.001/0.0001), number of conv layers (1–3) and val split (10/20/30%). Training shows epoch-by-epoch progress with live loss and accuracy curves. On completion: test accuracy, macro F1, per-class precision and recall, confusion matrix and misclassified images. Runs system: train multiple configurations and compare them. The Train button locks during training.',
        ins:['Processed images'], outs:['CNN model'],
        canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'🧠',name:'CNN',status:'acc 94.2% · F1 93.8%',out:true,inp:true}]},
+      {id:'autoencoder', icon:'🔄', name:'Autoencoder',
+       tagline:'Compress and reconstruct images without labels. Explore the latent space.',
+       desc:'Convolutional autoencoder trained from scratch with PyTorch. Learns to compress each image into a latent vector and reconstruct it without needing labels. Configurable: bottleneck (neurons in the compression layer, 8–128), epochs (1–30), learning rate, architecture (auto/wide/deep) and loss function (MSE or BCE). Explore tab: select an image and add noise with a slider to see reconstructions change in real time. Compare tab: run comparison by test MSE. Exportable HTML report in ES/EN.',
+       ins:['Processed images'], outs:['AE model'],
+       canvas:[{icon:'🔧',name:'Preprocessing',out:true},{icon:'🔄',name:'Autoencoder',status:'MSE 0.012',out:true,inp:true}]},
     ]
   }
 };

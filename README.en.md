@@ -82,7 +82,7 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 | Block | Ports | Description |
 |-------|-------|-------------|
 | 🧠 **NLP Training** | input + output | TF-IDF + classifier pipeline (Naive Bayes, Logistic Regression, KNN, Random Forest, SVM). Cross-validation and hyperparameter grid search. |
-| 🗂️ **Topic Model** | input + output | LDA to discover latent topics in a text corpus. Configurable: number of topics, vocabulary, iterations. Individual C_V coherence per topic. Automatic topic labelling with LLM (Groq). |
+| 🗂️ **Topic Model** | input + output | LDA, NMF and LSA to discover latent topics in a text corpus without labels. Configurable: number of topics, vocabulary, iterations, min_df, max_df, alpha and beta (LDA). C_V and C_NPMI coherence per topic, topic diversity. Automatic topic labelling with LLM (Groq). |
 | 🎯 **Classify NLP** | input only | Classify new text samples using a trained NLP model. Shows predicted class and probability distribution. |
 
 ### RAG pipeline
@@ -100,6 +100,7 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 |-------|-------|-------------|
 | 📷 **Image Data** | output only | Automatic download of MNIST (70,000 images, digits 0–9), Chihuahua vs Muffin (299 colour images) or Cats vs Dogs (~23,000 images, ~720 MB, 2,000-image sample). Shows class distribution and per-class examples. |
 | 🧠 **CNN Classification** | input + output | CNN trained from scratch with PyTorch on CPU. Configurable: epochs (1–20), learning rate, conv layers (1–3), val split. Real-time progress with loss/accuracy curves. Runs system: multiple configurations comparable and renameable. Train button locks during training. |
+| 🔄 **Autoencoder** | input + output | Convolutional autoencoder trained from scratch with PyTorch. Learns to compress and reconstruct images without labels. Configurable: bottleneck (neurons in the compression layer), epochs (1–30), learning rate, architecture (auto/wide/deep), loss function (MSE or BCE). Interactive latent space exploration with noise slider. Run comparison by test MSE. Exportable HTML report. |
 
 ---
 
@@ -136,6 +137,11 @@ Each block has **input** (●—) and/or **output** (—●) ports. Connect bloc
 **Image classification (CNN):**
 ```
 📷 Image Data → 🔧 Preprocessing → 🧠 CNN Classification → 📋 Evaluation → 💾 Save
+```
+
+**Autoencoder (compression and reconstruction):**
+```
+📷 Image Data → 🔧 Preprocessing → 🔄 Autoencoder → 💾 Save
 ```
 
 ---

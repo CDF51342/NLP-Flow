@@ -158,6 +158,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <a class="toc-link" href="#es-topic"     onclick="tocClick(this)">Topic Model</a>
       <a class="toc-link" href="#es-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#es-vision"    onclick="tocClick(this)">Visión CNN</a>
+      <a class="toc-link" href="#es-ae"        onclick="tocClick(this)">Autoencoder</a>
     </div>
     <div class="toc-group" id="tocGroupEn">
       <div class="toc-group-label">Typical</div>
@@ -169,6 +170,7 @@ h3{font-size:13.5px;font-weight:700;margin:16px 0 8px}
       <a class="toc-link" href="#en-topic"     onclick="tocClick(this)">Topic Model</a>
       <a class="toc-link" href="#en-rag"       onclick="tocClick(this)">RAG</a>
       <a class="toc-link" href="#en-vision"    onclick="tocClick(this)">CNN Vision</a>
+      <a class="toc-link" href="#en-ae"        onclick="tocClick(this)">Autoencoder</a>
     </div>
   </nav>
 
@@ -448,6 +450,54 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
           <tr><td>❌ Errores</td><td>Imágenes mal clasificadas (top losses) y matriz de confusión del run seleccionado.</td></tr>
         </table></div>
         <div class="note">El informe HTML completo (con gráficas, métricas e imágenes predichas) se descarga en ES o EN desde el bloque <strong>💾 Guardar</strong> — se abre el diálogo nativo del sistema operativo.</div>
+      </div>
+
+      <span class="sec-anchor" id="es-ae"></span>
+      <div class="sec-title">Pipeline Autoencoder</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">¿Qué es un Autoencoder?</div>
+        <p>Un <strong>autoencoder</strong> es una red neuronal no supervisada que aprende a <em>comprimir</em> una imagen a un vector de baja dimensión (espacio latente) y luego <em>reconstruirla</em> desde ese vector. No necesita etiquetas — el objetivo es que la imagen de salida sea lo más parecida posible a la de entrada. Es la introducción ideal al concepto de <em>representación</em> en deep learning.</p>
+        <h3>Flujo completo</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📷 Datos Imagen</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocesado</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔄 Autoencoder</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Guardar</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Parámetros configurables</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Parámetro</th><th>Opciones</th><th>Efecto</th></tr>
+            <tr><td>Bottleneck</td><td>8–128 neuronas</td><td>Dimensión del espacio latente. Valores bajos comprimen más (mayor pérdida), valores altos conservan más detalle.</td></tr>
+            <tr><td>Épocas</td><td>1–30</td><td>Nº de pasadas completas sobre el dataset de entrenamiento.</td></tr>
+            <tr><td>Learning rate</td><td>0.01 / 0.001 / 0.0001</td><td>Velocidad de ajuste de pesos. 0.001 es un buen punto de partida.</td></tr>
+            <tr><td>Arquitectura</td><td>auto / wide / deep</td><td>Capas intermedias: auto (equilibrado), wide (capas anchas), deep (más capas intermedias).</td></tr>
+            <tr><td>Función de pérdida</td><td>MSE / BCE</td><td>MSE (error cuadrático medio): general. BCE (entropía cruzada binaria): mejor si píxeles normalizados a [0,1].</td></tr>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Lo que ve el estudiante</div>
+          <ul>
+            <li><strong>Curva de pérdida</strong> — evolución del MSE/BCE por época en entrenamiento y validación</li>
+            <li><strong>Pestaña Explorar</strong> — selecciona una imagen de test, ajusta el slider de ruido y observa cómo cambia la reconstrucción en tiempo real</li>
+            <li><strong>Pestaña Comparar</strong> — tabla de runs con MSE de test; visualiza original vs reconstruida para cada run</li>
+            <li><strong>Informe HTML</strong> — exportable en ES o EN desde el bloque Guardar</li>
+          </ul>
+          <div class="note">A diferencia de la CNN, el Autoencoder usa <em>todas</em> las imágenes (sin split de test con labels) porque el objetivo es reconstrucción, no clasificación.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Diferencias clave respecto a la CNN</div>
+        <div class="tbl-wrap"><table>
+          <tr><th></th><th>CNN Clasificación</th><th>Autoencoder</th></tr>
+          <tr><td>Supervisión</td><td>Supervisado (necesita etiquetas)</td><td>No supervisado (sin etiquetas)</td></tr>
+          <tr><td>Objetivo</td><td>Predecir clase de la imagen</td><td>Reconstruir la imagen de entrada</td></tr>
+          <tr><td>Métrica principal</td><td>Accuracy / F1</td><td>MSE / BCE de reconstrucción</td></tr>
+          <tr><td>Bloque Evaluación</td><td>Sí — pestañas Comparar, Informe, Predecir, Errores</td><td>No — la evaluación está integrada en el propio bloque AE</td></tr>
+          <tr><td>Uso del dataset</td><td>Train / val / test con labels</td><td>Todas las imágenes (sin labels)</td></tr>
+        </table></div>
       </div>
 
       <div class="footer">
@@ -739,6 +789,54 @@ HF_LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct</code></pre>
         <div class="note">The full HTML report (with charts, metrics and predicted images) is downloaded in ES or EN from the <strong>💾 Save</strong> block — the native OS save dialog appears.</div>
       </div>
 
+      <span class="sec-anchor" id="en-ae"></span>
+      <div class="sec-title">Autoencoder Pipeline</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-label">What is an Autoencoder?</div>
+        <p>An <strong>autoencoder</strong> is an unsupervised neural network that learns to <em>compress</em> an image into a low-dimensional vector (latent space) and then <em>reconstruct</em> it from that vector. No labels are needed — the goal is for the output image to be as close as possible to the input. It is the ideal introduction to the concept of <em>representation learning</em> in deep learning.</p>
+        <h3>Full pipeline</h3>
+        <div class="pipeline-wrap"><div class="pipeline">
+          <div class="pip-node">📷 Image Data</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔧 Preprocessing</div><div class="pip-arrow"></div>
+          <div class="pip-node">🔄 Autoencoder</div><div class="pip-arrow"></div>
+          <div class="pip-node">💾 Save</div>
+        </div></div>
+      </div>
+      <div class="row-2">
+        <div class="card">
+          <div class="card-label">Configurable parameters</div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Parameter</th><th>Options</th><th>Effect</th></tr>
+            <tr><td>Bottleneck</td><td>8–128 neurons</td><td>Latent space dimension. Low values compress more (higher loss); high values preserve more detail.</td></tr>
+            <tr><td>Epochs</td><td>1–30</td><td>Number of full passes over the training dataset.</td></tr>
+            <tr><td>Learning rate</td><td>0.01 / 0.001 / 0.0001</td><td>Speed at which weights are adjusted. 0.001 is a good starting point.</td></tr>
+            <tr><td>Architecture</td><td>auto / wide / deep</td><td>Intermediate layers: auto (balanced), wide (wider layers), deep (more intermediate layers).</td></tr>
+            <tr><td>Loss function</td><td>MSE / BCE</td><td>MSE (mean squared error): general purpose. BCE (binary cross-entropy): better when pixels are normalised to [0,1].</td></tr>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-label">What the student sees</div>
+          <ul>
+            <li><strong>Loss curve</strong> — MSE/BCE evolution per epoch for training and validation</li>
+            <li><strong>Explore tab</strong> — select a test image, adjust the noise slider and watch the reconstruction change in real time</li>
+            <li><strong>Compare tab</strong> — run table with test MSE; view original vs reconstructed for each run</li>
+            <li><strong>HTML report</strong> — exportable in ES or EN from the Save block</li>
+          </ul>
+          <div class="note">Unlike the CNN, the Autoencoder uses <em>all</em> images (no label-based test split) because the objective is reconstruction, not classification.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Key differences vs CNN Classification</div>
+        <div class="tbl-wrap"><table>
+          <tr><th></th><th>CNN Classification</th><th>Autoencoder</th></tr>
+          <tr><td>Supervision</td><td>Supervised (requires labels)</td><td>Unsupervised (no labels)</td></tr>
+          <tr><td>Objective</td><td>Predict image class</td><td>Reconstruct the input image</td></tr>
+          <tr><td>Main metric</td><td>Accuracy / F1</td><td>Reconstruction MSE / BCE</td></tr>
+          <tr><td>Evaluation block</td><td>Yes — Compare, Report, Predict, Errors tabs</td><td>No — evaluation is built into the AE block itself</td></tr>
+          <tr><td>Dataset usage</td><td>Train / val / test with labels</td><td>All images (no labels)</td></tr>
+        </table></div>
+      </div>
+
       <div class="footer">
         <div class="footer-credits">Developed by <strong>Carlos Díez-Fenoy</strong> · <a href="https://github.com/cdf51342" target="_blank" rel="noopener">@CDF51342 on GitHub ↗</a></div>
         <div class="footer-logo">
@@ -787,8 +885,8 @@ function tocClick(el){
 
 window.addEventListener('scroll', function(){
   var ids = _lang==='es'
-    ? ['es-pipelines','es-regression','es-classification','es-exploration','es-nlp','es-topic','es-rag','es-vision']
-    : ['en-pipelines','en-regression','en-classification','en-exploration','en-nlp','en-topic','en-rag','en-vision'];
+    ? ['es-pipelines','es-regression','es-classification','es-exploration','es-nlp','es-topic','es-rag','es-vision','es-ae']
+    : ['en-pipelines','en-regression','en-classification','en-exploration','en-nlp','en-topic','en-rag','en-vision','en-ae'];
   var current = ids[0];
   ids.forEach(function(id){
     var el = document.getElementById(id);
