@@ -1,13 +1,12 @@
 <div align="center">
 
-<table border="0" cellspacing="0" cellpadding="0"><tr>
-<td><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark-bg.png">
-  <img src="static/icon-nlpflow.png" alt="NLP Flow" width="72">
-</picture></td>
-<td>&nbsp;&nbsp;</td>
-<td><h1>NLP Flow</h1></td>
-</tr></table>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark-bg.png">
+    <img src="static/icon-nlpflow.png" alt="NLP Flow" width="60" valign="middle" hspace="8">
+  </picture>
+  &nbsp;NLP Flow
+</h1>
 
 🇪🇸 Español | [🇬🇧 English](README.en.md) | [📖 Documentación interactiva](https://cdf51342.github.io/NLP-flow/doc.html)
 
