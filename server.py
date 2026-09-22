@@ -6895,15 +6895,12 @@ def pick_export_path():
             _node_id    = str(extra.get("node", "cnn_default"))
             _lang       = extra.get("lang", "es")
             _img_hist   = extra.get("img_history", [])
-            # Reuse the cnn_report logic by calling it inline
-            # Build a fake request body and call the function directly
             import json as _json
             fake_body = {"node": _node_id, "lang": _lang, "img_history": _img_hist}
             slot      = _cnn_slot(_node_id)
             runs      = slot.get("runs", [])
             if not runs:
                 return jsonify({"error": "No runs to report"}), 400
-            # Call the actual generator function inline
             with app.test_client() as _tc:
                 _r = _tc.post("/api/cnn_report",
                               content_type="application/json",
@@ -6914,6 +6911,27 @@ def pick_export_path():
             _fname = f"cnn_report_{_lang}.html"
             default_name  = _fname
             file_types    = ("HTML File (*.html)", "All files (*.*)")
+
+        elif endpoint == "/api/ae_report":
+            import json as _json
+            extra     = body.get("extra", {})
+            _node_id  = str(extra.get("node", "ae_default"))
+            _lang     = extra.get("lang", "es")
+            _uimgs    = extra.get("user_imgs", [])
+            _preinfo  = extra.get("pre_info", {})
+            if not _ae_slot(_node_id).get("runs"):
+                return jsonify({"error": "No AE runs to report"}), 400
+            fake_body = {"node": _node_id, "lang": _lang, "user_imgs": _uimgs, "pre_info": _preinfo}
+            with app.test_client() as _tc:
+                _r = _tc.post("/api/ae_report",
+                              content_type="application/json",
+                              data=_json.dumps(fake_body))
+                if _r.status_code != 200:
+                    return jsonify({"error": "Error generating AE report"}), 500
+                content_bytes = _r.data
+            _fname       = f"ae_report_{_lang}.html"
+            default_name = _fname
+            file_types   = ("HTML File (*.html)", "All files (*.*)")
 
         else:
             return jsonify({"error": "Unknown endpoint"}), 400
@@ -9070,7 +9088,21 @@ def image_load():
                     _rnd.shuffle(combined)
 
                     # Apply optional cap — balanced across classes
-                    if cap and cap > 0 and len(combined) > cap:
+                    # Cache the capped result so next load is instant
+                    _cap_cache_path = None
+                    if cap and cap > 0:
+                        _cap_cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "nlpflow_images")
+                        os.makedirs(_cap_cache_dir, exist_ok=True)
+                        _cap_cache_path = os.path.join(_cap_cache_dir, f"dogs_muffins_cap{cap}.pkl")
+
+                    if _cap_cache_path and os.path.exists(_cap_cache_path):
+                        # ── Fast path: load from cache ──────────────────────
+                        _img_progress(node_id, 74, f"Loading {cap} cached images…")
+                        with open(_cap_cache_path, "rb") as _f:
+                            combined = pickle.load(_f)
+                        print(f"[IMG] Cap cache hit: {len(combined)} images loaded from {_cap_cache_path}", flush=True)
+                    elif cap and cap > 0 and len(combined) > cap:
+                        # ── Slow path: apply cap and cache result ───────────
                         _img_progress(node_id, 74, f"Applying cap: {cap} images from {len(combined)} total…")
                         _by_cls_cap = {}
                         for _item in combined:
@@ -9081,6 +9113,13 @@ def image_load():
                             combined.extend(_lbl_items[:_per_cls_cap])
                         _rnd.shuffle(combined)
                         print(f"[IMG] Cap applied: {len(combined)} images kept", flush=True)
+                        if _cap_cache_path:
+                            try:
+                                with open(_cap_cache_path, "wb") as _f:
+                                    pickle.dump(combined, _f)
+                                print(f"[IMG] Cap cached to {_cap_cache_path}", flush=True)
+                            except Exception as _ce:
+                                print(f"[IMG] Cap cache write failed: {_ce}", flush=True)
 
                     split_at = int(len(combined) * 0.8)
                     all_data   = combined
@@ -9959,7 +9998,7 @@ def cnn_report():
         "conf":       "Confianza" if not en else "Confidence",
         "show":       "Ver detalles ▾" if not en else "Show details ▾",
         "hide":       "Ocultar ▴" if not en else "Hide ▴",
-        "disclaimer": "Este contenido ha sido generado con IA." if not en else "This content was generated using AI.",
+        "disclaimer": "",
         "testimg":    "Imágenes de test" if not en else "Test images",
         "val_note":   ("El val split se extrae del train, por lo que el % global efectivo sobre el total de datos es menor."
                        if not en else
@@ -10239,8 +10278,1330 @@ document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') clos
 <h2>{L['detail']}</h2>
 {detail_block}
 {img_section}
-<p style="color:#aaa;font-size:11px;margin-top:48px;border-top:1px solid #eee;padding-top:12px">{L['disclaimer']}</p>
 <script>{report_js}</script>
 </body></html>"""
 
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTOENCODER — backend
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_AE_SLOTS: dict = {}   # { node_id: { model, encoder, decoder, slot data … } }
+
+def _ae_slot(node_id: str) -> dict:
+    if node_id not in _AE_SLOTS:
+        _AE_SLOTS[node_id] = {
+            "training": False, "cancel": False, "done": False, "error": None,
+            "progress": 0, "status": "", "log": [],
+            "runs": [],   # list of run dicts stored server-side
+            "model": None, "encoder": None, "decoder": None,
+            "sample_originals": [], "sample_latents": [],
+            "bottleneck": 32,
+        }
+    return _AE_SLOTS[node_id]
+
+
+def _ae_train_worker(node_id: str, img_data_node: str, cfg: dict):
+    import torch, torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    import numpy as np, io, base64
+    from PIL import Image
+
+    slot = _ae_slot(node_id)
+    slot["training"]    = True
+    slot["cancel"]      = False
+    slot["done"]        = False
+    slot["error"]       = None
+    slot["log"]         = []
+    slot["progress"]    = 0
+    slot["cfg_epochs"]  = int(cfg.get("epochs", 10))   # available to poller during training
+
+    bottleneck   = int(cfg.get("bottleneck", 32))
+    epochs       = int(cfg.get("epochs", 10))
+    lr           = float(cfg.get("lr", 0.001))
+    loss_fn      = cfg.get("loss_fn", "mse").lower()
+    batch_size   = int(cfg.get("batch_size", 128))
+    hidden_mode  = cfg.get("hidden_mode", "auto")   # "auto" | "wide" | "deep"
+
+    try:
+        # ── Load data ────────────────────────────────────────────────────────
+        slot["status"]   = "Cargando imágenes…"
+        slot["progress"] = 5
+
+        img_slot = _IMAGE_NODE_DATA.get(img_data_node) or {}
+        if not img_slot.get("train_data"):
+            raise RuntimeError("train_data not found — reload the Image Data block.")
+
+        # ── Dataset properties ───────────────────────────────────────────────
+        dataset_name = img_slot.get("dataset", "mnist")
+        is_color     = dataset_name in ("dogs_muffins", "cats_vs_dogs")
+        # 64×64 for color (more detail → better reconstruction quality)
+        # 28×28 for MNIST (standard, trains fast)
+        target_size  = 64 if is_color else 28
+        n_channels   = 3 if is_color else 1
+        input_dim    = n_channels * target_size * target_size
+
+        slot["status"]   = "Preparando tensores…"
+        slot["progress"] = 10
+
+        def pil_to_tensor(pil_img):
+            if is_color:
+                img = pil_img.convert("RGB").resize((target_size, target_size), Image.BILINEAR)
+                arr = np.array(img, dtype=np.float32) / 255.0
+                return arr.transpose(2, 0, 1).flatten()   # CHW flat
+            else:
+                img = pil_img.convert("L").resize((target_size, target_size), Image.BILINEAR)
+                return np.array(img, dtype=np.float32).flatten() / 255.0
+
+        # AE uses ALL available images (train + test) — no labels needed,
+        # no held-out set required for the autoencoder objective.
+        all_pairs = img_slot["train_data"] + img_slot.get("test_data", [])
+        all_tensors = [pil_to_tensor(p) for p, _ in all_pairs]
+        X_all = torch.tensor(np.array(all_tensors), dtype=torch.float32)
+
+        # Keep a small test split just for MSE reporting (last 10% or 200 images)
+        n_test   = max(20, min(200, len(X_all) // 10))
+        X_test   = X_all[-n_test:]
+        X_train  = X_all[:-n_test]
+
+        train_loader = DataLoader(TensorDataset(X_train, X_train),
+                                  batch_size=batch_size, shuffle=True)
+
+        slot["progress"]    = 20
+        slot["input_dim"]   = input_dim
+        slot["is_color"]    = is_color
+        slot["target_size"] = target_size
+        slot["n_channels"]  = n_channels
+        slot["dataset_name"] = dataset_name
+
+        # ── Architecture ──────────────────────────────────────────────────────
+        # Always compress (never expand beyond input_dim).
+        # hidden_mode controls the intermediate layer sizes:
+        #   auto: h1 ≈ 2/3 input, h2 ≈ 1/3 input  (balanced descent)
+        #   wide: h1 ≈ input/2,  h2 ≈ input/4      (wider, more capacity)
+        #   deep: h1, h2, h3 equally spaced         (extra compression step)
+
+        def _snap(v, mult):
+            return max(1, (int(v) // mult) * mult) or mult
+
+        if hidden_mode == "wide":
+            h1 = min(1024, max(bottleneck * 2 + 1, _snap(input_dim / 2, 64)))
+            h2 = min(512,  max(bottleneck + 1,      _snap(input_dim / 4, 32)))
+            h3 = None
+        elif hidden_mode == "deep":
+            h1 = min(512,  max(bottleneck * 3 + 2, _snap(input_dim * 3 / 4, 64)))
+            h2 = min(256,  max(bottleneck * 2 + 1, _snap(input_dim / 2,     32)))
+            h3 = min(128,  max(bottleneck + 1,      _snap(input_dim / 4,     16)))
+        else:  # auto
+            h1 = min(512, max(bottleneck * 2 + 1, _snap(input_dim * 2 / 3, 64)))
+            h2 = min(256, max(bottleneck + 1,      _snap(input_dim / 3,     32)))
+            h3 = None
+
+        # Enforce strict descent through all layers
+        h1 = min(h1, input_dim - 1)
+        h2 = min(h2, h1 - 1)
+        h2 = max(h2, bottleneck + 1)
+        if h3 is not None:
+            h3 = min(h3, h2 - 1)
+            h3 = max(h3, bottleneck + 1)
+
+        class Autoencoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                if h3 is not None:
+                    enc = [nn.Linear(input_dim, h1), nn.ReLU(),
+                           nn.Linear(h1, h2),         nn.ReLU(),
+                           nn.Linear(h2, h3),         nn.ReLU(),
+                           nn.Linear(h3, bottleneck)]
+                    dec = [nn.Linear(bottleneck, h3), nn.ReLU(),
+                           nn.Linear(h3, h2),         nn.ReLU(),
+                           nn.Linear(h2, h1),         nn.ReLU(),
+                           nn.Linear(h1, input_dim),  nn.Sigmoid()]
+                else:
+                    enc = [nn.Linear(input_dim, h1), nn.ReLU(),
+                           nn.Linear(h1, h2),         nn.ReLU(),
+                           nn.Linear(h2, bottleneck)]
+                    dec = [nn.Linear(bottleneck, h2), nn.ReLU(),
+                           nn.Linear(h2, h1),         nn.ReLU(),
+                           nn.Linear(h1, input_dim),  nn.Sigmoid()]
+                self.encoder = nn.Sequential(*enc)
+                self.decoder = nn.Sequential(*dec)
+            def forward(self, x):
+                return self.decoder(self.encoder(x))
+
+        model     = Autoencoder()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        criterion = nn.MSELoss() if loss_fn == "mse" else nn.BCELoss()
+
+        arch_str = f"{input_dim}→{h1}→{h2}" + (f"→{h3}" if h3 else "") + f"→{bottleneck}"
+        print(f"[AE] arch ({hidden_mode}): {arch_str}→...→{input_dim}  batch={batch_size}", flush=True)
+
+        # ── Training loop ────────────────────────────────────────────────────
+        slot["status"] = "Entrenando…"
+        log = []
+        for ep in range(1, epochs + 1):
+            if slot["cancel"]:
+                slot["status"]   = "Cancelado"
+                slot["training"] = False
+                return
+            model.train()
+            ep_loss = 0.0
+            for xb, yb in train_loader:
+                optimizer.zero_grad()
+                loss = criterion(model(xb), yb)
+                loss.backward()
+                optimizer.step()
+                ep_loss += loss.item()
+            ep_loss /= len(train_loader)
+            log.append({"epoch": ep, "loss": round(ep_loss, 6)})
+            slot["log"]      = log
+            slot["progress"] = 20 + int(60 * ep / epochs)
+            slot["status"]   = f"Epoch {ep}/{epochs} — loss {ep_loss:.4f}"
+
+        # ── Evaluation ───────────────────────────────────────────────────────
+        model.eval()
+        with torch.no_grad():
+            xtest    = X_test[:min(512, len(X_test))]
+            mse_test = float(nn.MSELoss()(model(xtest), xtest).item())
+
+        slot["progress"] = 85
+        slot["status"]   = "Generando visualizaciones…"
+
+        # ── Helpers ──────────────────────────────────────────────────────────
+        def tensor_to_b64(t):
+            """Convert a flat/CHW float tensor [0,1] to a 112×112 PNG base64 string."""
+            arr = (t.detach().numpy() * 255).clip(0, 255).astype(np.uint8)
+            if is_color:
+                arr = arr.reshape(n_channels, target_size, target_size).transpose(1, 2, 0)
+                img = Image.fromarray(arr, "RGB").resize((112, 112), Image.NEAREST)
+            else:
+                img = Image.fromarray(arr.reshape(target_size, target_size), "L").resize((112, 112), Image.NEAREST)
+            buf = io.BytesIO(); img.save(buf, "PNG"); buf.seek(0)
+            return base64.b64encode(buf.read()).decode()
+
+        def vec_to_b64(v_tensor):
+            """Render a 1D activation as a square greyscale heatmap PNG."""
+            v = v_tensor.squeeze().detach().numpy()
+            vmin, vmax = float(v.min()), float(v.max())
+            v_norm = (v - vmin) / max(vmax - vmin, 1e-8)
+            side    = max(8, int(np.ceil(np.sqrt(len(v_norm)))))
+            pad     = side * side - len(v_norm)
+            v_pad   = np.concatenate([v_norm, np.zeros(pad)])
+            bar     = (v_pad.reshape(side, side) * 255).astype(np.uint8)
+            img_bar = Image.fromarray(bar, "L").resize((112, 112), Image.NEAREST)
+            buf = io.BytesIO(); img_bar.save(buf, "PNG"); buf.seek(0)
+            return base64.b64encode(buf.read()).decode()
+
+        # ── Sample images ─────────────────────────────────────────────────────
+        n_samples = min(20, len(X_test))
+        sample_x  = X_test[:n_samples]
+        with torch.no_grad():
+            sample_recon  = model(sample_x)
+            sample_latent = model.encoder(sample_x)
+
+        sample_originals = [tensor_to_b64(sample_x[i])    for i in range(n_samples)]
+        sample_recons    = [tensor_to_b64(sample_recon[i]) for i in range(n_samples)]
+        sample_latents   = sample_latent.detach().numpy().tolist()
+
+        # ── Layer progression (Compare tab) ───────────────────────────────────
+        def layer_progression(x_single):
+            imgs = [tensor_to_b64(x_single)]   # original
+            with torch.no_grad():
+                h = x_single.unsqueeze(0)
+                for layer in model.encoder:
+                    h = layer(h)
+                    if isinstance(layer, nn.ReLU):
+                        imgs.append(vec_to_b64(h))
+                imgs.append(vec_to_b64(h))          # bottleneck
+                h2 = h
+                for layer in model.decoder:
+                    h2 = layer(h2)
+                    if isinstance(layer, nn.ReLU):
+                        imgs.append(vec_to_b64(h2))
+                imgs.append(tensor_to_b64(model(x_single.unsqueeze(0)).squeeze(0)))  # reconstructed
+            return imgs
+
+        progression_imgs = layer_progression(sample_x[0])
+
+        slot["progress"] = 98
+
+        # ── Persist run ───────────────────────────────────────────────────────
+        run_idx  = len(slot.get("runs", []))
+        run_name = f"Run {run_idx + 1}"
+        run_record = {
+            "run_idx":          run_idx,
+            "run_name":         run_name,
+            "name":             run_name,
+            "bottleneck":       bottleneck,
+            "epochs":           epochs,
+            "lr":               lr,
+            "loss_fn":          loss_fn,
+            "hidden_mode":      hidden_mode,
+            "batch_size":       batch_size,
+            "mse_test":         round(mse_test, 6),
+            "h1":               h1,
+            "h2":               h2,
+            "h3":               h3,
+            "input_dim":        input_dim,
+            "is_color":         is_color,
+            "target_size":      target_size,
+            "n_channels":       n_channels,
+            "dataset_name":     dataset_name,
+            "log":              log,
+            "sample_originals": sample_originals,
+            "sample_recons":    sample_recons,
+            "latent_vectors":   sample_latents,
+            "progression_imgs": progression_imgs,
+            "model":            model,           # kept in RAM only
+        }
+        slot.setdefault("runs", []).append(run_record)
+
+        # Keep slot-level shortcuts for backwards-compat
+        slot["model"]            = model
+        slot["bottleneck"]       = bottleneck
+        slot["sample_originals"] = sample_originals
+        slot["sample_latents"]   = sample_latents
+
+        slot["status"]   = f"Listo — MSE test: {mse_test:.4f}"
+        slot["progress"] = 100
+        slot["done"]     = True
+        slot["training"] = False
+
+        # Poller payload — only serialisable fields
+        slot["_last_result"] = {
+            "bottleneck":       bottleneck,
+            "epochs":           epochs,
+            "lr":               lr,
+            "loss_fn":          loss_fn,
+            "hidden_mode":      hidden_mode,
+            "batch_size":       batch_size,
+            "mse_test":         round(mse_test, 6),
+            "h1":               h1,
+            "h2":               h2,
+            "h3":               h3,
+            "input_dim":        input_dim,
+            "dataset_name":     dataset_name,
+            "is_color":         is_color,
+            "log":              log,
+            "sample_originals": sample_originals,
+            "sample_recons":    sample_recons,
+            "latent_vectors":   sample_latents,
+            "run_index":        len(slot["runs"]) - 1,
+        }
+
+    except Exception as exc:
+        import traceback; traceback.print_exc()
+        slot["error"]    = str(exc)
+        slot["done"]     = True
+        slot["training"] = False
+        slot["status"]   = f"Error: {exc}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AE EVALUATION ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ae_eval_data is now a thin wrapper around _ae_eval_runs (defined above)
+
+
+@app.route("/api/ae_eval_reconstruct", methods=["POST"])
+def ae_eval_reconstruct():
+    """Reconstruct a user-uploaded image through all AE runs."""
+    import torch, numpy as np, io, base64
+    from PIL import Image
+
+    body    = request.get_json(force=True) or {}
+    node_id = str(body.get("node", "ae_default"))
+    img_b64 = body.get("image_b64", "")   # data URI or raw base64
+
+    if "," in img_b64:
+        img_b64 = img_b64.split(",", 1)[1]
+
+    slot = _ae_slot(node_id)
+    runs = slot.get("runs", [])
+    if not runs:
+        return jsonify(error="No runs"), 404
+
+    out = []
+    for run_idx, run in enumerate(runs):
+        model       = run.get("model")
+        is_color    = run.get("is_color", False)
+        target_size = run.get("target_size", 28)
+        n_channels  = run.get("n_channels", 1)
+        if model is None:
+            out.append({"run_idx": run_idx, "error": "no model"})
+            continue
+        try:
+            pil = Image.open(io.BytesIO(base64.b64decode(img_b64)))
+            if is_color:
+                pil = pil.convert("RGB").resize((target_size, target_size), Image.BILINEAR)
+                arr = np.array(pil, dtype=np.float32) / 255.0
+                x   = torch.tensor(arr.transpose(2,0,1).flatten(), dtype=torch.float32).unsqueeze(0)
+            else:
+                pil = pil.convert("L").resize((target_size, target_size), Image.BILINEAR)
+                x   = torch.tensor(np.array(pil, dtype=np.float32).flatten() / 255.0, dtype=torch.float32).unsqueeze(0)
+
+            with torch.no_grad():
+                recon = model(x).squeeze(0)
+                lv    = model.encoder(x).squeeze(0)
+
+            def to_b64(t):
+                arr2 = (t.detach().numpy() * 255).clip(0,255).astype(np.uint8)
+                if is_color:
+                    img2 = Image.fromarray(arr2.reshape(n_channels, target_size, target_size).transpose(1,2,0), "RGB")
+                else:
+                    img2 = Image.fromarray(arr2.reshape(target_size, target_size), "L")
+                img2 = img2.resize((112,112), Image.NEAREST)
+                buf = io.BytesIO(); img2.save(buf,"PNG"); buf.seek(0)
+                return base64.b64encode(buf.read()).decode()
+
+            # Also return the original resized to same display size
+            pil_disp = pil.resize((112,112), Image.NEAREST)
+            buf = io.BytesIO(); pil_disp.save(buf,"PNG"); buf.seek(0)
+            orig_b64 = base64.b64encode(buf.read()).decode()
+
+            out.append({
+                "run_idx":    run_idx,
+                "name":       run.get("name") or f"Run {run_idx+1}",
+                "bottleneck": run.get("bottleneck"),
+                "mse_test":   run.get("mse_test"),
+                "original":   orig_b64,
+                "recon":      to_b64(recon),
+                "latent_dim": len(lv),
+                "mse_img":    round(float(torch.nn.MSELoss()(recon, x.squeeze(0)).item()), 5),
+            })
+        except Exception as e:
+            out.append({"run_idx": run_idx, "error": str(e)})
+
+    return jsonify(results=out)
+
+
+def _ae_eval_runs(node_id: str) -> list:
+    """Compute evaluation data for all runs of an AE node (shared by ae_eval_data and ae_report)."""
+    import torch, torch.nn as nn, numpy as np, io, base64
+    from PIL import Image
+
+    slot = _ae_slot(node_id)
+    results = []
+    for run_idx, run in enumerate(slot.get("runs", [])):
+        model       = run.get("model")
+        is_color    = run.get("is_color", False)
+        target_size = run.get("target_size", 28)
+        n_channels  = run.get("n_channels", 1)
+        bottleneck  = run.get("bottleneck", 32)
+        mse_test    = run.get("mse_test", 0)
+
+        entry = {
+            "run_idx":      run_idx,
+            "name":         run.get("name") or run.get("run_name") or f"Run {run_idx+1}",
+            "bottleneck":   bottleneck,
+            "epochs":       run.get("epochs"),
+            "lr":           run.get("lr"),
+            "loss_fn":      run.get("loss_fn"),
+            "hidden_mode":  run.get("hidden_mode", "auto"),
+            "batch_size":   run.get("batch_size"),
+            "mse_test":     mse_test,
+            "dataset_name": run.get("dataset_name", "mnist"),
+            "is_color":     is_color,
+            "input_dim":    run.get("input_dim"),
+            "h1": run.get("h1"), "h2": run.get("h2"), "h3": run.get("h3"),
+            "log":          run.get("log", []),
+        }
+
+        if model is None:
+            results.append(entry)
+            continue
+
+        sample_originals = run.get("sample_originals", [])
+        sample_recons    = run.get("sample_recons", [])
+        latent_vectors   = run.get("latent_vectors", [])
+        n = min(len(sample_originals), len(sample_recons))
+
+        def _dec(b64):
+            img = Image.open(io.BytesIO(base64.b64decode(b64)))
+            if is_color:
+                img = img.convert("RGB").resize((target_size, target_size), Image.BILINEAR)
+                arr = np.array(img, dtype=np.float32) / 255.0
+                return torch.tensor(arr.transpose(2, 0, 1).flatten(), dtype=torch.float32)
+            else:
+                img = img.convert("L").resize((target_size, target_size), Image.BILINEAR)
+                return torch.tensor(np.array(img, dtype=np.float32).flatten() / 255.0, dtype=torch.float32)
+
+        per_img_mse = []
+        for i in range(n):
+            try:
+                mse_i = float(nn.MSELoss()(_dec(sample_recons[i]), _dec(sample_originals[i])).item())
+                per_img_mse.append(mse_i)
+            except Exception:
+                per_img_mse.append(0.0)
+
+        ranked   = sorted(range(len(per_img_mse)), key=lambda i: per_img_mse[i])
+        n_show   = min(6, len(ranked))
+        best_idx  = ranked[:n_show]
+        worst_idx = ranked[-n_show:][::-1]
+
+        entry["best_originals"]  = [sample_originals[i] for i in best_idx]
+        entry["best_recons"]     = [sample_recons[i]    for i in best_idx]
+        entry["best_mses"]       = [round(per_img_mse[i], 5) for i in best_idx]
+        entry["worst_originals"] = [sample_originals[i] for i in worst_idx]
+        entry["worst_recons"]    = [sample_recons[i]    for i in worst_idx]
+        entry["worst_mses"]      = [round(per_img_mse[i], 5) for i in worst_idx]
+        entry["per_img_mse"]     = [round(v, 5) for v in per_img_mse]
+
+        if latent_vectors and len(latent_vectors) >= 4:
+            try:
+                lv = np.array(latent_vectors, dtype=np.float32)
+                if lv.shape[1] == 2:
+                    entry["latent_2d"] = lv.tolist()
+                else:
+                    lv_c  = lv - lv.mean(axis=0)
+                    cov   = np.cov(lv_c.T)
+                    if cov.ndim < 2: cov = np.array([[float(cov), 0], [0, 0]])
+                    evals, evecs = np.linalg.eigh(cov)
+                    idx2  = np.argsort(evals)[::-1][:2]
+                    proj  = lv_c @ evecs[:, idx2]
+                    entry["latent_2d"] = proj.tolist()
+            except Exception:
+                entry["latent_2d"] = []
+
+        results.append(entry)
+    return results
+
+
+@app.route("/api/ae_eval_data")
+def ae_eval_data():
+    """Compute evaluation metrics for all runs of an AE node."""
+    node_id = request.args.get("node", "ae_default")
+    results = _ae_eval_runs(node_id)
+    if not results:
+        return jsonify(error="No runs"), 404
+    mse_bn = [{"bottleneck": r["bottleneck"], "mse": r["mse_test"], "name": r["name"]} for r in results]
+    return jsonify(runs=results, mse_vs_bottleneck=mse_bn)
+
+
+def _svg_bar_chart(labels, values, colors, width=460, height=200, y_label="MSE"):
+    """Generate a self-contained SVG bar chart. No external dependencies."""
+    pad_l, pad_r, pad_t, pad_b = 56, 16, 16, 48
+    inner_w = width  - pad_l - pad_r
+    inner_h = height - pad_t - pad_b
+    n = len(values)
+    if n == 0:
+        return f'<svg width="{width}" height="{height}"><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="12">—</text></svg>'
+    max_v = max(values) if max(values) > 0 else 1
+    min_v = min(values) * 0.95
+    span  = max_v - min_v if max_v != min_v else max_v * 0.1 or 0.001
+    bar_w = max(4, inner_w // n - 6)
+    step  = inner_w / n
+
+    # Y-axis ticks (5 ticks)
+    tick_vals = [min_v + span * i / 4 for i in range(5)]
+    grid_lines = ""
+    for tv in tick_vals:
+        y = pad_t + inner_h - (tv - min_v) / span * inner_h
+        label_txt = f"{tv:.4f}" if max_v < 0.01 else f"{tv:.3f}"
+        grid_lines += (f'<line x1="{pad_l}" y1="{y:.1f}" x2="{pad_l+inner_w}" y2="{y:.1f}" '
+                       f'stroke="#f1f5f9" stroke-width="1"/>'
+                       f'<text x="{pad_l-4}" y="{y+4:.1f}" text-anchor="end" fill="#94a3b8" '
+                       f'font-size="9">{label_txt}</text>')
+
+    bars = ""
+    for i, (lbl, val, col) in enumerate(zip(labels, values, colors)):
+        x = pad_l + i * step + (step - bar_w) / 2
+        bar_h = max(2, (val - min_v) / span * inner_h)
+        y = pad_t + inner_h - bar_h
+        short = lbl[:10] + "…" if len(lbl) > 10 else lbl
+        bars += (f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w}" height="{bar_h:.1f}" '
+                 f'fill="{col}" rx="3"/>'
+                 f'<text x="{x + bar_w/2:.1f}" y="{pad_t+inner_h+14}" text-anchor="middle" '
+                 f'fill="#64748b" font-size="9">{short}</text>'
+                 f'<text x="{x + bar_w/2:.1f}" y="{y - 3:.1f}" text-anchor="middle" '
+                 f'fill="#374151" font-size="9">{val:.4f}</text>')
+
+    return (f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg" '
+            f'style="overflow:visible">'
+            f'<text x="{pad_l}" y="12" fill="#64748b" font-size="9" font-weight="700">{y_label}</text>'
+            f'{grid_lines}{bars}'
+            f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t+inner_h}" stroke="#e2e8f0" stroke-width="1"/>'
+            f'</svg>')
+
+
+def _svg_line_chart(datasets, n_epochs, width=460, height=200):
+    """Generate a self-contained SVG multi-line chart for loss curves."""
+    pad_l, pad_r, pad_t, pad_b = 56, 16, 16, 40
+    inner_w = width  - pad_l - pad_r
+    inner_h = height - pad_t - pad_b
+
+    if not datasets or n_epochs < 2:
+        return f'<svg width="{width}" height="{height}"><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="12">No loss data</text></svg>'
+
+    all_vals = [v for ds in datasets for v in ds["data"] if v is not None]
+    if not all_vals:
+        return f'<svg width="{width}" height="{height}"><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="12">No loss data</text></svg>'
+
+    min_v = min(all_vals)
+    max_v = max(all_vals)
+    span  = max_v - min_v if max_v != min_v else max_v * 0.1 or 0.001
+
+    # Grid lines
+    grid = ""
+    for i in range(5):
+        tv = min_v + span * i / 4
+        y  = pad_t + inner_h - (tv - min_v) / span * inner_h
+        grid += (f'<line x1="{pad_l}" y1="{y:.1f}" x2="{pad_l+inner_w}" y2="{y:.1f}" '
+                 f'stroke="#f1f5f9" stroke-width="1"/>'
+                 f'<text x="{pad_l-4}" y="{y+4:.1f}" text-anchor="end" fill="#94a3b8" '
+                 f'font-size="9">{tv:.4f}</text>')
+
+    lines = ""
+    legend = ""
+    for di, ds in enumerate(datasets):
+        vals   = ds["data"]
+        color  = ds.get("borderColor", "#60a5fa")
+        lbl    = ds.get("label", f"Run {di+1}")
+        pts    = []
+        for xi, v in enumerate(vals):
+            if v is None: continue
+            x = pad_l + xi / max(n_epochs - 1, 1) * inner_w
+            y = pad_t + inner_h - (v - min_v) / span * inner_h
+            pts.append(f"{x:.1f},{y:.1f}")
+        if pts:
+            lines += f'<polyline points="{" ".join(pts)}" fill="none" stroke="{color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
+        ly = 12 + di * 14
+        legend += (f'<rect x="{pad_l+inner_w-90}" y="{pad_t + ly - 6}" width="10" height="4" fill="{color}" rx="2"/>'
+                   f'<text x="{pad_l+inner_w-77}" y="{pad_t + ly - 1:.0f}" fill="#374151" font-size="9">{lbl[:14]}</text>')
+
+    # X-axis labels
+    x_labels = ""
+    tick_n = min(n_epochs, 6)
+    for i in range(tick_n):
+        xi = i * (n_epochs - 1) // max(tick_n - 1, 1)
+        x  = pad_l + xi / max(n_epochs - 1, 1) * inner_w
+        x_labels += (f'<text x="{x:.1f}" y="{pad_t+inner_h+12}" text-anchor="middle" '
+                     f'fill="#94a3b8" font-size="9">{xi+1}</text>')
+
+    return (f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg" '
+            f'style="overflow:visible">'
+            f'<text x="{pad_l}" y="11" fill="#64748b" font-size="9" font-weight="700">Loss</text>'
+            f'{grid}{lines}{legend}{x_labels}'
+            f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t+inner_h}" stroke="#e2e8f0" stroke-width="1"/>'
+            f'</svg>')
+
+
+@app.route("/api/ae_report", methods=["POST"])
+def ae_report():
+    """Generate a self-contained interactive HTML report for all AE runs (CNN-style)."""
+    import datetime, json as _json
+    body      = request.get_json(force=True) or {}
+    node_id   = body.get("node", "ae_default")
+    lang      = body.get("lang", "es")
+    user_imgs = body.get("user_imgs", [])
+    pre_info  = body.get("pre_info", {})
+    en = (lang == "en")
+
+    slot = _ae_slot(node_id)
+    if not slot.get("runs"):
+        return jsonify(error="No runs"), 400
+    # Use the shared evaluator so best/worst grids are always populated
+    runs = _ae_eval_runs(node_id)
+
+    ds_map = {
+        "mnist":       "MNIST (28×28, greyscale)",
+        "dogs_muffins":"Chihuahua vs Muffin (64×64, RGB)",
+        "cats_vs_dogs":"Cats vs Dogs (64×64, RGB)",
+    }
+    dataset_name = runs[0].get("dataset_name", "mnist")
+    pre_size     = pre_info.get("imgSize", runs[0].get("target_size", "?"))
+    pre_norm     = pre_info.get("normMode", "[0,1]")
+
+    t_now    = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    best_mse = min((r.get("mse_test") or 1e9) for r in runs)
+
+    def img_tag(b64, w=72, label=""):
+        lbl = f'<div style="font-size:9px;color:#888;margin-top:3px">{label}</div>' if label else ""
+        return (f'<div style="display:inline-block;text-align:center">'
+                f'<img src="data:image/png;base64,{b64}" '
+                f'style="width:{w}px;height:{w}px;border-radius:5px;border:1.5px solid #e5e7eb;'
+                f'image-rendering:pixelated;display:block">{lbl}</div>')
+
+    # ── Runs table rows ───────────────────────────────────────────────────────
+    runs_rows = ""
+    for i, r in enumerate(runs):
+        is_best  = abs((r.get("mse_test") or 1e9) - best_mse) < 1e-9
+        row_bg   = "background:#f0fdf4" if is_best else ""
+        arch     = f"{r.get('input_dim','?')}→{r.get('h1','?')}→{r.get('h2','?')}"
+        if r.get("h3"): arch += f"→{r.get('h3')}"
+        arch += f"→{r.get('bottleneck','?')}"
+        runs_rows += f"""
+<tr class="run-row" data-idx="{i}" style="cursor:pointer;{row_bg}" onclick="toggleDetail({i})">
+  <td style="padding:9px 12px;font-weight:{'700' if is_best else '400'}">
+    {r.get('name') or f'Run {i+1}'} {'<span class="star">★</span>' if is_best else ''}
+  </td>
+  <td style="text-align:right;padding:9px 12px">{r.get('bottleneck','—')}</td>
+  <td style="text-align:right;padding:9px 12px">{r.get('hidden_mode','auto')}</td>
+  <td style="text-align:right;padding:9px 12px">{r.get('epochs','—')}</td>
+  <td style="text-align:right;padding:9px 12px">{r.get('lr','—')}</td>
+  <td style="text-align:right;padding:9px 12px">{(r.get('loss_fn') or '—').upper()}</td>
+  <td style="text-align:right;padding:9px 12px;font-weight:700;color:{'#16a34a' if is_best else '#111'}">
+    {f"{r.get('mse_test',0):.5f}"}
+  </td>
+</tr>
+<tr id="detail-{i}" class="detail-row" style="display:none;background:#fafafa">
+  <td colspan="7" style="padding:12px 20px">
+    <div style="display:flex;gap:32px;flex-wrap:wrap;font-size:12px">
+      <div><span class="dlabel">{'Arquitectura' if not en else 'Architecture'}</span><br><code style="font-size:11px">{arch}</code></div>
+      <div><span class="dlabel">MSE test</span><br><b>{f"{r.get('mse_test',0):.5f}"}</b></div>
+      <div><span class="dlabel">Loss fn</span><br>{(r.get('loss_fn') or '—').upper()}</div>
+      <div><span class="dlabel">LR</span><br>{r.get('lr','—')}</div>
+      <div><span class="dlabel">Epochs</span><br>{r.get('epochs','—')}</div>
+      <div><span class="dlabel">Batch</span><br>{r.get('batch_size','—')}</div>
+    </div>
+  </td>
+</tr>"""
+
+    # ── Grids: table rows + JS data for modal ────────────────────────────────
+    _best_run_mse = min((r.get("mse_test") or 1e9) for r in runs)
+    recon_rows    = ""
+    recon_data    = []   # serialised as JS array for the modal
+
+    def _thumb(b64, w=48):
+        if not b64:
+            return f'<div style="width:{w}px;height:{w}px;background:#f1f5f9;border-radius:4px"></div>'
+        return (f'<img src="data:image/png;base64,{b64}" '
+                f'style="width:{w}px;height:{w}px;border-radius:4px;border:1px solid #e5e7eb;'
+                f'image-rendering:pixelated;display:block;object-fit:contain">')
+
+    for i, r in enumerate(runs):
+        best_o  = r.get("best_originals",  [])
+        best_rc = r.get("best_recons",     [])
+        best_m  = r.get("best_mses",       [])
+        worst_o = r.get("worst_originals", [])
+        worst_rc= r.get("worst_recons",    [])
+        worst_m = r.get("worst_mses",      [])
+        if not best_o: continue
+
+        name = r.get("name") or f"Run {i+1}"
+        _is_best_run = abs((r.get("mse_test") or 1e9) - _best_run_mse) < 1e-9
+        _star_html   = ' <span style="color:#16a34a">★</span>' if _is_best_run else ''
+
+        # Preview: first best + first worst thumbnail pair shown inline
+        preview_best  = (_thumb(best_rc[0])  if best_rc  else "") + (_thumb(best_o[0])  if best_o  else "")
+        preview_worst = (_thumb(worst_rc[0]) if worst_rc else "") + (_thumb(worst_o[0]) if worst_o else "")
+
+        recon_rows += (
+            f'<tr class="img-row" style="cursor:pointer" onclick="openReconModal({i})">'
+            f'<td style="font-weight:{"700" if _is_best_run else "400"}">'
+            f'  {name}{_star_html}</td>'
+            f'<td>{r.get("bottleneck","—")}</td>'
+            f'<td style="text-align:right">{r.get("mse_test",0):.5f}</td>'
+            f'<td><div style="display:flex;gap:4px;align-items:center">{preview_best}</div></td>'
+            f'<td><div style="display:flex;gap:4px;align-items:center">{preview_worst}</div></td>'
+            f'<td style="color:#16a34a;font-size:12px">{'ver →' if not en else 'view →'}</td>'
+            f'</tr>'
+        )
+
+        # Build data entry for the modal
+        best_pairs  = [{"orig": best_o[j],  "recon": best_rc[j],  "mse": round(best_m[j],  5)}
+                       for j in range(len(best_o))]
+        worst_pairs = [{"orig": worst_o[j], "recon": worst_rc[j], "mse": round(worst_m[j], 5)}
+                       for j in range(len(worst_o))]
+        recon_data.append({
+            "name":       name,
+            "bottleneck": r.get("bottleneck", "?"),
+            "mse_test":   round(r.get("mse_test") or 0, 5),
+            "is_best":    _is_best_run,
+            "best":       best_pairs,
+            "worst":      worst_pairs,
+        })
+
+    grids_html = recon_rows  # used in HTML template below
+
+    # ── User images (interactive table + modal, same pattern as CNN report) ──
+    user_html        = ""
+    ae_modal_data_js = ""
+    ae_modal_entries = []
+    if user_imgs:
+        # Build JS data array for the modal
+        ae_modal_entries = []
+        img_rows_ae      = ""
+        for hi, uimg in enumerate(user_imgs):
+            fname   = uimg.get("filename", "image")
+            b64_src = uimg.get("b64", "")
+            results = uimg.get("results", [])
+            if not results:
+                continue
+            # Best single run by lowest MSE for the summary column
+            best_r2  = min(results, key=lambda x: x.get("mse_img", 1e9)) if results else {}
+            best_mse_img = best_r2.get("mse_img", 0)
+            ae_modal_entries.append({
+                "b64":      b64_src,
+                "filename": fname,
+                "results":  results,
+            })
+            img_rows_ae += (
+                f'<tr class="img-row" style="cursor:pointer" onclick="openAEImgModal({hi})">'
+                f'<td><img src="{b64_src}" style="width:52px;height:52px;object-fit:contain;'
+                f'border-radius:6px;vertical-align:middle;image-rendering:pixelated"></td>'
+                f'<td>{fname}</td>'
+                f'<td style="text-align:right">{best_mse_img:.4f}</td>'
+                f'<td style="color:#16a34a;font-size:12px">{len(results)} run(s) →</td>'
+                f'</tr>'
+            )
+
+        ae_modal_data_js = f"var AE_IMG_DATA = {_json.dumps(ae_modal_entries)};"
+
+        user_html = f"""
+<table>
+  <thead><tr>
+    <th></th>
+    <th>{'Archivo' if not en else 'File'}</th>
+    <th style="text-align:right">{'Mejor MSE' if not en else 'Best MSE'}</th>
+    <th></th>
+  </tr></thead>
+  <tbody>{img_rows_ae}</tbody>
+</table>
+
+<!-- AE image modal -->
+<div id="ae-img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;max-width:580px;width:92%;padding:24px;position:relative;max-height:88vh;overflow-y:auto">
+    <button onclick="closeAEImgModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:#666">✕</button>
+    <div id="ae-modal-content"></div>
+  </div>
+</div>"""
+
+    # ── Chart data ────────────────────────────────────────────────────────────
+    # ── SVG charts (no CDN dependency — works with file://) ──────────────────
+    palette = ["#4ade80","#60a5fa","#f59e0b","#f87171","#a78bfa","#34d399"]
+
+    # Bar chart: MSE per run
+    _bn_labels = [r.get("name") or f"Run {i+1}" for i, r in enumerate(runs)]
+    _bn_values = [round(r.get("mse_test") or 0, 5) for r in runs]
+    _best_mse_val = min(_bn_values) if _bn_values else 0
+    _bn_colors  = ["#4ade80" if abs(v - _best_mse_val) < 1e-9 else "#60a5fa" for v in _bn_values]
+    svg_bar = _svg_bar_chart(_bn_labels, _bn_values, _bn_colors,
+                             width=460, height=200,
+                             y_label="MSE test")
+
+    # Loss curves
+    loss_datasets = []
+    for i, r in enumerate(runs):
+        log  = r.get("log", [])
+        vals = [e.get("loss") for e in log if e.get("loss") is not None]
+        if vals:
+            color = palette[i % len(palette)]
+            loss_datasets.append({"label": (r.get("name") or f"Run {i+1}"),
+                                  "data": vals, "borderColor": color})
+    n_epochs_max = max((len(r.get("log",[])) for r in runs), default=1)
+    svg_loss = _svg_line_chart(loss_datasets, n_epochs_max, width=460, height=200)
+
+    html = f"""<!DOCTYPE html>
+<html lang="{'es' if not en else 'en'}">
+<head>
+<meta charset="UTF-8">
+<title>{'Autoencoder — Informe' if not en else 'Autoencoder — Report'}</title>
+
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;min-height:100vh}}
+  .header{{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);color:#fff;padding:28px 40px}}
+  .header h1{{font-size:24px;font-weight:800;letter-spacing:-.5px}}
+  .header p{{font-size:12px;color:#94a3b8;margin-top:6px}}
+  .container{{max-width:1080px;margin:0 auto;padding:32px 24px}}
+  .card{{background:#fff;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:24px;overflow:hidden}}
+  .card-header{{padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px}}
+  .card-header h2{{font-size:14px;font-weight:700;color:#111}}
+  .card-body{{padding:20px}}
+  .stat-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:0}}
+  .stat{{background:#f8fafc;border-radius:10px;padding:14px 16px;border:1px solid #e2e8f0}}
+  .stat-label{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px}}
+  .stat-val{{font-size:22px;font-weight:800}}
+  table{{width:100%;border-collapse:collapse;font-size:12px}}
+  thead th{{padding:8px 12px;background:#f8fafc;border-bottom:2px solid #e2e8f0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#64748b;text-align:right}}
+  thead th:first-child{{text-align:left}}
+  tbody td{{padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:right}}
+  tbody td:first-child{{text-align:left}}
+  .run-row:hover{{background:#f0fdf4!important}}
+  .detail-row td{{padding:12px 20px}}
+  .star{{color:#16a34a;font-size:14px}}
+  .dlabel{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8}}
+  code{{background:#f1f5f9;border-radius:4px;padding:2px 6px;font-size:11px}}
+  details summary{{list-style:none}} details summary::-webkit-details-marker{{display:none}}
+  .disclaimer{{display:none}}
+  .chart-wrap{{overflow-x:auto;padding:4px 0}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔄 {'Autoencoder — Informe de Evaluación' if not en else 'Autoencoder — Evaluation Report'}</h1>
+  <p>{'Generado por NLP Flow' if not en else 'Generated by NLP Flow'} · {len(runs)} run(s) · {t_now}</p>
+</div>
+
+<div class="container">
+
+<!-- Stat cards -->
+<div class="stat-grid" style="margin-bottom:24px">
+  <div class="stat"><div class="stat-label">{'Mejor MSE' if not en else 'Best MSE'}</div>
+    <div class="stat-val" style="color:#16a34a">{best_mse:.5f}</div></div>
+  <div class="stat"><div class="stat-label">Runs</div>
+    <div class="stat-val" style="color:#3b82f6">{len(runs)}</div></div>
+  <div class="stat"><div class="stat-label">Dataset</div>
+    <div class="stat-val" style="font-size:13px;font-weight:700;color:#111">{ds_map.get(dataset_name,dataset_name)}</div></div>
+  <div class="stat"><div class="stat-label">{'Tamaño imagen' if not en else 'Image size'}</div>
+    <div class="stat-val" style="font-size:16px">{pre_size}×{pre_size} px</div></div>
+</div>
+
+<!-- Runs table -->
+<div class="card">
+  <div class="card-header"><h2>📊 {'Comparativa de runs' if not en else 'Run comparison'}</h2>
+    <span style="font-size:11px;color:#94a3b8">({'haz clic para ver detalles' if not en else 'click to expand details'})</span></div>
+  <div class="card-body" style="padding:0">
+    <table>
+      <thead><tr>
+        <th style="text-align:left">Run</th>
+        <th>Bottleneck</th><th>{'Capas' if not en else 'Hidden'}</th>
+        <th>Epochs</th><th>LR</th><th>Loss fn</th><th>MSE test</th>
+      </tr></thead>
+      <tbody>{runs_rows}</tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Charts -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+  <div class="card">
+    <div class="card-header"><h2>📉 MSE vs Bottleneck</h2></div>
+    <div class="card-body"><div class="chart-wrap">{svg_bar}</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>📈 {'Curvas de pérdida' if not en else 'Loss curves'}</h2></div>
+    <div class="card-body"><div class="chart-wrap">{svg_loss if loss_datasets else '<p style="font-size:11px;color:#94a3b8">Sin datos de log.</p>'}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Reconstructions table -->
+<div class="card">
+  <div class="card-header">
+    <h2>🖼️ {'Reconstrucciones' if not en else 'Reconstructions'}</h2>
+    <span style="font-size:11px;color:#94a3b8">({'haz clic para ver todas' if not en else 'click to see all'})</span>
+  </div>
+  <div class="card-body" style="padding:0">
+    {'<table><thead><tr>'
+     '<th style="text-align:left">Run</th>'
+     '<th>Bottleneck</th>'
+     '<th style="text-align:right">MSE test</th>'
+     '<th>' + ('✅ Mejor' if not en else '✅ Best') + '</th>'
+     '<th>' + ('❌ Peor'  if not en else '❌ Worst') + '</th>'
+     '<th></th>'
+     '</tr></thead><tbody>' + grids_html + '</tbody></table>'
+     if grids_html else '<p style="color:#94a3b8;padding:20px">—</p>'}
+  </div>
+</div>
+
+<!-- Recon modal -->
+<div id="recon-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;max-width:640px;width:94%;padding:24px;position:relative;max-height:88vh;overflow-y:auto">
+    <button onclick="closeReconModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:#666">✕</button>
+    <div id="recon-modal-content"></div>
+  </div>
+</div>
+
+{'<!-- User images --><div class="card"><div class="card-header"><h2>👤 ' + ("Imágenes del usuario" if not en else "User images") + '</h2></div><div class="card-body">' + user_html + '</div></div>' if user_html else ''}
+
+
+</div>
+
+<script>
+// Runs table collapsible
+function toggleDetail(i) {{
+  var d = document.getElementById('detail-'+i);
+  if (d) d.style.display = d.style.display === 'none' ? 'table-row' : 'none';
+}}
+
+// Reconstructions modal
+var RECON_DATA = {_json.dumps(recon_data)};
+var _r_lbl_best  = '{'Mejores reconstrucciones' if not en else 'Best reconstructions'}';
+var _r_lbl_worst = '{'Peores reconstrucciones'  if not en else 'Worst reconstructions'}';
+var _r_lbl_orig  = 'original';
+var _r_lbl_recon = '{'reconstruida' if not en else 'reconstructed'}';
+function openReconModal(ri) {{
+  var d = RECON_DATA[ri];
+  if (!d) return;
+  var star = d.is_best ? ' <span style="color:#16a34a">★</span>' : '';
+  var out = '<h3 style="font-size:15px;font-weight:800;margin:0 0 4px">' + d.name + star + '</h3>';
+  out += '<div style="font-size:12px;color:#64748b;margin-bottom:16px">Bottleneck ' + d.bottleneck + ' &nbsp;·&nbsp; MSE ' + d.mse_test.toFixed(5) + '</div>';
+
+  function pairRow(pairs, label, color) {{
+    if (!pairs || !pairs.length) return '';
+    var cells = pairs.map(function(p) {{
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;'
+        + 'padding:8px;border-radius:8px;border:1px solid #f0f0f0;background:#fff">'
+        + (p.orig  ? '<img src="data:image/png;base64,' + p.orig  + '" style="width:64px;height:64px;border-radius:4px;image-rendering:pixelated;display:block">' : '')
+        + '<div style="font-size:9px;color:#888">' + _r_lbl_orig + '</div>'
+        + (p.recon ? '<img src="data:image/png;base64,' + p.recon + '" style="width:64px;height:64px;border-radius:4px;border:1.5px solid ' + color + ';image-rendering:pixelated;display:block">' : '')
+        + '<div style="font-size:9px;color:' + color + '">' + _r_lbl_recon + '</div>'
+        + '<div style="font-size:9px;color:#94a3b8">MSE ' + p.mse.toFixed(4) + '</div>'
+        + '</div>';
+    }}).join('');
+    return '<div style="font-size:11px;font-weight:700;color:' + color + ';margin:12px 0 8px">' + label + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' + cells + '</div>';
+  }}
+
+  out += pairRow(d.best,  '✅ ' + _r_lbl_best,  '#16a34a');
+  out += pairRow(d.worst, '❌ ' + _r_lbl_worst, '#dc2626');
+  document.getElementById('recon-modal-content').innerHTML = out;
+  document.getElementById('recon-modal').style.display = 'flex';
+}}
+function closeReconModal() {{
+  document.getElementById('recon-modal').style.display = 'none';
+}}
+document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') {{ closeReconModal(); closeAEImgModal(); }} }});
+
+// AE user-image modal
+var AE_IMG_DATA = {_json.dumps(ae_modal_entries)};
+var _lbl_recon = '{'reconstruida' if not en else 'reconstructed'}';
+var _lbl_orig  = 'original';
+function openAEImgModal(hi) {{
+  var h = AE_IMG_DATA[hi];
+  if (!h) return;
+  var out = '';
+  if (h.b64) {{
+    out += '<img src="' + h.b64 + '" style="width:90px;height:90px;object-fit:contain;border-radius:8px;display:block;margin:0 auto 10px;image-rendering:pixelated">';
+  }}
+  out += '<div style="font-size:12px;color:#888;text-align:center;margin-bottom:14px">' + (h.filename||'') + '</div>';
+  var results = h.results || [];
+  var bestMse = Infinity;
+  results.forEach(function(r) {{ if ((r.mse_img||Infinity) < bestMse) bestMse = r.mse_img||Infinity; }});
+  results.forEach(function(r) {{
+    var isBest = Math.abs((r.mse_img||Infinity) - bestMse) < 1e-9;
+    var orig  = r.original ? '<img src="data:image/png;base64,' + r.original + '" style="width:64px;height:64px;border-radius:5px;border:1.5px solid #e5e7eb;image-rendering:pixelated;display:block">' : '';
+    var recon = r.recon    ? '<img src="data:image/png;base64,' + r.recon    + '" style="width:64px;height:64px;border-radius:5px;border:1.5px solid #16a34a;image-rendering:pixelated;display:block">' : '';
+    var starHtml = isBest ? ' <span style="color:#16a34a;font-size:13px">★</span>' : '';
+    out += '<div style="margin-bottom:12px;border:1px solid ' + (isBest?'#16a34a':'#e5e7eb') + ';border-radius:8px;overflow:hidden">'
+      + '<div style="padding:8px 12px;background:' + (isBest?'#f0fdf4':'#f8fafc') + ';font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center">'
+      + '<span>' + (r.name||'Run') + ' — BN ' + (r.bottleneck||'?') + starHtml + '</span>'
+      + '<span style="color:#16a34a">MSE ' + (r.mse_img||0).toFixed(4) + '</span></div>'
+      + '<div style="padding:12px;display:flex;gap:16px;align-items:flex-start">'
+      + '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + orig
+      + '<div style="font-size:9px;color:#888;margin-top:2px">' + _lbl_orig + '</div></div>'
+      + '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + recon
+      + '<div style="font-size:9px;color:#16a34a;margin-top:2px">' + _lbl_recon + '</div></div>'
+      + '</div></div>';
+  }});
+  document.getElementById('ae-modal-content').innerHTML = out;
+  document.getElementById('ae-img-modal').style.display = 'flex';
+}}
+function closeAEImgModal() {{
+  document.getElementById('ae-img-modal').style.display = 'none';
+}}
+</script>
+</body>
+</html>"""
+
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/api/ae_rename_run", methods=["POST"])
+def ae_rename_run():
+    body     = request.get_json(force=True) or {}
+    node_id  = str(body.get("node", "ae_default"))
+    run_idx  = int(body.get("run_idx", -1))
+    new_name = str(body.get("name", "")).strip()[:60]
+    slot     = _ae_slot(node_id)
+    for r in slot.get("runs", []):
+        if r.get("run_idx") == run_idx:
+            r["run_name"] = new_name or r.get("run_name", f"Run {run_idx+1}")
+            r["name"]     = r["run_name"]
+            return jsonify({"ok": True, "name": r["run_name"]})
+    return jsonify({"error": "Run not found"}), 404
+
+
+@app.route("/api/ae_runs")
+def ae_runs():
+    """Return all completed AE runs for a node (summary, no model weights)."""
+    node_id = request.args.get("node", "ae_default")
+    slot    = _ae_slot(node_id)
+    safe = []
+    for r in slot.get("runs", []):
+        _log = r.get("log", [])
+        safe.append({
+            "run_idx":    r.get("run_idx", 0),
+            "run_name":   r.get("run_name") or r.get("name") or f"Run {r.get('run_idx',0)+1}",
+            "bottleneck": r.get("bottleneck"),
+            "epochs":     r.get("epochs"),
+            "lr":         r.get("lr"),
+            "loss_fn":    r.get("loss_fn"),
+            "hidden_mode":r.get("hidden_mode"),
+            "batch_size": r.get("batch_size"),
+            "mse_test":   r.get("mse_test"),
+            "h1":         r.get("h1"),
+            "h2":         r.get("h2"),
+            "h3":         r.get("h3"),
+            "input_dim":  r.get("input_dim"),
+            "dataset_name": r.get("dataset_name"),
+            "is_color":   r.get("is_color"),
+            "log":        _log,
+        })
+    return jsonify({"runs": safe, "status": slot.get("status","")})
+
+
+@app.route("/api/ae_train", methods=["POST"])
+def ae_train():
+    body          = request.get_json(force=True) or {}
+    node_id       = str(body.get("node", "ae_default"))
+    img_data_node = body.get("img_data_node")
+    cfg           = body.get("cfg", {})
+
+    slot = _ae_slot(node_id)
+    if slot["training"]:
+        return jsonify(error="Already training"), 409
+
+    # Validate image slot before launching worker (same pattern as CNN)
+    img_slot = _IMAGE_NODE_DATA.get(str(img_data_node)) if img_data_node else None
+    print(f"[AE] ae_train node={node_id} img_data_node={img_data_node} "
+          f"img_slot_loaded={img_slot.get('loaded') if img_slot else None} "
+          f"_IMAGE_NODE_DATA keys={list(_IMAGE_NODE_DATA.keys())}", flush=True)
+
+    if not img_slot or not img_slot.get("loaded"):
+        return jsonify(error="No image dataset loaded. Connect and load an Image Data block first."), 400
+
+    slot["done"]     = False
+    slot["training"] = True   # set here so UI updates immediately
+    slot["cancel"]   = False
+    slot["error"]    = None
+    slot["progress"] = 0
+    slot["status"]   = "Iniciando…"
+    slot["log"]      = []
+    t = threading.Thread(
+        target=_ae_train_worker,
+        args=(node_id, str(img_data_node), cfg),
+        daemon=True
+    )
+    t.start()
+    return jsonify(ok=True, job_id=node_id)
+
+
+@app.route("/api/ae_poll")
+def ae_poll():
+    node_id = request.args.get("node", "ae_default")
+    slot    = _ae_slot(node_id)
+
+    resp = {
+        "training": slot["training"],
+        "done":     slot["done"],
+        "progress": slot["progress"],
+        "status":   slot["status"],
+        "log":      slot["log"],
+        "error":    slot["error"],
+        "epochs":   slot.get("cfg_epochs"),   # total epochs, available during training
+    }
+    if slot["done"] and not slot["error"]:
+        resp.update(slot.get("_last_result", {}))
+    return jsonify(resp)
+
+
+@app.route("/api/ae_run_data")
+def ae_run_data():
+    """Return sample images and full layer progression for a specific run+image (Compare tab)."""
+    import torch, torch.nn as nn, numpy as np, io, base64
+    from PIL import Image
+
+    node_id = request.args.get("node", "ae_default")
+    run_idx = int(request.args.get("run_idx", -1))
+    img_idx = int(request.args.get("img_idx", 0))
+
+    slot = _ae_slot(node_id)
+    runs = slot.get("runs", [])
+    if not runs:
+        return jsonify(error="No runs"), 404
+
+    run = runs[run_idx] if 0 <= run_idx < len(runs) else runs[-1]
+    n   = len(run.get("sample_originals", []))
+    if img_idx >= n:
+        img_idx = 0
+
+    model       = run.get("model")
+    is_color    = run.get("is_color", False)
+    target_size = run.get("target_size", 28)
+    n_channels  = run.get("n_channels", 1)
+
+    # ── Helpers (same as worker) ─────────────────────────────────────────────
+    def tensor_to_b64(t):
+        arr = (t.detach().numpy() * 255).clip(0, 255).astype(np.uint8)
+        if is_color:
+            arr = arr.reshape(n_channels, target_size, target_size).transpose(1, 2, 0)
+            img = Image.fromarray(arr, "RGB").resize((112, 112), Image.NEAREST)
+        else:
+            img = Image.fromarray(arr.reshape(target_size, target_size), "L").resize((112, 112), Image.NEAREST)
+        buf = io.BytesIO(); img.save(buf, "PNG"); buf.seek(0)
+        return base64.b64encode(buf.read()).decode()
+
+    def vec_to_b64(v_tensor):
+        v = v_tensor.squeeze().detach().numpy()
+        vmin, vmax = float(v.min()), float(v.max())
+        v_norm = (v - vmin) / max(vmax - vmin, 1e-8)
+        side   = max(8, int(np.ceil(np.sqrt(len(v_norm)))))   # ceil — never negative pad
+        pad    = side * side - len(v_norm)
+        v_pad  = np.concatenate([v_norm, np.zeros(pad)])
+        bar    = (v_pad.reshape(side, side) * 255).astype(np.uint8)
+        img_b  = Image.fromarray(bar, "L").resize((112, 112), Image.NEAREST)
+        buf = io.BytesIO(); img_b.save(buf, "PNG"); buf.seek(0)
+        return base64.b64encode(buf.read()).decode()
+
+    # ── Build progression for the requested image ────────────────────────────
+    # For img_idx==0 the stored progression is already there; for any other index
+    # we re-run the model layer-by-layer (identical logic to the worker).
+    if img_idx == 0 and run.get("progression_imgs"):
+        progression = run["progression_imgs"]
+    elif model is not None:
+        latent_vecs = run.get("latent_vectors", [])
+        # Reconstruct the original flat tensor from the stored latent + original image
+        # We decode the stored original PNG back to a tensor so the encoder sees the
+        # exact same input that was used during training (already preprocessed).
+        orig_bytes = base64.b64decode(run["sample_originals"][img_idx])
+        pil_orig   = Image.open(io.BytesIO(orig_bytes))
+        if is_color:
+            pil_orig = pil_orig.convert("RGB").resize((target_size, target_size), Image.BILINEAR)
+            x_arr    = np.array(pil_orig, dtype=np.float32) / 255.0
+            x_flat   = torch.tensor(x_arr.transpose(2, 0, 1).flatten(), dtype=torch.float32)
+        else:
+            pil_orig = pil_orig.convert("L").resize((target_size, target_size), Image.BILINEAR)
+            x_flat   = torch.tensor(np.array(pil_orig, dtype=np.float32).flatten() / 255.0,
+                                    dtype=torch.float32)
+
+        progression = [tensor_to_b64(x_flat)]   # original
+        with torch.no_grad():
+            h = x_flat.unsqueeze(0)
+            for layer in model.encoder:
+                h = layer(h)
+                if isinstance(layer, nn.ReLU):
+                    progression.append(vec_to_b64(h))
+            progression.append(vec_to_b64(h))   # bottleneck
+            h2 = h
+            for layer in model.decoder:
+                h2 = layer(h2)
+                if isinstance(layer, nn.ReLU):
+                    progression.append(vec_to_b64(h2))
+            progression.append(tensor_to_b64(model(x_flat.unsqueeze(0)).squeeze(0)))  # output
+    else:
+        # Model not in RAM (e.g. server restarted) — fall back to stored originals/recons
+        orig  = run["sample_originals"][img_idx]
+        recon = (run.get("sample_recons") or [])[img_idx] if img_idx < len(run.get("sample_recons") or []) else None
+        progression = [orig] + ([recon] if recon else [])
+
+    return jsonify(
+        sample_originals = run.get("sample_originals", []),
+        sample_recons    = run.get("sample_recons", []),
+        progression_imgs = progression,
+        n_samples        = n,
+        dataset_name     = run.get("dataset_name", "mnist"),
+        is_color         = run.get("is_color", False),
+    )
+
+
+@app.route("/api/ae_cancel", methods=["POST"])
+def ae_cancel():
+    node_id = str((request.get_json(force=True) or {}).get("node", "ae_default"))
+    slot = _ae_slot(node_id)
+    slot["cancel"]   = True
+    slot["training"] = False   # force-unlock so a new run can start
+    slot["done"]     = True
+    slot["status"]   = "Cancelado"
+    return jsonify(ok=True)
+
+@app.route("/api/ae_reset", methods=["POST"])
+def ae_reset():
+    """Clear all runs and state for an AE node (called when upstream dataset changes)."""
+    node_id = str((request.get_json(force=True) or {}).get("node", "ae_default"))
+    slot = _ae_slot(node_id)
+    slot["cancel"] = True   # stop any running worker
+    # Re-initialise to clean state
+    _AE_SLOTS[node_id] = {
+        "training": False, "cancel": False, "done": False, "error": None,
+        "progress": 0, "status": "", "log": [],
+        "runs": [], "model": None,
+        "sample_originals": [], "sample_latents": [], "bottleneck": 32,
+    }
+    return jsonify(ok=True)
+
+
+@app.route("/api/ae_reconstruct", methods=["POST"])
+def ae_reconstruct():
+    import torch, numpy as np, io, base64
+    from PIL import Image
+
+    body    = request.get_json(force=True) or {}
+    node_id = str(body.get("node", "ae_default"))
+    run_idx = int(body.get("run_idx", -1))
+    img_idx = int(body.get("img_idx", 0))
+    noise   = float(body.get("noise", 0.0))
+
+    slot = _ae_slot(node_id)
+    runs = slot.get("runs", [])
+    if not runs:
+        return jsonify(error="No trained runs"), 404
+
+    # Always read model AND samples from the specific run — not from the slot globals
+    run = runs[run_idx] if 0 <= run_idx < len(runs) else runs[-1]
+    model         = run.get("model")
+    is_color      = run.get("is_color", False)
+    target_size   = run.get("target_size", 28)
+    n_channels    = run.get("n_channels", 1)
+    latent_vectors = run.get("latent_vectors", [])
+    sample_originals = run.get("sample_originals", [])
+
+    if model is None:
+        return jsonify(error="Model not in memory — retrain"), 404
+
+    if img_idx >= len(sample_originals):
+        img_idx = 0
+
+    # Use stored latent vector for this image (already encoded by this run's model)
+    if latent_vectors and img_idx < len(latent_vectors):
+        lv = torch.tensor(latent_vectors[img_idx], dtype=torch.float32)
+    else:
+        # Fallback: re-encode from the stored original PNG
+        orig_bytes = base64.b64decode(sample_originals[img_idx])
+        pil_img = Image.open(io.BytesIO(orig_bytes))
+        if is_color:
+            pil_img = pil_img.convert("RGB").resize((target_size, target_size), Image.BILINEAR)
+            arr = np.array(pil_img, dtype=np.float32) / 255.0
+            x = torch.tensor(arr.transpose(2,0,1).flatten(), dtype=torch.float32).unsqueeze(0)
+        else:
+            pil_img = pil_img.convert("L").resize((target_size, target_size), Image.BILINEAR)
+            arr = np.array(pil_img, dtype=np.float32) / 255.0
+            x = torch.tensor(arr.flatten(), dtype=torch.float32).unsqueeze(0)
+        with torch.no_grad():
+            lv = model.encoder(x).squeeze(0)
+
+    # Add noise to latent vector
+    if noise > 0:
+        lv = lv + torch.randn_like(lv) * noise
+
+    with torch.no_grad():
+        recon = model.decoder(lv.unsqueeze(0)).squeeze(0)
+
+    # Encode reconstructed to PNG
+    recon_np = (recon.detach().numpy() * 255).clip(0, 255).astype(np.uint8)
+    if is_color:
+        recon_img = Image.fromarray(
+            recon_np.reshape(n_channels, target_size, target_size).transpose(1,2,0), mode="RGB"
+        ).resize((112, 112), Image.NEAREST)
+    else:
+        recon_img = Image.fromarray(
+            recon_np.reshape(target_size, target_size), mode="L"
+        ).resize((112, 112), Image.NEAREST)
+
+    buf = io.BytesIO(); recon_img.save(buf, "PNG"); buf.seek(0)
+    recon_b64 = base64.b64encode(buf.read()).decode()
+
+    # Also return the stored pre-noised original (from this run) for the UI
+    orig_b64 = sample_originals[img_idx] if img_idx < len(sample_originals) else None
+
+    return jsonify(
+        reconstructed=recon_b64,
+        original=orig_b64,
+        latent_vector=[round(float(v), 3) for v in lv.tolist()],
+        latent_dim=len(lv)
+    )

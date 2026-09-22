@@ -49,9 +49,11 @@
       <div class="palette-item" data-type="inspect" draggable="true">🔬 Análisis</div>
       <div class="palette-item" data-type="plots" draggable="true">📊 Plots</div>
       <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
-      <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
+      <div class="sb-group-label" data-i18n="group-vision">🖼️ Visión</div>
       <div class="palette-item" data-type="cnn" draggable="true">🧠 CNN Clasificación</div>
+      <div class="palette-item" data-type="autoencoder" draggable="true">🔄 Autoencoder</div>
 
+      <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
       <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
       <div class="palette-item" data-type="model_eval" draggable="true">📋 Evaluación</div>
       <div class="sb-group-label" data-i18n="group-session">💾 Sesión</div>
@@ -349,6 +351,7 @@ var I18N = {
     "menu-imp-canvas":"📥 Importar canvas (.json)",
     // Sidebar groups
     "group-data":"📋 Datos","group-models":"🤖 Modelos",
+    "group-vision":"🖼️ Visión",
     "group-session":"💾 Sesión","group-nlp":"🗂️ NLP",
     // Save block
     "save-what":"Selecciona qué quieres exportar del bloque conectado.",
@@ -549,7 +552,39 @@ var I18N = {
     "starting":"Iniciando…",
     "done-ok":"✓ Listo",
     "no-operation":"Ninguna operación configurada",
-    "applying":"▶ Aplicar"
+    "applying":"▶ Aplicar",
+    "group-vision":"🖼️ Visión",
+    "ae-train-btn":"▶ Entrenar",
+    "ae-new-run":"＋ Nueva run",
+    "ae-cancel":"⏹ Cancelar",
+    "ae-configure":"⚙️ Configurar",
+    "ae-explore":"🔬 Explorar",
+    "ae-compare":"📊 Comparar",
+    "ae-connect-pre":"Conecta y aplica un bloque de Preprocesado primero.",
+    "ae-no-img-cfg":"Configuración de imagen no encontrada. Reabre el bloque Preprocesado y pulsa Aplicar.",
+    "ae-configure-first":"Configura y pulsa Entrenar para comenzar.",
+    "ae-training":"Entrenando…",
+    "ae-epoch-label":"Epoch",
+    "ae-loss-label":"Pérdida (MSE)",
+    "ae-bottleneck":"🔲 Bottleneck",
+    "ae-epochs":"⏱ Epochs",
+    "ae-lr":"📈 Learning rate",
+    "ae-loss-fn":"📐 Función de pérdida",
+    "ae-tip-bottleneck":"Número de neuronas en el cuello de botella. Un valor pequeño (8–16) comprime más la información y la reconstrucción pierde más calidad. Un valor grande (64–128) conserva más detalle pero aprende menos compresión.",
+    "ae-tip-epochs":"Una epoch = el modelo ve todas las imágenes una vez. Más epochs → aprende más, pero puede sobreajustarse. Empieza con 10 y sube si la pérdida sigue bajando.",
+    "ae-tip-lr":"Velocidad a la que el modelo ajusta sus pesos. 0.001 es un buen punto de partida para autoencoders.",
+    "ae-tip-lossfn":"MSE (error cuadrático medio) mide la diferencia píxel a píxel. BCE (entropía cruzada binaria) funciona mejor cuando los píxeles están normalizados a [0,1]. Para MNIST, ambas funcionan bien.",
+    "ae-explore-hint":"Selecciona una imagen y usa el slider para añadir ruido al vector latente. Verás cómo el Autoencoder la reconstruye en tiempo real.",
+    "ae-noise-label":"🎲 Ruido en el espacio latente",
+    "ae-select-image":"Selecciona imagen",
+    "ae-original":"Original",
+    "ae-reconstructed":"Reconstruida",
+    "ae-latent-vector":"Vector latente",
+    "ae-no-runs":"Entrena al menos un modelo para explorar.",
+    "ae-compare-hint":"Comparativa de reconstrucciones originales vs reconstruidas para las runs entrenadas.",
+    "ae-run-label":"Run",
+    "ae-mse-test":"MSE test",
+    "ae-best":"mejor"
   },
   en: {
     // Canvas / shell
@@ -671,6 +706,7 @@ var I18N = {
     "menu-imp-canvas":"📥 Import canvas (.json)",
     // Sidebar groups
     "group-data":"📋 Data","group-models":"🤖 Models",
+    "group-vision":"🖼️ Vision",
     "group-session":"💾 Session","group-nlp":"🗂️ NLP",
     // Save block
     "save-what":"Select what you want to export from the connected block.",
@@ -871,7 +907,39 @@ var I18N = {
     "starting":"Starting…",
     "done-ok":"✓ Done",
     "no-operation":"No operation configured",
-    "applying":"▶ Apply"
+    "applying":"▶ Apply",
+    "group-vision":"🖼️ Vision",
+    "ae-train-btn":"▶ Train",
+    "ae-new-run":"＋ New run",
+    "ae-cancel":"⏹ Cancel",
+    "ae-configure":"⚙️ Configure",
+    "ae-explore":"🔬 Explore",
+    "ae-compare":"📊 Compare",
+    "ae-connect-pre":"Connect and apply a Preprocessing block first.",
+    "ae-no-img-cfg":"Image config not found. Re-open the Preprocessing block and click Apply.",
+    "ae-configure-first":"Configure and click Train to start.",
+    "ae-training":"Training…",
+    "ae-epoch-label":"Epoch",
+    "ae-loss-label":"Loss (MSE)",
+    "ae-bottleneck":"🔲 Bottleneck",
+    "ae-epochs":"⏱ Epochs",
+    "ae-lr":"📈 Learning rate",
+    "ae-loss-fn":"📐 Loss function",
+    "ae-tip-bottleneck":"Number of neurons in the bottleneck. A small value (8–16) compresses more information and loses more reconstruction quality. A larger value (64–128) preserves more detail but learns less compression.",
+    "ae-tip-epochs":"One epoch = the model sees all images once. More epochs → learns more, but may overfit. Start with 10 and increase if loss keeps dropping.",
+    "ae-tip-lr":"Speed at which the model adjusts its weights. 0.001 is a good starting point for autoencoders.",
+    "ae-tip-lossfn":"MSE (mean squared error) measures pixel-by-pixel difference. BCE (binary cross-entropy) works better when pixels are normalised to [0,1]. For MNIST both work well.",
+    "ae-explore-hint":"Select an image and use the slider to add noise to the latent vector. Watch how the Autoencoder reconstructs it in real time.",
+    "ae-noise-label":"🎲 Noise in latent space",
+    "ae-select-image":"Select image",
+    "ae-original":"Original",
+    "ae-reconstructed":"Reconstructed",
+    "ae-latent-vector":"Latent vector",
+    "ae-no-runs":"Train at least one model to explore.",
+    "ae-compare-hint":"Comparison of original vs reconstructed images for all trained runs.",
+    "ae-run-label":"Run",
+    "ae-mse-test":"MSE test",
+    "ae-best":"best"
   }
 };
 
@@ -896,6 +964,8 @@ function applyLang() {
   META.data.name        = lang === "es" ? "Datos"            : "Data";
   META.data_image.name  = lang === "es" ? "Datos Imagen"     : "Image Data";
   META.cnn.name         = lang === "es" ? "CNN Clasificación"  : "CNN Classification";
+  META.autoencoder.name = lang === "es" ? "Autoencoder"        : "Autoencoder";
+
 
   META.inspect.name     = lang === "es" ? "Análisis"         : "Analysis";
   META.preprocess.name  = lang === "es" ? "Preprocesado"     : "Preprocessing";
@@ -1418,6 +1488,8 @@ var META = {
   data:         { icon: "📂",  bg: "#f0fdf7", name: "Datos",           nameEn: "Data" },
   data_image:   { icon: "📷",  bg: "#fff8f0", name: "Datos Imagen",    nameEn: "Image Data" },
   cnn:          { icon: "🧠",  bg: "#f0f4ff", name: "CNN Clasificación",  nameEn: "CNN Classification" },
+  autoencoder:  { icon: "🔄",  bg: "#f0fff8", name: "Autoencoder",        nameEn: "Autoencoder" },
+
 
   inspect:      { icon: "🔬",  bg: "#f0f8ff", name: "Análisis",        nameEn: "Analysis" },
   plots:        { icon: "📊",  bg: "#fdf5ff", name: "Plots",           nameEn: "Plots" },
@@ -1439,10 +1511,11 @@ var ALLOWED = {
   data:         ["inspect","plots","preprocess","linreg","rag_chunk","rag_embed"],
   data_image:   ["inspect","preprocess"],
   cnn:          ["model_eval","save_model"],
+  autoencoder:  ["model_eval","save_model"],
   inspect:      [],
   plots:        ["save_model"],
   // Preprocesado → exploración (para ver datos transformados) O → modelos O → guardar
-  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model","rag_chunk","rag_embed","cnn"],
+  preprocess:   ["inspect","plots","linreg","training","topicmodel","classify","save_model","rag_chunk","rag_embed","cnn","autoencoder"],
   // Modelos
   linreg:       ["model_eval","save_model"],
   model_eval:   ["save_model"],
@@ -2280,7 +2353,7 @@ function openModal(node) {
   mBody.style.cssText = "";
   moEl.classList.remove("hidden"); moEl.classList.add("visible");
   // Widen modal for blocks that benefit from extra horizontal space
-  var wideTypes = ["preprocess"];
+  var wideTypes = ["preprocess", "autoencoder", "cnn", "model_eval"];
   var modalEl = document.getElementById("modal");
   if (modalEl) modalEl.classList.toggle("modal-wide", wideTypes.indexOf(node.type) !== -1);
   if      (node.type === "data")          renderData(node);
@@ -2295,6 +2368,8 @@ function openModal(node) {
   else if (node.type === "training")     renderTrain(node);
   else if (node.type === "topicmodel")   renderTopicModel(node);
   else if (node.type === "cnn")          renderCNN(node);
+  else if (node.type === "autoencoder")  renderAutoencoder(node);
+
 
   else if (node.type === "classify")     renderClassify(node);
   else if (node.type === "rag_chunk")    renderRagChunk(node);
@@ -4562,7 +4637,7 @@ function _setCardActive(card, active) {
 // MODEL_EVAL MODAL — Bloque Evaluación (detecta modelo upstream)
 // ═══════════════════════════════════════════════════════════════════
 // Tipos de nodo que pueden alimentar Evaluación (ampliar aquí al añadir nuevos modelos)
-var _EVAL_MODEL_TYPES = ["linreg", "load_model", "cnn"];
+var _EVAL_MODEL_TYPES = ["linreg", "load_model", "cnn", "autoencoder"];
 
 async function renderModelEval(node) {
   var _animEval = prepareModalResize();
@@ -4587,6 +4662,12 @@ async function renderModelEval(node) {
   // ── CNN upstream → delegate to vision evaluation ─────────────────────────
   if (modelNode.type === "cnn") {
     await renderCNNEval(node, modelNode);
+    return;
+  }
+
+  // ── Autoencoder upstream → delegate to AE evaluation ─────────────────────
+  if (modelNode.type === "autoencoder") {
+    await renderAEEval(node, modelNode);
     return;
   }
 
@@ -5914,6 +5995,44 @@ window.pltHistDel = function(idx) {
 // ═══════════════════════════════════════════
 // IMAGE DATA BLOCK
 // ═══════════════════════════════════════════
+// Reset all Preprocess + Autoencoder nodes that depend on imgDataNode when the dataset changes.
+// newDataset: the new dataset string ("mnist" | "dogs_muffins" | "cats_vs_dogs")
+function _invalidateDownstreamAE(imgDataNode, newDataset) {
+  nodes.forEach(function(n2) {
+    if (n2.type === "preprocess") {
+      var upSrc = upstreamSourceNode(n2.id);
+      if (upSrc && String(upSrc.id) === String(imgDataNode.id)) {
+        n2.data.applied       = false;
+        n2.data.imgCfg        = null;
+        n2.data.imgDataNodeId = null;
+        setOK(n2.id, false);
+        setNB(n2.id, "", "");
+      }
+    }
+    if (n2.type === "autoencoder") {
+      var upPre = upstreamSourceNode(n2.id);
+      if (upPre && upPre.type === "preprocess") {
+        var upImg = upstreamSourceNode(upPre.id);
+        if (upImg && String(upImg.id) === String(imgDataNode.id)) {
+          // Only reset if AE actually has runs from a different dataset
+          var aeDataset = (n2.data.aeRuns && n2.data.aeRuns[0]) ? n2.data.aeRuns[0].dataset_name : null;
+          if (!aeDataset || aeDataset !== newDataset) {
+            n2.data.aeRuns         = [];
+            n2.data.aeActiveRunIdx = 0;
+            n2.data._aeTab         = "configure";
+            n2.data._aeTraining    = false;
+            setOK(n2.id, false);
+            setNB(n2.id, "", "");
+            fetch("/api/ae_reset", { method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ node: String(n2.id) }) });
+          }
+        }
+      }
+    }
+  });
+}
+
 async function renderDataImage(node) {
   var _anim = prepareModalResize();
 
@@ -5955,8 +6074,17 @@ async function renderDataImage(node) {
     setNB(node.id, d.n_classes + (_es ? " clases" : " classes") + " · " + d.n_train + " train", "badge-ok");
     setOK(node.id, true);
     node.data = node.data || {};
-    node.data.loaded = true;
+    var prevDataset   = node.data.dataset;
+    node.data.loaded  = true;
     node.data.dataset = d.dataset;
+
+    // ── Invalidate downstream nodes whenever the dataset changes ─────────────
+    // Triggers both when the user switches datasets AND on first load if the
+    // Autoencoder already holds runs from a previous session/dataset.
+    var datasetChanged = prevDataset !== d.dataset;   // also true when prevDataset was undefined
+    if (datasetChanged) {
+      _invalidateDownstreamAE(node, d.dataset);
+    }
 
     // Thumbnails — grouped by class, 3 per class, 96px, clickable to expand
     var thumbsHtml = d.thumbs.map(function(bucket, i) {
@@ -7123,7 +7251,8 @@ async function renderPre(node) {
       node.data.imgCfg = { imgSize: imgSize, normMode: normMode, batchSize: batchSize,
                            testSplit: testSplit,
                            augFlip: augFlip, augRotate: augRotate, augCrop: augCrop,
-                           augFactor: augFactor };
+                           augFactor: augFactor,
+                           dataset: upSrcNode.data && upSrcNode.data.dataset ? upSrcNode.data.dataset : "mnist" };
       node.data.applied = true;
       node.data.task    = "image";
       node.data.imgDataNodeId = String(upSrcNode.id);
@@ -8592,7 +8721,8 @@ async function renderSaveModel(node) {
         if (MODEL_TYPES.indexOf(n.type) !== -1 || n.type === "load_model") {
           evalModelNodeId = String(n.id); evalModelType = n.type;
         }
-        if (n.type === "cnn") { evalModelNodeId = String(n.id); evalModelType = "cnn"; }
+        if (n.type === "cnn")         { evalModelNodeId = String(n.id); evalModelType = "cnn"; }
+        if (n.type === "autoencoder") { evalModelNodeId = String(n.id); evalModelType = "autoencoder"; }
       }
     });
 
@@ -8616,6 +8746,28 @@ async function renderSaveModel(node) {
       } else {
         sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
           (lang === "es" ? "Entrena al menos un modelo en el bloque CNN primero." : "Train at least one model in the CNN block first.") + '</div>';
+      }
+    } else if (evalModelType === "autoencoder" && evalModelNodeId) {
+      // ── AE report ────────────────────────────────────────────────────────
+      var aeRunsResp = await fetch("/api/ae_eval_data?node=" + encodeURIComponent(evalModelNodeId))
+        .then(function(r){ return r.json(); }).catch(function(){ return { runs: [] }; });
+      var nAeRuns = (aeRunsResp.runs || []).length;
+      if (nAeRuns) {
+        sectionsHtml += _sHdr(lang === "es" ? "INFORME AUTOENCODER" : "AUTOENCODER REPORT");
+        sectionsHtml += _radioRow("ae_report_lang", "ae__report__es",
+          "📄 " + (lang === "es" ? "Informe en español" : "Report in Spanish"),
+          (lang === "es" ? `${nAeRuns} run(s) · reconstrucciones, métricas, espacio latente` : `${nAeRuns} run(s) · reconstructions, metrics, latent space`),
+          lang === "es");
+        sectionsHtml += _radioRow("ae_report_lang", "ae__report__en",
+          "📄 " + (lang === "es" ? "Informe en inglés" : "Report in English"),
+          (lang === "es" ? "Mismo contenido en inglés" : "Same content in English"),
+          lang !== "es");
+        ctx.aeNodeId = evalModelNodeId;
+        ctx.aeEvalNode = upNode;
+        ctx.aeUserImgs = (upNode.data && upNode.data._aeUserImgs) || [];
+      } else {
+        sectionsHtml = '<div style="padding:20px;text-align:center;color:var(--sec);font-size:13px">' +
+          (lang === "es" ? "Entrena al menos una vez el Autoencoder primero." : "Train the Autoencoder at least once first.") + '</div>';
       }
     } else if (evalModelNodeId) {
       sectionsHtml += _sHdr("save-section-eval");
@@ -8955,6 +9107,42 @@ async function renderSaveModel(node) {
           });
           if (resp.ok) { _triggerDownload(await resp.blob(), fname); saved++; }
           else { errors.push(fname); }
+        } else { saved++; }
+
+      // ── AE: informe HTML ─────────────────────────────────────────────────
+      } else if (id === "ae__report__es" || id === "ae__report__en") {
+        var aeLang = (id === "ae__report__en") ? "en" : "es";
+        var aeNid  = ctx.aeNodeId;
+        if (!aeNid) { errors.push("ae_report.html: no AE node"); continue; }
+        statEl.textContent = lang === "es" ? "Generando informe Autoencoder…" : "Generating Autoencoder report…";
+        var aeEvalNd  = ctx.aeEvalNode;
+        var aeUserImg = (aeEvalNd && aeEvalNd.data && aeEvalNd.data._aeUserImgs) || [];
+        // Also check the eval node upstream of save
+        var preAeNode2 = null;
+        edges.forEach(function(e2) {
+          if (String(e2.to) === String(aeNid)) {
+            var fn2 = nodeById(e2.from);
+            if (fn2 && fn2.type === "preprocess") preAeNode2 = fn2;
+          }
+        });
+        var preInfoAe = (preAeNode2 && preAeNode2.data && preAeNode2.data.imgCfg) ? preAeNode2.data.imgCfg : {};
+        var aeFname   = "ae_report_" + aeLang + ".html";
+        var pick = await fetch("/api/pick_export_path", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            endpoint:     "/api/ae_report",
+            default_name: aeFname,
+            extra:        { node: String(aeNid), lang: aeLang, user_imgs: aeUserImg, pre_info: preInfoAe }
+          })
+        }).then(function(r){ return r.json(); }).catch(function(){ return { fallback: true }; });
+        if (pick.cancelled) continue;
+        if (pick.fallback || pick.error) {
+          var resp = await fetch("/api/ae_report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node: String(aeNid), lang: aeLang, user_imgs: aeUserImg, pre_info: preInfoAe })
+          });
+          if (resp.ok) { _triggerDownload(await resp.blob(), aeFname); saved++; }
+          else { errors.push(aeFname); }
         } else { saved++; }
 
       // ── Evaluación: plot individual ───────────────────────────────────────
@@ -10076,6 +10264,104 @@ function openTopicsWCPopup(topics) {
 }
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// MNIST DRAW CANVAS — shared helper (CNN Eval + AE Eval)
+// ═══════════════════════════════════════════════════════════════════
+// Returns HTML string for a 280×280 drawing canvas.
+// onSubmitFn(b64, filename) is called when the user clicks Predict/Reconstruct.
+// darkScheme: initial colour scheme (false=white bg, true=black bg).
+function _buildDrawCanvas(onSubmitFn, darkScheme) {
+  var _en = lang === "en";
+  var bg   = darkScheme ? '#000' : '#fff';
+  var uid  = 'dc_' + Date.now();
+  var cvId = 'draw-cv-' + uid;
+  var clrId= 'draw-clear-' + uid;
+  var subId= 'draw-submit-' + uid;
+  var schId= 'draw-scheme-' + uid;
+  var html =
+    '<div id="draw-wrap-' + uid + '" style="display:flex;flex-direction:column;align-items:center;gap:10px">' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center">' +
+        '<span style="font-size:12px;color:var(--sec)">' + (_en ? 'Background:' : 'Fondo:') + '</span>' +
+        '<button type="button" id="' + schId + '_white" data-scheme="white" style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ' + (!darkScheme ? 'var(--accent)' : 'var(--border)') + ';background:' + (!darkScheme ? 'var(--accent-tint)' : 'var(--card)') + ';color:var(--ink)">' +
+          '⬜ ' + (_en ? 'White (draw in black)' : 'Blanco (dibuja en negro)') +
+        '</button>' +
+        '<button type="button" id="' + schId + '_dark" data-scheme="dark" style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ' + (darkScheme ? 'var(--accent)' : 'var(--border)') + ';background:' + (darkScheme ? 'var(--accent-tint)' : 'var(--card)') + ';color:var(--ink)">' +
+          '⬛ ' + (_en ? 'Black (draw in white)' : 'Negro (dibuja en blanco)') +
+        '</button>' +
+      '</div>' +
+      '<canvas id="' + cvId + '" width="280" height="280" style="border-radius:10px;cursor:crosshair;touch-action:none;border:2px solid var(--border);background:' + bg + '"></canvas>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button type="button" id="' + clrId + '" style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;border:1.5px solid var(--border);background:var(--card);cursor:pointer;color:var(--sec)">' +
+          '🗑 ' + (_en ? 'Clear' : 'Borrar') +
+        '</button>' +
+        '<button type="button" id="' + subId + '" style="padding:6px 18px;border-radius:8px;font-size:12px;font-weight:700;border:none;background:var(--accent);cursor:pointer;color:#000">' +
+          '🔍 ' + (_en ? 'Predict' : 'Predecir') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+
+  setTimeout(function() {
+    var cv = document.getElementById(cvId);
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var currentBg = bg, currentFg = (darkScheme ? '#fff' : '#000');
+    ctx.fillStyle = currentBg; ctx.fillRect(0,0,280,280);
+
+    var drawing = false, lastX = 0, lastY = 0;
+    function getPos(e, el) {
+      var r = el.getBoundingClientRect();
+      var src = e.touches ? e.touches[0] : e;
+      return { x: src.clientX - r.left, y: src.clientY - r.top };
+    }
+    function startDraw(e) {
+      drawing = true;
+      var p = getPos(e, cv); lastX = p.x; lastY = p.y;
+      ctx.beginPath(); ctx.arc(lastX, lastY, 10, 0, Math.PI*2);
+      ctx.fillStyle = currentFg; ctx.fill(); e.preventDefault();
+    }
+    function moveDraw(e) {
+      if (!drawing) return;
+      var p = getPos(e, cv);
+      ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = currentFg; ctx.lineWidth = 20; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+      lastX = p.x; lastY = p.y; e.preventDefault();
+    }
+    function endDraw() { drawing = false; }
+    cv.addEventListener('mousedown',  startDraw);
+    cv.addEventListener('mousemove',  moveDraw);
+    cv.addEventListener('mouseup',    endDraw);
+    cv.addEventListener('mouseleave', endDraw);
+    cv.addEventListener('touchstart', startDraw, {passive:false});
+    cv.addEventListener('touchmove',  moveDraw,  {passive:false});
+    cv.addEventListener('touchend',   endDraw);
+
+    function setScheme(dark) {
+      currentBg = dark ? '#000' : '#fff'; currentFg = dark ? '#fff' : '#000';
+      cv.style.background = currentBg;
+      ctx.fillStyle = currentBg; ctx.fillRect(0,0,280,280);
+      var bW = document.getElementById(schId+'_white'), bD = document.getElementById(schId+'_dark');
+      if (bW) { bW.style.borderColor = !dark?'var(--accent)':'var(--border)'; bW.style.background = !dark?'var(--accent-tint)':'var(--card)'; }
+      if (bD) { bD.style.borderColor = dark?'var(--accent)':'var(--border)';  bD.style.background = dark?'var(--accent-tint)':'var(--card)'; }
+    }
+    var bW = document.getElementById(schId+'_white'), bD = document.getElementById(schId+'_dark');
+    if (bW) bW.addEventListener('click', function() { setScheme(false); });
+    if (bD) bD.addEventListener('click', function() { setScheme(true); });
+
+    var clrBtn = document.getElementById(clrId);
+    if (clrBtn) clrBtn.addEventListener('click', function() { ctx.fillStyle=currentBg; ctx.fillRect(0,0,280,280); });
+
+    var subBtn = document.getElementById(subId);
+    if (subBtn) subBtn.addEventListener('click', function() {
+      var tmp = document.createElement('canvas'); tmp.width = 28; tmp.height = 28;
+      tmp.getContext('2d').drawImage(cv, 0,0,280,280, 0,0,28,28);
+      onSubmitFn(tmp.toDataURL('image/png'), 'drawn_digit.png');
+    });
+  }, 60);
+
+  return html;
+}
+
+// ═══════════════════════════════════════════
 // CNN EVALUATION modal
 // ═══════════════════════════════════════════
 // Called either directly (legacy) or from renderModelEval when upstream is CNN.
@@ -10292,17 +10578,45 @@ async function renderCNNEval(node, cnnNodeArg) {
     '</div>';
   }
 
+  // Detect MNIST: class names are exactly 0–9 digits
+  var _isMnist = (function() {
+    var cn = (runs[0] && runs[0].class_names) || [];
+    if (cn.length !== 10) return false;
+    for (var i = 0; i < 10; i++) { if (String(cn[i]) !== String(i)) return false; }
+    return true;
+  })();
+
+  node.data._predictMode = node.data._predictMode || 'upload'; // 'upload' | 'draw'
+
   function renderPredict() {
-    return '<div id="eval-drop-zone" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;color:var(--sec);font-size:13px;transition:border-color .15s;margin-bottom:10px" ' +
-        'ondragover="event.preventDefault();this.style.borderColor=\'var(--accent)\'" ' +
-        'ondragleave="this.style.borderColor=\'var(--border)\'" ' +
-        'ondrop="handleEvalDrop(event)">' +
-        '📂 ' + (_en ? 'Drag an image here or ' : 'Arrastra una imagen aquí o ') +
-        '<label style="color:var(--accent);cursor:pointer;text-decoration:underline">' +
-          (_en ? 'browse' : 'selecciona') +
-          '<input type="file" accept="image/*" style="display:none" onchange="handleEvalFile(this)">' +
-        '</label>' +
-      '</div>' +
+    var mode = node.data._predictMode || 'upload';
+    var mnistBar = _isMnist
+      ? '<div style="display:flex;gap:6px;margin-bottom:12px">' +
+          '<button type="button" data-pmode="upload" style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:' + (mode==='upload'?'700':'400') + ';border:2px solid ' + (mode==='upload'?'var(--accent)':'var(--border)') + ';background:' + (mode==='upload'?'var(--accent-tint)':'var(--card)') + ';cursor:pointer;color:var(--ink)">📂 ' + (_en?'Upload image':'Subir imagen') + '</button>' +
+          '<button type="button" data-pmode="draw"   style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:' + (mode==='draw'?'700':'400') + ';border:2px solid ' + (mode==='draw'?'var(--accent)':'var(--border)') + ';background:' + (mode==='draw'?'var(--accent-tint)':'var(--card)') + ';cursor:pointer;color:var(--ink)">✏️ ' + (_en?'Draw digit':'Dibujar dígito') + '</button>' +
+        '</div>'
+      : '';
+
+    var uploadSection =
+      '<div id="eval-drop-zone" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;color:var(--sec);font-size:13px;transition:border-color .15s;margin-bottom:10px" ' +
+          'ondragover="event.preventDefault();this.style.borderColor=\'var(--accent)\'" ' +
+          'ondragleave="this.style.borderColor=\'var(--border)\'" ' +
+          'ondrop="handleEvalDrop(event)">' +
+          '📂 ' + (_en ? 'Drag an image here or ' : 'Arrastra una imagen aquí o ') +
+          '<label style="color:var(--accent);cursor:pointer;text-decoration:underline">' +
+            (_en ? 'browse' : 'selecciona') +
+            '<input type="file" accept="image/*" style="display:none" onchange="handleEvalFile(this)">' +
+          '</label>' +
+        '</div>';
+
+    var drawSection = _isMnist && mode === 'draw'
+      ? '<div style="margin-bottom:10px">' + _buildDrawCanvas(function(b64, fname) {
+          doPredictB64(b64, fname);
+        }, false) + '</div>'
+      : '';
+
+    return mnistBar +
+      (mode === 'upload' ? uploadSection : drawSection) +
       historyThumbsHtml() +
       '<div id="eval-predict-result"></div>';
   }
@@ -10370,6 +10684,14 @@ async function renderCNNEval(node, cnnNodeArg) {
     wireRunSelector("eval-run-sel-predict");
     wireRunSelector("eval-run-sel-errors");
     wireHistoryThumbs();
+
+    // Wire MNIST predict-mode toggle buttons
+    mBody.querySelectorAll("button[data-pmode]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        node.data._predictMode = btn.dataset.pmode;
+        renderTab();
+      });
+    });
   }
 
   mBody.style.display    = "flex";
@@ -10437,17 +10759,11 @@ async function renderCNNEval(node, cnnNodeArg) {
     }).join("");
   }
 
-  async function doPredict(file) {
+  async function doPredictB64(b64, filename) {
     var result = document.getElementById("eval-predict-result");
     if (result) result.innerHTML = '<div style="color:var(--sec);font-size:13px">' + (_en ? "Predicting with all runs…" : "Prediciendo con todas las runs…") + '</div>';
 
-    var b64 = await new Promise(function(resolve) {
-      var fr = new FileReader();
-      fr.onload = function(e) { resolve(e.target.result); };
-      fr.readAsDataURL(file);
-    });
-
-    var previewHtml = '<img src="' + b64 + '" style="width:100px;height:100px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border);display:block;margin:0 auto 12px">';
+    var previewHtml = '<img src="' + b64 + '" style="width:100px;height:100px;object-fit:contain;border-radius:10px;border:1.5px solid var(--border);display:block;margin:0 auto 12px;image-rendering:pixelated;background:#000">';
 
     // Predict with ALL runs in parallel
     var classNames = runs[0].class_names;
@@ -10469,7 +10785,7 @@ async function renderCNNEval(node, cnnNodeArg) {
     }
 
     // Save to history
-    node.data.imgHistory.unshift({ b64: b64, filename: file.name, results: runResults, class_names: classNames });
+    node.data.imgHistory.unshift({ b64: b64, filename: filename || 'image.png', results: runResults, class_names: classNames });
     if (node.data.imgHistory.length > 12) node.data.imgHistory.pop();
 
     // Refresh history row without full re-render
@@ -10484,7 +10800,7 @@ async function renderCNNEval(node, cnnNodeArg) {
       histWrap.outerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap" id="eval-history-row">' +
         node.data.imgHistory.map(function(h, hi) {
           return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer" data-hist-idx="' + hi + '">' +
-            '<img src="' + h.b64 + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1.5px solid var(--border)">' +
+            '<img src="' + h.b64 + '" style="width:48px;height:48px;object-fit:contain;border-radius:6px;border:1.5px solid var(--border);image-rendering:pixelated;background:#111">' +
             '<span style="font-size:9px;color:var(--sec);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (h.filename || '') + '</span>' +
           '</div>';
         }).join('') +
@@ -10494,6 +10810,1752 @@ async function renderCNNEval(node, cnnNodeArg) {
 
     result.innerHTML = previewHtml + buildMultiRunResultHtml(runResults, classNames);
   }
+
+  async function doPredict(file) {
+    var b64 = await new Promise(function(resolve) {
+      var fr = new FileReader();
+      fr.onload = function(e) { resolve(e.target.result); };
+      fr.readAsDataURL(file);
+    });
+    await doPredictB64(b64, file.name);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTOENCODER MODAL
+// ═══════════════════════════════════════════════════════════════════
+// ── AE Evaluation block ───────────────────────────────────────────────────────
+async function renderAEEval(evalNode, aeNodeArg) {
+  var _en   = lang === "en";
+  var _anim = prepareModalResize();
+  evalNode.data = evalNode.data || {};
+
+  // Accept aeNode directly (from renderModelEval dispatch) or resolve from edges
+  var aeNode = aeNodeArg || null;
+  if (!aeNode) {
+    for (var i = 0; i < edges.length; i++) {
+      var fn = nodeById(edges[i].from);
+      if (fn && fn.type === "autoencoder" && edges[i].to === evalNode.id) { aeNode = fn; break; }
+    }
+  }
+  if (!aeNode) {
+    mBody.innerHTML = '<div style="padding:32px;text-align:center;color:var(--sec)">' +
+      '<div style="font-size:32px;margin-bottom:12px">🔌</div>' +
+      '<div>' + (_en ? "Connect an Autoencoder block first." : "Conecta un bloque Autoencoder primero.") + '</div></div>';
+    mFoot.innerHTML = ""; _anim(); return;
+  }
+  // alias so inner functions use consistent name
+  var node = evalNode;
+  var runs = aeNode.data.aeRuns || [];
+  if (!runs.length) {
+    mBody.innerHTML = '<div style="padding:32px;text-align:center;color:var(--sec)">' +
+      '<div style="font-size:32px;margin-bottom:12px">🧠</div>' +
+      '<div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px">' +
+        (_en ? "No runs yet" : "Aún no hay runs") + '</div>' +
+      '<div style="font-size:12px">' +
+        (_en ? "Train the Autoencoder first, then come back here." : "Entrena el Autoencoder primero y vuelve aquí.") +
+      '</div></div>';
+    mFoot.innerHTML = ""; _anim(); return;
+  }
+
+  // Fetch evaluation data from server
+  var evalData = null;
+  try {
+    var r = await fetch("/api/ae_eval_data?node=" + encodeURIComponent(String(aeNode.id)));
+    evalData = await r.json();
+  } catch(e) {}
+
+  if (!evalData || evalData.error) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' +
+      (_en ? "Could not load evaluation data." : "No se pudieron cargar los datos de evaluación.") + '</div>';
+    mFoot.innerHTML = ""; _anim(); return;
+  }
+
+  var evalRuns = evalData.runs || [];
+  var mseVsBn  = evalData.mse_vs_bottleneck || [];
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  var activeTab = node.data._aeEvalTab || "overview";
+
+  function tabBar() {
+    var tabs = [
+      { id: "overview", label: _en ? "📊 Overview"    : "📊 Resumen" },
+      { id: "recon",    label: _en ? "🖼️ Reconstruct" : "🖼️ Reconstrucción" },
+      { id: "latent",   label: _en ? "🔵 Latent space" : "🔵 Espacio latente" },
+      { id: "upload",   label: _en ? "👤 My image"     : "👤 Mi imagen" },
+    ];
+    return '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0">' +
+      tabs.map(function(t) {
+        var on = t.id === activeTab;
+        return '<button type="button" data-aetab="' + t.id + '" style="padding:9px 14px;border:none;border-bottom:2px solid ' +
+          (on ? 'var(--accent)' : 'transparent') + ';background:none;cursor:pointer;font-size:12px;font-weight:' +
+          (on ? '700':'400') + ';color:' + (on ? 'var(--ink)':'var(--sec)') + ';white-space:nowrap">' + t.label + '</button>';
+      }).join("") + '</div>';
+  }
+
+  // ── Best run badge ────────────────────────────────────────────────────────
+  var bestMse = Math.min.apply(null, evalRuns.map(function(r) { return r.mse_test || Infinity; }));
+  var bestRun = evalRuns.find(function(r) { return r.mse_test === bestMse; }) || evalRuns[0];
+
+  // ── Tab content ───────────────────────────────────────────────────────────
+  function renderOverview() {
+    // Runs table
+    var tableRows = evalRuns.map(function(r, i) {
+      var isBest = r.mse_test === bestMse;
+      return '<tr data-aerun="' + i + '" style="cursor:pointer;' + (isBest ? 'background:var(--tinted)' : '') + '">' +
+        '<td style="padding:7px 10px;font-weight:' + (isBest?'700':'400') + '">' +
+          (r.name || ('Run ' + (i+1))) + (isBest ? ' <span style="color:var(--accent)">★</span>' : '') +
+        '</td>' +
+        '<td style="text-align:right;padding:7px 10px">' + (r.bottleneck || '—') + '</td>' +
+        '<td style="text-align:right;padding:7px 10px">' + (r.hidden_mode || 'auto') + '</td>' +
+        '<td style="text-align:right;padding:7px 10px">' + (r.epochs || '—') + '</td>' +
+        '<td style="text-align:right;padding:7px 10px">' + (r.lr || '—') + '</td>' +
+        '<td style="text-align:right;padding:7px 10px;font-weight:600;color:' + (isBest?'#19a870':'var(--ink)') + '">' +
+          (r.mse_test != null ? r.mse_test.toFixed(5) : '—') +
+        '</td></tr>' +
+        '<tr id="ae-eval-detail-' + i + '" style="display:none"><td colspan="6" id="ae-eval-detail-body-' + i + '" style="padding:12px 16px;background:var(--tinted)"><em style="color:var(--sec)">…</em></td></tr>';
+    }).join("");
+
+    // MSE vs Bottleneck spark
+    var mseChart   = '<canvas id="ae-mse-bn-chart"    height="160" style="width:100%;border-radius:8px;border:1px solid var(--border)"></canvas>';
+    var histChart  = '<canvas id="ae-hist-chart"      height="130" style="width:100%;border-radius:8px;border:1px solid var(--border)"></canvas>';
+    var lossChart  = '<canvas id="ae-eval-loss-chart" height="160" style="width:100%;border-radius:8px;border:1px solid var(--border)"></canvas>';
+    var hasLoss    = evalRuns.some(function(r) { return r.log && r.log.length > 1; });
+
+    return '<div style="display:flex;flex-direction:column;gap:20px;padding:16px">' +
+
+      // Summary cards
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">' +
+        _aeStatCard(_en ? "Best MSE" : "Mejor MSE", bestMse.toFixed(5), "#19a870") +
+        _aeStatCard(_en ? "Runs" : "Runs", String(evalRuns.length), "var(--accent)") +
+        _aeStatCard("Bottleneck", String(bestRun.bottleneck || "—"), "#4a90d9") +
+      '</div>' +
+
+      // Runs table
+      '<div>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">' +
+          (_en ? "Run comparison" : "Comparativa de runs") +
+          ' <span style="font-size:11px;font-weight:400;color:var(--sec)">(' +
+            (_en ? "click row for details" : "haz clic para ver detalles") + ')</span>' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="border-bottom:2px solid var(--border)">' +
+            '<th style="padding:7px 10px;text-align:left;color:var(--sec)">Run</th>' +
+            '<th style="text-align:right;padding:7px 10px;color:var(--sec)">Bottleneck</th>' +
+            '<th style="text-align:right;padding:7px 10px;color:var(--sec)">' + (_en?'Hidden':'Capas') + '</th>' +
+            '<th style="text-align:right;padding:7px 10px;color:var(--sec)">Epochs</th>' +
+            '<th style="text-align:right;padding:7px 10px;color:var(--sec)">LR</th>' +
+            '<th style="text-align:right;padding:7px 10px;color:var(--sec)">MSE</th>' +
+          '</tr></thead><tbody>' + tableRows + '</tbody></table>' +
+      '</div>' +
+
+      // Two-column charts: MSE vs BN + Loss curves
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">' +
+        (mseVsBn.length > 1
+          ? '<div><div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">📉 MSE vs Bottleneck</div>' + mseChart + '</div>'
+          : '<div></div>') +
+        (hasLoss
+          ? '<div><div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">📈 ' +
+              (_en ? 'Loss curves (all runs)' : 'Curvas de pérdida (todas las runs)') + '</div>' + lossChart + '</div>'
+          : '<div></div>') +
+      '</div>' +
+
+      // Error histogram
+      (function() {
+        var r0 = evalRuns.find(function(r) { return r.per_img_mse && r.per_img_mse.length; });
+        return r0 ? '<div><div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">📊 ' +
+          (_en ? "Error distribution (MSE per image)" : "Distribución del error (MSE por imagen)") +
+          '</div>' + histChart + '</div>' : '';
+      })() +
+
+    '</div>';
+  }
+
+  function _aeStatCard(label, val, color) {
+    return '<div style="background:var(--tinted);border-radius:10px;padding:12px 14px">' +
+      '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">' + label + '</div>' +
+      '<div style="font-size:20px;font-weight:800;color:' + color + '">' + val + '</div>' +
+    '</div>';
+  }
+
+  function renderRecon() {
+    // Run selector + best/worst grids
+    var runSel = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">' +
+      evalRuns.map(function(r, i) {
+        var active = i === (node.data._aeEvalRunIdx || 0);
+        return '<button type="button" data-aerunsel="' + i + '" style="padding:5px 12px;border-radius:8px;border:2px solid ' +
+          (active ? 'var(--accent)' : 'var(--border)') + ';background:var(--card);color:var(--ink);font-size:12px;font-weight:' +
+          (active?'700':'400') + ';cursor:pointer">' + (r.name || 'Run '+(i+1)) + '</button>';
+      }).join("") + '</div>';
+
+    var ri = node.data._aeEvalRunIdx || 0;
+    var run = evalRuns[ri] || evalRuns[0];
+    if (!run) return '<div style="padding:20px;color:var(--sec)">—</div>';
+
+    function imgPair(origB64, reconB64, mse) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' +
+        '<img src="data:image/png;base64,' + origB64 + '" style="width:68px;height:68px;border-radius:6px;border:1.5px solid var(--border);image-rendering:pixelated">' +
+        '<img src="data:image/png;base64,' + reconB64 + '" style="width:68px;height:68px;border-radius:6px;border:1.5px solid #19a870;image-rendering:pixelated">' +
+        '<span style="font-size:9px;color:var(--sec)">' + (mse != null ? mse.toFixed(4) : '') + '</span>' +
+      '</div>';
+    }
+
+    function grid(origs, recons, mses, label, color) {
+      if (!origs || !origs.length) return '';
+      return '<div style="margin-bottom:16px">' +
+        '<div style="font-size:12px;font-weight:600;color:' + color + ';margin-bottom:8px">' + label + '</div>' +
+        '<div style="font-size:10px;color:var(--sec);margin-bottom:6px">' +
+          (_en ? '🟢 original  |  🔵 reconstructed' : '🟢 original  |  🔵 reconstruida') + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          origs.map(function(o, i) { return imgPair(o, recons[i], mses[i]); }).join("") +
+        '</div></div>';
+    }
+
+    return '<div style="padding:16px">' +
+      runSel +
+      grid(run.best_originals,  run.best_recons,  run.best_mses,  '✅ ' + (_en?'Best reconstructions':'Mejores reconstrucciones'),  '#19a870') +
+      grid(run.worst_originals, run.worst_recons, run.worst_mses, '❌ ' + (_en?'Worst reconstructions':'Peores reconstrucciones'), '#ef4444') +
+    '</div>';
+  }
+
+  function renderLatent() {
+    var ri  = node.data._aeEvalRunIdx || 0;
+    var run = evalRuns[ri] || evalRuns[0];
+    if (!run || !run.latent_2d || !run.latent_2d.length) {
+      return '<div style="padding:24px;color:var(--sec)">' +
+        (_en ? "Not enough data for latent space visualisation." : "No hay suficientes datos para el espacio latente.") + '</div>';
+    }
+    return '<div style="padding:16px">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:4px">' +
+        (_en ? "2D Latent space (PCA)" : "Espacio latente 2D (PCA)") + ' — ' + (run.name || 'Run') +
+        ' <span style="font-size:11px;font-weight:400;color:var(--sec)">' +
+          (_en ? '(each point = one image compressed to ' + run.bottleneck + 'D, projected to 2D)'
+               : '(cada punto = una imagen comprimida a ' + run.bottleneck + 'D, proyectada a 2D)') + '</span>' +
+      '</div>' +
+      '<canvas id="ae-latent-canvas" height="340" style="width:100%;border-radius:8px;border:1.5px solid var(--border)"></canvas>' +
+    '</div>';
+  }
+
+  // Detect MNIST for AE: dataset_name on first run
+  var _aeIsMnist = (function() {
+    var dn = (evalRuns[0] && evalRuns[0].dataset_name) || (aeNode.data.aeRuns && aeNode.data.aeRuns[0] && aeNode.data.aeRuns[0].dataset_name) || '';
+    return dn === 'mnist';
+  })();
+  evalNode.data._aeUploadMode = evalNode.data._aeUploadMode || 'upload';
+
+  function renderUpload() {
+    var mode = evalNode.data._aeUploadMode || 'upload';
+    var mnistBar = _aeIsMnist
+      ? '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+          '<button type="button" data-aeupmode="upload" style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:' + (mode==='upload'?'700':'400') + ';border:2px solid ' + (mode==='upload'?'var(--accent)':'var(--border)') + ';background:' + (mode==='upload'?'var(--accent-tint)':'var(--card)') + ';cursor:pointer;color:var(--ink)">📂 ' + (_en?'Upload image':'Subir imagen') + '</button>' +
+          '<button type="button" data-aeupmode="draw" style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:' + (mode==='draw'?'700':'400') + ';border:2px solid ' + (mode==='draw'?'var(--accent)':'var(--border)') + ';background:' + (mode==='draw'?'var(--accent-tint)':'var(--card)') + ';cursor:pointer;color:var(--ink)">✏️ ' + (_en?'Draw digit':'Dibujar dígito') + '</button>' +
+        '</div>'
+      : '';
+
+    var uploadZoneHtml =
+      '<div id="ae-upload-zone" style="border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;cursor:pointer;margin-bottom:14px">' +
+        '<div style="font-size:28px;margin-bottom:8px">🖼️</div>' +
+        '<div style="font-size:13px;color:var(--sec)">' + (_en ? "Click or drag an image here" : "Haz clic o arrastra una imagen aquí") + '</div>' +
+        '<input type="file" id="ae-upload-input" accept="image/*" style="display:none">' +
+      '</div>';
+
+    var drawZoneHtml = _aeIsMnist && mode === 'draw'
+      ? _buildDrawCanvas(function(b64, fname) { _aeEvalUploadImageB64(b64, fname, aeNode, evalNode); }, false)
+      : '';
+
+    return '<div style="padding:16px">' +
+      '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">' +
+        (_en ? "Upload your own image to see how each trained run reconstructs it."
+             : "Sube tu propia imagen para ver cómo la reconstruye cada run entrenada.") +
+      '</div>' +
+      mnistBar +
+      (mode === 'upload' ? uploadZoneHtml : drawZoneHtml) +
+      '<div id="ae-upload-results"></div>' +
+    '</div>';
+  }
+
+  // ── Build tab content ─────────────────────────────────────────────────────
+  var content = "";
+  if      (activeTab === "overview") content = renderOverview();
+  else if (activeTab === "recon")    content = renderRecon();
+  else if (activeTab === "latent")   content = renderLatent();
+  else if (activeTab === "upload")   content = renderUpload();
+
+  mBody.innerHTML =
+    '<div style="display:flex;flex-direction:column;height:100%;overflow:hidden">' +
+      tabBar() +
+      '<div id="ae-eval-body" style="flex:1;overflow-y:auto">' + content + '</div>' +
+    '</div>';
+  mFoot.innerHTML =
+    '<div style="padding:10px 16px;font-size:11px;color:var(--sec);border-top:1px solid var(--border)">' +
+      '📋 ' + (_en
+        ? 'To export the full report, connect this Evaluation block to a <b>Save</b> block.'
+        : 'Para exportar el informe completo, conecta este bloque de Evaluación a un bloque <b>Guardar</b>.') +
+    '</div>';
+  _anim();
+
+  // ── Wire tab buttons ──────────────────────────────────────────────────────
+  mBody.querySelectorAll("[data-aetab]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      evalNode.data._aeEvalTab = btn.dataset.aetab;
+      renderAEEval(evalNode, aeNode);
+    });
+  });
+
+  // ── Wire run selector (recon / latent tab) ───────────────────────────────
+  mBody.querySelectorAll("[data-aerunsel]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      evalNode.data._aeEvalRunIdx = parseInt(btn.dataset.aerunsel);
+      renderAEEval(evalNode, aeNode);
+    });
+  });
+
+  // ── Wire runs table rows (overview — expandable detail) ──────────────────
+  mBody.querySelectorAll("[data-aerun]").forEach(function(row) {
+    row.addEventListener("click", function() {
+      var idx     = parseInt(row.dataset.aerun);
+      var detRow  = document.getElementById("ae-eval-detail-" + idx);
+      var detBody = document.getElementById("ae-eval-detail-body-" + idx);
+      if (!detRow) return;
+      var open = detRow.style.display !== "none";
+      detRow.style.display = open ? "none" : "table-row";
+      if (!open && detBody) {
+        var r = evalRuns[idx];
+        if (!r) return;
+        detBody.innerHTML =
+          '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px">' +
+            '<div><b>' + (_en?'Architecture':'Arquitectura') + '</b><br>' +
+              (r.input_dim||'?') + '→' + (r.h1||'?') + '→' + (r.h2||'?') +
+              (r.h3 ? '→'+r.h3 : '') + '→' + (r.bottleneck||'?') + '</div>' +
+            '<div><b>MSE test</b><br>' + (r.mse_test != null ? r.mse_test.toFixed(5) : '—') + '</div>' +
+            '<div><b>Loss fn</b><br>' + (r.loss_fn||'—').toUpperCase() + '</div>' +
+            '<div><b>LR</b><br>' + (r.lr||'—') + '</div>' +
+            '<div><b>Epochs</b><br>' + (r.epochs||'—') + '</div>' +
+          '</div>';
+      }
+    });
+  });
+
+  // ── Upload mode toggle (MNIST only) ──────────────────────────────────────
+  mBody.querySelectorAll("[data-aeupmode]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      evalNode.data._aeUploadMode = btn.dataset.aeupmode;
+      renderAEEval(evalNode, aeNode);
+    });
+  });
+
+  // ── Upload zone ───────────────────────────────────────────────────────────
+  var uploadZone  = document.getElementById("ae-upload-zone");
+  var uploadInput = document.getElementById("ae-upload-input");
+  if (uploadZone && uploadInput) {
+    uploadZone.addEventListener("click", function() { uploadInput.click(); });
+    uploadZone.addEventListener("dragover", function(e) { e.preventDefault(); uploadZone.style.borderColor = "var(--accent)"; });
+    uploadZone.addEventListener("dragleave", function()  { uploadZone.style.borderColor = "var(--border)"; });
+    uploadZone.addEventListener("drop", function(e) {
+      e.preventDefault(); uploadZone.style.borderColor = "var(--border)";
+      var file = e.dataTransfer.files[0];
+      if (file) _aeEvalUploadImage(file, aeNode, evalNode);
+    });
+    uploadInput.addEventListener("change", function() {
+      if (uploadInput.files[0]) _aeEvalUploadImage(uploadInput.files[0], aeNode, evalNode);
+    });
+  }
+
+  // ── Draw charts ───────────────────────────────────────────────────────────
+  if (activeTab === "overview") {
+    requestAnimationFrame(function() {
+      if (mseVsBn.length > 1) _aeDrawMseBnChart(mseVsBn);
+      // Loss curves — all runs superimposed
+      var palette = ["#4ade80","#60a5fa","#f59e0b","#f87171","#a78bfa","#34d399","#fb923c","#e879f9"];
+      var lossSeriesAll = evalRuns.map(function(r, i) {
+        var vals = (r.log || []).map(function(e) { return e.loss; }).filter(function(v) { return v != null; });
+        return { name: r.name || ("Run "+(i+1)), vals: vals, color: palette[i % palette.length] };
+      }).filter(function(s) { return s.vals.length > 1; });
+      if (lossSeriesAll.length) _aeDrawEvalLossChart(lossSeriesAll);
+      // Error histogram
+      var r0 = evalRuns.find(function(r) { return r.per_img_mse && r.per_img_mse.length; });
+      if (r0) _aeDrawHistChart(r0.per_img_mse);
+    });
+  }
+  if (activeTab === "latent") {
+    var ri  = node.data._aeEvalRunIdx || 0;
+    var run = evalRuns[ri] || evalRuns[0];
+    if (run && run.latent_2d && run.latent_2d.length) {
+      requestAnimationFrame(function() { _aeDrawLatentChart(run.latent_2d); });
+    }
+  }
+}
+
+// ── AE Eval chart helpers ─────────────────────────────────────────────────────
+// ── Shared tooltip helper ─────────────────────────────────────────────────────
+function _aeTooltip(canvas, text, x, y) {
+  var tip = document.getElementById("ae-chart-tooltip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "ae-chart-tooltip";
+    tip.style.cssText = "position:fixed;background:rgba(15,23,42,.88);color:#fff;font-size:11px;padding:5px 9px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:9999;display:none;font-family:sans-serif;line-height:1.4";
+    document.body.appendChild(tip);
+  }
+  if (!text) { tip.style.display = "none"; return; }
+  var rect = canvas.getBoundingClientRect();
+  tip.textContent = text;
+  tip.style.display = "block";
+  tip.style.left = (rect.left + x + 12) + "px";
+  tip.style.top  = (rect.top  + y - 8)  + "px";
+}
+
+function _aeDrawMseBnChart(mseVsBn) {
+  var canvas = document.getElementById("ae-mse-bn-chart");
+  if (!canvas) return;
+  var W = canvas.offsetWidth || 400; var H = 160;
+  canvas.width = W; canvas.height = H;
+  var padL = 48, padR = 12, padT = 12, padB = 32;
+
+  var minMse = Math.min.apply(null, mseVsBn.map(function(d){ return d.mse||0; }));
+  var maxMse = Math.max.apply(null, mseVsBn.map(function(d){ return d.mse||0; })) || 1;
+  // Start y-axis close to min for better discrimination
+  var yMin = Math.max(0, minMse * 0.9);
+  var yMax = maxMse * 1.05;
+  var yRng = yMax - yMin || 1;
+
+  var n  = mseVsBn.length;
+  var bw = Math.floor((W - padL - padR) / n) - 6;
+  var barRects = [];
+
+  function draw(hoverIdx) {
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card") || "#fff";
+    ctx.fillRect(0, 0, W, H);
+    // Grid
+    ctx.strokeStyle = "#f0f0f0"; ctx.lineWidth = 1;
+    for (var g = 0; g <= 4; g++) {
+      var yg = padT + g / 4 * (H - padT - padB);
+      ctx.beginPath(); ctx.moveTo(padL, yg); ctx.lineTo(W - padR, yg); ctx.stroke();
+      var lv = yMax - g / 4 * yRng;
+      ctx.fillStyle = "#999"; ctx.font = "9px sans-serif"; ctx.textAlign = "right";
+      ctx.fillText(lv.toFixed(4), padL - 4, yg + 3);
+    }
+    // Bars
+    barRects = [];
+    mseVsBn.forEach(function(d, i) {
+      var barH = Math.max(2, ((d.mse||0) - yMin) / yRng * (H - padT - padB));
+      var x    = padL + i * (bw + 6);
+      var y    = H - padB - barH;
+      barRects.push({x:x, y:y, w:bw, h:barH, d:d});
+      ctx.fillStyle = i === hoverIdx ? "#19e68c" : (d.mse === minMse ? "#4ade80" : "#60a5fa");
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, bw, barH, [4,4,0,0]);
+      else ctx.rect(x, y, bw, barH);
+      ctx.fill();
+      // X label
+      ctx.fillStyle = "#555"; ctx.font = "9px sans-serif"; ctx.textAlign = "center";
+      var label = (d.name || ("Run"+(i+1))).substring(0,8);
+      ctx.fillText(label, x + bw/2, H - padB + 10);
+      ctx.fillStyle = "#888";
+      ctx.fillText("BN"+d.bottleneck, x + bw/2, H - padB + 20);
+    });
+  }
+  draw(-1);
+  canvas._barRects = barRects;
+  canvas._drawFn   = draw;
+  canvas.style.cursor = "crosshair";
+  canvas.onmousemove = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = (e.clientX - rect.left) * (W / rect.width);
+    var my = (e.clientY - rect.top)  * (H / rect.height);
+    var hit = -1;
+    canvas._barRects.forEach(function(b, i) {
+      if (mx >= b.x && mx <= b.x+b.w && my >= b.y && my <= b.y+b.h+16) hit = i;
+    });
+    canvas._drawFn(hit);
+    if (hit >= 0) {
+      var d = canvas._barRects[hit].d;
+      _aeTooltip(canvas, (d.name||"Run") + " · BN " + d.bottleneck + " · MSE " + (d.mse||0).toFixed(5), mx, my);
+    } else {
+      _aeTooltip(canvas, null);
+    }
+  };
+  canvas.onmouseleave = function() { canvas._drawFn(-1); _aeTooltip(canvas, null); };
+}
+
+function _aeDrawEvalLossChart(series) {
+  var canvas = document.getElementById("ae-eval-loss-chart");
+  if (!canvas || !series.length) return;
+  var W = canvas.offsetWidth || 400; var H = 160;
+  canvas.width = W; canvas.height = H;
+  var padL = 48, padR = 12, padT = 12, padB = 28;
+
+  var allVals = []; series.forEach(function(s){ s.vals.forEach(function(v){ allVals.push(v); }); });
+  var minV = Math.min.apply(null, allVals), maxV = Math.max.apply(null, allVals);
+  var rngV = maxV - minV || 1;
+  var maxEp = Math.max.apply(null, series.map(function(s){ return s.vals.length; }));
+
+  function cx(i) { return padL + (maxEp <= 1 ? 0 : i / (maxEp-1)) * (W - padL - padR); }
+  function cy(v) { return padT + (1 - (v - minV) / rngV) * (H - padT - padB); }
+
+  function draw(hoverEp) {
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card") || "#fff";
+    ctx.fillRect(0, 0, W, H);
+    // Grid
+    ctx.strokeStyle = "#f0f0f0"; ctx.lineWidth = 1;
+    for (var g = 0; g <= 4; g++) {
+      var yg = padT + g / 4 * (H - padT - padB);
+      ctx.beginPath(); ctx.moveTo(padL, yg); ctx.lineTo(W - padR, yg); ctx.stroke();
+      ctx.fillStyle = "#999"; ctx.font = "9px sans-serif"; ctx.textAlign = "right";
+      ctx.fillText((maxV - g/4*rngV).toFixed(4), padL - 4, yg + 3);
+    }
+    // Hover line
+    if (hoverEp >= 0) {
+      var hx = cx(hoverEp);
+      ctx.strokeStyle = "#d1d5db"; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // Lines
+    series.forEach(function(s) {
+      ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+      ctx.beginPath();
+      s.vals.forEach(function(v, i) { i===0 ? ctx.moveTo(cx(i),cy(v)) : ctx.lineTo(cx(i),cy(v)); });
+      ctx.stroke();
+      // Hover dot
+      if (hoverEp >= 0 && hoverEp < s.vals.length) {
+        ctx.beginPath(); ctx.arc(cx(hoverEp), cy(s.vals[hoverEp]), 4, 0, Math.PI*2);
+        ctx.fillStyle = s.color; ctx.fill();
+      }
+    });
+    // Legend bottom-left
+    var lx = padL;
+    series.forEach(function(s) {
+      ctx.fillStyle = s.color; ctx.fillRect(lx, H - padB + 6, 10, 5);
+      ctx.fillStyle = "#555"; ctx.font = "9px sans-serif"; ctx.textAlign = "left";
+      ctx.fillText(s.name, lx + 13, H - padB + 12);
+      lx += ctx.measureText(s.name).width + 28;
+    });
+    ctx.fillStyle = "#bbb"; ctx.font = "9px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("Epoch →", W/2, H - 3);
+  }
+  draw(-1);
+  canvas._series  = series;
+  canvas._drawFn2 = draw;
+  canvas.style.cursor = "crosshair";
+  canvas.onmousemove = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = (e.clientX - rect.left) * (W / rect.width);
+    var ep = Math.round((mx - padL) / (W - padL - padR) * (maxEp - 1));
+    ep = Math.max(0, Math.min(maxEp - 1, ep));
+    canvas._drawFn2(ep);
+    var tip = "Epoch " + (ep+1) + "\n";
+    var tipLines = series.map(function(s) {
+      var v = s.vals[ep]; return s.name + ": " + (v!=null ? v.toFixed(5) : "—");
+    });
+    _aeTooltip(canvas, "Epoch " + (ep+1) + "  " + tipLines.join("  |  "), mx, e.clientY - canvas.getBoundingClientRect().top);
+  };
+  canvas.onmouseleave = function() { canvas._drawFn2(-1); _aeTooltip(canvas, null); };
+}
+
+function _aeDrawHistChart(perImgMse) {
+  var canvas = document.getElementById("ae-hist-chart");
+  if (!canvas || !perImgMse.length) return;
+  var W = canvas.offsetWidth || 400; var H = 130;
+  canvas.width = W; canvas.height = H;
+  var padL = 36, padR = 8, padT = 8, padB = 20;
+  var minV = Math.min.apply(null, perImgMse), maxV = Math.max.apply(null, perImgMse);
+  var bins = 20;
+  var counts = new Array(bins).fill(0);
+  perImgMse.forEach(function(v) {
+    var b = Math.min(bins-1, Math.floor((v-minV)/((maxV-minV)||1)*bins));
+    counts[b]++;
+  });
+  var maxC = Math.max.apply(null, counts) || 1;
+  var bw = (W - padL - padR) / bins;
+
+  function draw(hoverBin) {
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card") || "#fff";
+    ctx.fillRect(0, 0, W, H);
+    // Grid
+    ctx.strokeStyle = "#f0f0f0"; ctx.lineWidth = 1;
+    [0, 0.25, 0.5, 0.75, 1].forEach(function(f) {
+      var yg = padT + (1-f) * (H - padT - padB);
+      ctx.beginPath(); ctx.moveTo(padL, yg); ctx.lineTo(W-padR, yg); ctx.stroke();
+      ctx.fillStyle="#bbb"; ctx.font="9px sans-serif"; ctx.textAlign="right";
+      ctx.fillText(Math.round(f*maxC), padL-3, yg+3);
+    });
+    counts.forEach(function(c, i) {
+      var barH = c / maxC * (H - padT - padB);
+      var x    = padL + i * bw;
+      var y    = H - padB - barH;
+      ctx.fillStyle = i === hoverBin ? "#19e68c" : "rgba(96,165,250,0.75)";
+      ctx.fillRect(x, y, bw - 1, barH);
+    });
+    ctx.fillStyle="#aaa"; ctx.font="9px sans-serif"; ctx.textAlign="left";
+    ctx.fillText("MSE "+minV.toFixed(4), padL, H-3);
+    ctx.textAlign="right"; ctx.fillText(maxV.toFixed(4), W-padR, H-3);
+  }
+  draw(-1);
+  canvas._drawFn3 = draw;
+  canvas.style.cursor = "crosshair";
+  canvas.onmousemove = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = (e.clientX - rect.left) * (W / rect.width);
+    var bi = Math.floor((mx - padL) / bw);
+    bi = Math.max(0, Math.min(bins-1, bi));
+    canvas._drawFn3(bi);
+    var lo = (minV + bi/bins*(maxV-minV)).toFixed(4);
+    var hi = (minV + (bi+1)/bins*(maxV-minV)).toFixed(4);
+    _aeTooltip(canvas, "MSE ["+lo+" – "+hi+"]  n=" + counts[bi], mx, e.clientY - rect.top);
+  };
+  canvas.onmouseleave = function() { canvas._drawFn3(-1); _aeTooltip(canvas, null); };
+}
+
+function _aeDrawLatentChart(latent2d) {
+  var canvas = document.getElementById("ae-latent-canvas");
+  if (!canvas || !latent2d.length) return;
+  var W = canvas.offsetWidth || 600; var H = 360;
+  canvas.width = W; canvas.height = H;
+  var pad = 36;
+  var xs = latent2d.map(function(p){ return p[0]; });
+  var ys = latent2d.map(function(p){ return p[1]; });
+  var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+  var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
+
+  function toC(x,y) {
+    return [pad+(x-minX)/((maxX-minX)||1)*(W-2*pad), H-pad-(y-minY)/((maxY-minY)||1)*(H-2*pad)];
+  }
+  var colors=["#4a90d9","#19e68c","#f59e0b","#ef4444","#a78bfa","#ec4899","#14b8a6","#f97316","#6366f1","#84cc16"];
+
+  function draw(hoverIdx) {
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card") || "#fff";
+    ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle="#e5e7eb"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pad,pad); ctx.lineTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
+    ctx.fillStyle="#bbb"; ctx.font="9px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("PC1 →", W/2, H-4);
+    ctx.save(); ctx.translate(10, H/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText("PC2 →", 0, 0); ctx.restore();
+
+    latent2d.forEach(function(pt, i) {
+      var c = toC(pt[0], pt[1]);
+      ctx.beginPath(); ctx.arc(c[0], c[1], i===hoverIdx ? 7 : 4, 0, Math.PI*2);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.globalAlpha = i===hoverIdx ? 1.0 : 0.65;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (i===hoverIdx) {
+        ctx.strokeStyle="#fff"; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(c[0],c[1],7,0,Math.PI*2); ctx.stroke();
+      }
+    });
+  }
+  draw(-1);
+  canvas._drawFnL = draw;
+  canvas._pts = latent2d.map(function(pt){ return toC(pt[0], pt[1]); });
+  canvas.style.cursor = "crosshair";
+  canvas.onmousemove = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = (e.clientX - rect.left) * (W / rect.width);
+    var my = (e.clientY - rect.top)  * (H / rect.height);
+    var best = -1, bestD = 16;
+    canvas._pts.forEach(function(p, i) {
+      var d = Math.sqrt((p[0]-mx)*(p[0]-mx)+(p[1]-my)*(p[1]-my));
+      if (d < bestD) { bestD=d; best=i; }
+    });
+    canvas._drawFnL(best);
+    if (best >= 0) {
+      var pt = latent2d[best];
+      _aeTooltip(canvas, "#"+(best+1)+" ("+pt[0].toFixed(3)+", "+pt[1].toFixed(3)+")", mx, my);
+    } else { _aeTooltip(canvas, null); }
+  };
+  canvas.onmouseleave = function() { canvas._drawFnL(-1); _aeTooltip(canvas, null); };
+}
+
+async function _aeEvalUploadImageB64(b64, filename, aeNode, evalNode) {
+  var resultsEl = document.getElementById("ae-upload-results");
+  if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--sec);font-size:12px">' +
+    (lang==="en"?"Reconstructing…":"Reconstruyendo…") + '</div>';
+  try {
+    var resp = await fetch("/api/ae_eval_reconstruct", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node: String(aeNode.id), image_b64: b64 })
+    });
+    var d = await resp.json();
+    var results = d.results || [];
+
+    evalNode.data._aeUserImgs = evalNode.data._aeUserImgs || [];
+    evalNode.data._aeUserImgs.push({ b64: b64, filename: filename || 'drawn_digit.png', results: results });
+
+    if (!resultsEl) return;
+    var html = '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:10px">' +
+      (filename || 'drawn_digit.png') + '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+    results.forEach(function(r) {
+      if (!r.recon) return;
+      html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--ink)">' + (r.name||'Run') + '</div>' +
+        '<div style="font-size:10px;color:var(--sec)">BN ' + (r.bottleneck||'?') + '</div>' +
+        '<div style="display:flex;gap:4px">' +
+          '<img src="data:image/png;base64,' + r.original + '" style="width:60px;height:60px;border-radius:6px;border:1.5px solid var(--border);image-rendering:pixelated" title="Original">' +
+          '<img src="data:image/png;base64,' + r.recon    + '" style="width:60px;height:60px;border-radius:6px;border:1.5px solid #19a870;image-rendering:pixelated" title="Reconstructed">' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--sec)">MSE ' + (r.mse_img||0).toFixed(4) + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    resultsEl.innerHTML = html;
+  } catch(e2) {
+    if (resultsEl) resultsEl.innerHTML = '<div style="color:#ef4444;font-size:12px">Error</div>';
+  }
+}
+
+async function _aeEvalUploadImage(file, aeNode, evalNode) {
+  var resultsEl = document.getElementById("ae-upload-results");
+  if (resultsEl) resultsEl.innerHTML = '<div style="color:var(--sec);font-size:12px">' +
+    (lang==="en"?"Reconstructing…":"Reconstruyendo…") + '</div>';
+
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var b64 = e.target.result;
+    try {
+      var resp = await fetch("/api/ae_eval_reconstruct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node: String(aeNode.id), image_b64: b64 })
+      });
+      var d = await resp.json();
+      var results = d.results || [];
+
+      // Store for report
+      evalNode.data._aeUserImgs = evalNode.data._aeUserImgs || [];
+      evalNode.data._aeUserImgs.push({ b64: b64, filename: file.name, results: results });
+
+      if (!resultsEl) return;
+      var html = '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:10px">' +
+        file.name + '</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+      results.forEach(function(r) {
+        if (!r.recon) return;
+        html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center">' +
+          '<div style="font-size:11px;font-weight:600;color:var(--ink)">' + (r.name||'Run') + '</div>' +
+          '<div style="font-size:10px;color:var(--sec)">BN ' + (r.bottleneck||'?') + '</div>' +
+          '<div style="display:flex;gap:4px">' +
+            '<img src="data:image/png;base64,' + r.original + '" style="width:60px;height:60px;border-radius:6px;border:1.5px solid var(--border);image-rendering:pixelated" title="Original">' +
+            '<img src="data:image/png;base64,' + r.recon    + '" style="width:60px;height:60px;border-radius:6px;border:1.5px solid #19a870;image-rendering:pixelated" title="Reconstructed">' +
+          '</div>' +
+          '<div style="font-size:10px;color:var(--sec)">MSE ' + (r.mse_img||0).toFixed(4) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+      resultsEl.innerHTML = html;
+    } catch(e2) {
+      if (resultsEl) resultsEl.innerHTML = '<div style="color:#ef4444;font-size:12px">Error</div>';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── End AE Evaluation ─────────────────────────────────────────────────────────
+
+async function renderAutoencoder(node) {
+  var _en  = lang === "en";
+  var _anim = prepareModalResize();
+  node.data = node.data || {};
+
+  // ── Guard: need preprocess upstream ─────────────────────────────
+  var preNode = upstreamSourceNode(node.id);
+  if (!preNode || preNode.type !== "preprocess" || !preNode.data || !preNode.data.applied) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' + T("ae-connect-pre") + '</div>';
+    _anim(); return;
+  }
+  var imgCfg = preNode.data.imgCfg || {};
+  if (!imgCfg.imgSize) {
+    mBody.innerHTML = '<div style="padding:24px;color:var(--sec)">' + T("ae-no-img-cfg") + '</div>';
+    _anim(); return;
+  }
+
+  // ── Saved config ─────────────────────────────────────────────────
+  var cfg        = node.data.aeCfg || {};
+  // Smarter defaults per dataset
+  var _defBottleneck = _isColor ? 64  : 32;
+  var _defEpochs     = _isColor ? 30  : 20;
+  var _defBatch      = _isColor ? 64  : 128;
+  var bottleneck = cfg.bottleneck != null ? cfg.bottleneck : _defBottleneck;
+  var epochs     = cfg.epochs     || _defEpochs;
+  var lr         = cfg.lr         || "0.001";
+  var lossFn     = cfg.loss_fn    || "mse";
+  var batchSize  = cfg.batch_size || _defBatch;
+  var hiddenMode = cfg.hidden_mode || "auto";   // "auto" | "wide" | "deep"
+
+  var _bnOpts    = [8, 16, 32, 64, 128];
+  var _lrOpts    = ["0.01", "0.001", "0.0001"];
+  var _lossOpts  = ["mse", "bce"];
+  var _batchOpts = [32, 64, 128, 256];
+  var _hiddenOpts = ["auto", "wide", "deep"];
+
+  // ── Guard: wipe runs if they belong to a different dataset ──────
+  // This catches the case where the user changes dataset and opens AE
+  // without the Image Data load event having fired (e.g. modal was closed).
+  var _imgDataNode = preNode.data.imgDataNodeId
+    ? nodes.find(function(n) { return String(n.id) === String(preNode.data.imgDataNodeId); })
+    : null;
+  var _currentDataset = _imgDataNode && _imgDataNode.data ? _imgDataNode.data.dataset : null;
+  if (_currentDataset) {
+    var _existingRunDataset = (node.data.aeRuns && node.data.aeRuns.length)
+      ? node.data.aeRuns[0].dataset_name : null;
+    if (_existingRunDataset && _existingRunDataset !== _currentDataset) {
+      node.data.aeRuns         = [];
+      node.data.aeActiveRunIdx = 0;
+      node.data._aeTab         = "configure";
+      node.data._aeTraining    = false;
+      setOK(node.id, false);
+      setNB(node.id, "", "");
+      fetch("/api/ae_reset", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node: String(node.id) }) });
+    }
+  }
+
+  // ── Active tab state ─────────────────────────────────────────────
+  node.data._aeTab = node.data._aeTab || "configure";
+
+  // ── Helpers (same pill style as CNN) ─────────────────────────────
+  function aePills(groupId, opts, selected, labelFn) {
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap" id="' + groupId + '">' +
+      opts.map(function(o) {
+        var v = String(o); var lbl = labelFn ? labelFn(o) : v;
+        var active = (v === String(selected));
+        return '<button type="button" data-val="' + v + '" style="' +
+          'padding:9px 16px;border-radius:10px;border:2px solid ' + (active ? "var(--accent)" : "var(--border)") + ';' +
+          'background:var(--card);color:var(--ink);font-size:13px;font-weight:' + (active ? "700" : "500") + ';' +
+          'cursor:pointer;transition:border-color .15s">' + lbl + '</button>';
+      }).join("") + '</div>';
+  }
+  function wirePills(groupId, onChange) {
+    var c = document.getElementById(groupId); if (!c) return;
+    c.querySelectorAll("button[data-val]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        c.querySelectorAll("button[data-val]").forEach(function(b) {
+          var me = b === btn;
+          b.style.borderColor = me ? "var(--accent)" : "var(--border)";
+          b.style.fontWeight  = me ? "700" : "500";
+        });
+        onChange(btn.dataset.val);
+      });
+    });
+  }
+  function getPill(groupId) {
+    var a = document.querySelector("#" + groupId + " button[style*='var(--accent)']");
+    return a ? a.dataset.val : null;
+  }
+
+  function qBtn(key, tipKey) {
+    return '<button type="button" style="background:none;border:1.5px solid var(--border);border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;color:var(--sec);line-height:1;padding:0;flex-shrink:0" ' +
+      'onclick="(function(){var p=document.getElementById(\'ae-tip-' + key + '\');p.style.display=p.style.display===\'none\'?\'block\':\'none\';})()">' +
+      '?</button>' +
+      '<div id="ae-tip-' + key + '" style="display:none;font-size:11px;color:var(--sec);margin-top:6px;padding:10px 12px;background:var(--tinted);border-radius:8px;line-height:1.5">' +
+        T("ae-tip-" + tipKey) +
+      '</div>';
+  }
+  function sLabel(text, key) {
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--ink)">' + text + '</span>' +
+      qBtn(key, key) +
+    '</div>';
+  }
+
+  // ── Architecture diagram ─────────────────────────────────────────
+  // Detect dataset from upstream preprocess imgDataNodeId info stored by preNode
+  var _datasetName = (preNode.data && preNode.data.imgCfg && preNode.data.imgCfg.dataset) || "mnist";
+  var _isColor     = (_datasetName === "dogs_muffins" || _datasetName === "cats_vs_dogs");
+  var _targetSize  = _isColor ? 32 : 28;
+  var _inputDim    = _isColor ? (3 * _targetSize * _targetSize) : (_targetSize * _targetSize);
+
+  function archDiagram(bn) {
+    // Mirror server-side logic exactly
+    function snap(v, mult) { return Math.max(1, Math.floor(v / mult) * mult) || mult; }
+    var hm = hiddenMode;
+    var h1, h2, h3 = null;
+    if (hm === "wide") {
+      h1 = Math.min(1024, Math.max(bn*2+1, snap(_inputDim/2, 64)));
+      h2 = Math.min(512,  Math.max(bn+1,   snap(_inputDim/4, 32)));
+    } else if (hm === "deep") {
+      h1 = Math.min(512, Math.max(bn*3+2, snap(_inputDim*3/4, 64)));
+      h2 = Math.min(256, Math.max(bn*2+1, snap(_inputDim/2,   32)));
+      h3 = Math.min(128, Math.max(bn+1,   snap(_inputDim/4,   16)));
+    } else {
+      h1 = Math.min(512, Math.max(bn*2+1, snap(_inputDim*2/3, 64)));
+      h2 = Math.min(256, Math.max(bn+1,   snap(_inputDim/3,   32)));
+    }
+    h1 = Math.min(h1, _inputDim - 1);
+    h2 = Math.min(h2, h1 - 1); h2 = Math.max(h2, bn + 1);
+    if (h3 !== null) { h3 = Math.min(h3, h2-1); h3 = Math.max(h3, bn+1); }
+
+    // Build node list: Input, [h1, h2, h3?], BN, [h3?, h2, h1], Output
+    var encH = h3 !== null ? [h1, h2, h3] : [h1, h2];
+    var decH = encH.slice().reverse();
+    var allNodes = [_inputDim].concat(encH).concat([bn]).concat(decH).concat([_inputDim]);
+    var layers = allNodes.map(String);
+    var nNodes = layers.length;
+    var bnIdx  = encH.length + 1;  // bottleneck index in allNodes
+
+    // Dynamic labels and styles based on position
+    var topLabels = allNodes.map(function(_, i) {
+      if (i === 0)        return _en ? "Input" : "Entrada";
+      if (i === bnIdx)    return "Bottleneck";
+      if (i === nNodes-1) return _en ? "Output" : "Salida";
+      return "";
+    });
+    var isBottleneck = allNodes.map(function(_, i) { return i === bnIdx; });
+    var isDecoder    = allNodes.map(function(_, i) { return i > bnIdx; });
+
+    var nodesHtml = '<div style="display:flex;align-items:flex-end;width:100%;gap:0">';
+    for (var i = 0; i < nNodes; i++) {
+      var boxStyle = isBottleneck[i]
+        ? "background:var(--accent);color:#fff;font-weight:700;border:2px solid var(--accent)"
+        : isDecoder[i]
+          ? "background:#f0fff8;color:var(--ink);border:2px solid #a3e6c8"
+          : "background:#e8f4ff;color:var(--ink);border:2px solid #b3d4f5";
+      nodesHtml +=
+        '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px">' +
+          '<div style="font-size:9px;color:var(--sec);min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center">' + topLabels[i] + '</div>' +
+          '<div style="width:90%;padding:5px 2px;border-radius:7px;font-size:11px;font-weight:600;text-align:center;' + boxStyle + '">' + layers[i] + '</div>' +
+        '</div>';
+      if (i < nNodes - 1) {
+        var arrowColor = (i < bnIdx) ? "#b3d4f5" : "#a3e6c8";
+        nodesHtml += '<div style="width:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding-bottom:2px;margin-top:13px">' +
+          '<span style="font-size:11px;color:' + arrowColor + ';line-height:1">▸</span>' +
+        '</div>';
+      }
+    }
+    nodesHtml += '</div>';
+
+    // Band: Encoder | BN | Decoder — spans proportional to node counts
+    var nEnc = encH.length;
+    var nDec = decH.length;
+    var arrowPx = 14;
+    var bandHtml =
+      '<div style="display:flex;margin-top:5px;font-size:10px;font-weight:600;width:100%">' +
+        '<div style="flex:' + (nEnc+1) + ';text-align:center;color:#4a90d9;border-top:2px solid #b3d4f5;padding-top:3px">Encoder</div>' +
+        '<div style="width:' + ((nEnc+1)*arrowPx) + 'px;flex-shrink:0"></div>' +
+        '<div style="flex:1;text-align:center;color:var(--accent);border-top:2px solid var(--accent);padding-top:3px">BN</div>' +
+        '<div style="width:' + ((nDec+1)*arrowPx) + 'px;flex-shrink:0"></div>' +
+        '<div style="flex:' + (nDec+1) + ';text-align:center;color:#19a870;border-top:2px solid #a3e6c8;padding-top:3px">Decoder</div>' +
+      '</div>';
+
+    return '<div style="padding:8px 0">' + nodesHtml + bandHtml + '</div>';
+  }
+
+  // ── Runs state ───────────────────────────────────────────────────
+  var runs = node.data.aeRuns || [];
+  var activeRunIdx = node.data.aeActiveRunIdx != null ? node.data.aeActiveRunIdx : runs.length - 1;
+
+  // ── Tab bar ──────────────────────────────────────────────────────
+  function tabBar() {
+    var tabs = [
+      { id: "configure", label: T("ae-configure") },
+      { id: "explore",   label: T("ae-explore")   },
+      { id: "compare",   label: T("ae-compare")   }
+    ];
+    var html = '<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px">';
+    tabs.forEach(function(t) {
+      var active = node.data._aeTab === t.id;
+      html += '<button type="button" data-tab="' + t.id + '" style="' +
+        'padding:9px 18px;border:none;border-bottom:2px solid ' + (active ? "var(--accent)" : "transparent") + ';' +
+        'margin-bottom:-2px;background:none;cursor:pointer;font-size:13px;font-weight:' + (active ? "700" : "400") + ';' +
+        'color:' + (active ? "var(--ink)" : "var(--sec)") + '">' + t.label + '</button>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  // ── CONFIGURE TAB ────────────────────────────────────────────────
+  function renderConfigure() {
+    return '<div style="display:flex;flex-direction:column;gap:20px">' +
+
+      // Dataset badge
+      '<div style="padding:8px 12px;background:var(--tinted);border-radius:8px;font-size:12px;color:var(--sec)">' +
+        '🖼️ ' + (_datasetName === "dogs_muffins" ? "Chihuahua vs Muffin" : _datasetName === "cats_vs_dogs" ? "Cats vs Dogs" : "MNIST") +
+        ' · ' + _targetSize + '×' + _targetSize + 'px' +
+        (_isColor ? ' · RGB' : ' · Greyscale') +
+        ' · ' + (imgCfg.batchSize || 32) + ' batch' +
+      '</div>' +
+
+      // Architecture diagram
+      '<div style="background:var(--card);border:1.5px solid var(--border);border-radius:10px;padding:12px">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">' +
+          (_en ? "📐 Architecture" : "📐 Arquitectura") +
+        '</div>' +
+        '<div id="ae-arch-diagram">' + archDiagram(bottleneck) + '</div>' +
+      '</div>' +
+
+      // Bottleneck
+      '<div>' +
+        sLabel(T("ae-bottleneck"), "bottleneck") +
+        aePills("ae-bn-grp", _bnOpts, bottleneck) +
+      '</div>' +
+
+      // Hidden layers mode
+      '<div>' +
+        sLabel(_en ? "Hidden layers" : "Capas ocultas", "hidden") +
+        aePills("ae-hidden-grp", _hiddenOpts, hiddenMode, function(o) {
+          if (o === "auto") return _en ? "Auto" : "Auto";
+          if (o === "wide") return _en ? "Wide (2×)" : "Ancho (2×)";
+          return _en ? "Deep (+1 layer)" : "Profundo (+1 capa)";
+        }) +
+        '<div style="font-size:11px;color:var(--sec);margin-top:4px">' +
+          (_en
+            ? "Auto: steps evenly from input to bottleneck. Wide: doubles hidden sizes. Deep: adds an extra compression step."
+            : "Auto: reduce gradualmente. Ancho: duplica las capas ocultas. Profundo: añade una capa extra de compresión.") +
+        '</div>' +
+      '</div>' +
+
+      // Batch size
+      '<div>' +
+        sLabel(_en ? "Batch size" : "Batch size", "batch") +
+        aePills("ae-batch-grp", _batchOpts, batchSize) +
+      '</div>' +
+
+      // Epochs
+      '<div>' +
+        sLabel(T("ae-epochs"), "epochs") +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="range" id="ae-epochs-slider" min="1" max="100" step="1" value="' + epochs + '" style="flex:1">' +
+          '<input type="number" id="ae-epochs-num" min="1" max="100" value="' + epochs + '" ' +
+            'style="width:52px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;text-align:center;background:var(--card);color:var(--ink)">' +
+        '</div>' +
+      '</div>' +
+
+      // Learning rate
+      '<div>' +
+        sLabel(T("ae-lr"), "lr") +
+        aePills("ae-lr-grp", _lrOpts, lr) +
+      '</div>' +
+
+      // Loss function
+      '<div>' +
+        sLabel(T("ae-loss-fn"), "lossfn") +
+        aePills("ae-loss-grp", _lossOpts, lossFn, function(o) { return o.toUpperCase(); }) +
+        '<div style="font-size:11px;color:var(--sec);margin-top:4px">' +
+          (_en
+            ? "MSE: smoother gradients, good for natural images. BCE: treats each pixel as a probability, works well with normalised [0,1] data."
+            : "MSE: gradientes suaves, bueno para imágenes naturales. BCE: trata cada píxel como probabilidad, funciona bien con datos [0,1].") +
+        '</div>' +
+      '</div>' +
+
+    '</div>';
+  }
+
+  // ── EXPLORE TAB ──────────────────────────────────────────────────
+  function renderExplore() {
+    if (!runs.length) {
+      return '<div style="padding:20px;color:var(--sec);font-size:13px;text-align:center">' +
+        T("ae-no-runs") + '</div>';
+    }
+    var run       = runs[activeRunIdx] || runs[runs.length - 1];
+    var sampleImgs = run.sample_originals || [];
+    var imgIdx    = node.data._aeSelectedImg || 0;
+    var noiseVal  = node.data._aeNoise != null ? node.data._aeNoise : 0;
+
+    // Run selector pills
+    var runPills = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
+    runs.forEach(function(r, i) {
+      var active = i === activeRunIdx;
+      runPills += '<button type="button" data-run="' + i + '" style="' +
+        'padding:5px 12px;border-radius:8px;border:2px solid ' + (active ? "var(--accent)" : "var(--border)") + ';' +
+        'background:var(--card);color:var(--ink);font-size:12px;font-weight:' + (active ? "700" : "400") + ';cursor:pointer">' +
+        (r.name || (T("ae-run-label") + " " + (i+1))) +
+        (r.best ? ' ★' : '') + '</button>';
+    });
+    runPills += '</div>';
+
+    // Thumbnail strip
+    var thumbs = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="ae-thumb-row">';
+    sampleImgs.forEach(function(img, i) {
+      thumbs += '<img src="data:image/png;base64,' + img + '" data-idx="' + i + '" ' +
+        'style="width:44px;height:44px;border-radius:6px;cursor:pointer;object-fit:contain;' +
+        'border:2px solid ' + (i === imgIdx ? "var(--accent)" : "var(--border)") + ';' +
+        'image-rendering:pixelated">';
+    });
+    thumbs += '</div>';
+
+    // Noise slider
+    var noiseSlider =
+      '<div style="margin-bottom:16px">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">' + T("ae-noise-label") + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<span style="font-size:11px;color:var(--sec)">0</span>' +
+          '<input type="range" id="ae-noise-slider" min="0" max="3" step="0.05" value="' + noiseVal + '" style="flex:1">' +
+          '<span style="font-size:11px;color:var(--sec)">3</span>' +
+          '<span id="ae-noise-val" style="width:36px;text-align:right;font-size:12px;font-weight:600;color:var(--ink)">' + noiseVal.toFixed(2) + '</span>' +
+        '</div>' +
+      '</div>';
+
+    // Three-panel: Original | Bottleneck | Reconstructed
+    var panels =
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">' +
+        // Original
+        '<div style="text-align:center">' +
+          '<div style="font-size:11px;font-weight:600;color:var(--sec);margin-bottom:6px">' + T("ae-original") + '</div>' +
+          '<div id="ae-img-original" style="background:var(--tinted);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:116px">' +
+            (sampleImgs[imgIdx]
+              ? '<img src="data:image/png;base64,' + sampleImgs[imgIdx] + '" style="width:100px;height:100px;image-rendering:pixelated;border-radius:6px">'
+              : '<span style="color:var(--sec)">—</span>') +
+          '</div>' +
+        '</div>' +
+        // Bottleneck heatmap
+        '<div style="text-align:center">' +
+          '<div style="font-size:11px;font-weight:600;color:var(--sec);margin-bottom:6px">Bottleneck</div>' +
+          '<div id="ae-img-bottleneck" style="background:var(--tinted);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:116px">' +
+            '<span style="color:var(--sec);font-size:12px">…</span>' +
+          '</div>' +
+          '<div id="ae-bn-dim" style="font-size:10px;color:var(--sec);margin-top:4px"></div>' +
+        '</div>' +
+        // Reconstructed
+        '<div style="text-align:center">' +
+          '<div style="font-size:11px;font-weight:600;color:var(--sec);margin-bottom:6px">' + T("ae-reconstructed") + '</div>' +
+          '<div id="ae-img-reconstructed" style="background:var(--tinted);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:116px">' +
+            '<span style="color:var(--sec);font-size:12px">…</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    // Latent vector
+    var latentArea = '<div id="ae-latent-display" style="margin-top:4px"></div>';
+
+    return runPills +
+      '<div style="font-size:12px;color:var(--sec);margin-bottom:10px">' + T("ae-explore-hint") + '</div>' +
+      thumbs + noiseSlider + panels + latentArea;
+  }
+
+  // ── COMPARE TAB ──────────────────────────────────────────────────
+  function renderCompare() {
+    if (!runs.length) {
+      return '<div style="padding:20px;color:var(--sec);font-size:13px;text-align:center">' +
+        T("ae-no-runs") + '</div>';
+    }
+    var bestMse = Math.min.apply(null, runs.map(function(r) { return r.mse_test || Infinity; }));
+
+    // Runs table
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">' +
+      '<thead><tr style="border-bottom:2px solid var(--border)">' +
+        '<th style="text-align:left;padding:6px 8px;color:var(--sec)">' + T("ae-run-label") + '</th>' +
+        '<th style="text-align:right;padding:6px 8px;color:var(--sec)">Bottleneck</th>' +
+        '<th style="text-align:right;padding:6px 8px;color:var(--sec)">' + T("ae-mse-test") + '</th>' +
+        '<th style="text-align:right;padding:6px 8px;color:var(--sec)">Epochs</th>' +
+      '</tr></thead><tbody>';
+    runs.forEach(function(r, i) {
+      var isBest = r.mse_test != null && r.mse_test === bestMse;
+      html += '<tr class="ae-run-row" data-run="' + i + '" style="border-bottom:1px solid var(--border);cursor:pointer;' +
+        (i === activeRunIdx ? 'background:var(--tinted)' : '') + '">' +
+        '<td style="padding:6px 8px;font-weight:' + (isBest ? "700" : "400") + '">' +
+          (r.name || (T("ae-run-label") + " " + (i+1))) +
+          (isBest ? ' <span style="color:var(--accent)">★</span>' : '') +
+        '</td>' +
+        '<td style="text-align:right;padding:6px 8px">' + (r.bottleneck || "—") + '</td>' +
+        '<td style="text-align:right;padding:6px 8px;font-weight:600">' + (r.mse_test != null ? r.mse_test.toFixed(4) : "—") + '</td>' +
+        '<td style="text-align:right;padding:6px 8px">' + (r.epochs || "—") + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+
+    // Interactive image selector + progression viewer
+    html +=
+      '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px">' +
+        (_en ? "Layer progression" : "Progresión por capas") +
+        ' — ' + (runs[activeRunIdx] ? (runs[activeRunIdx].name || T("ae-run-label") + " " + (activeRunIdx+1)) : "") +
+        ' <span style="font-weight:400;color:var(--sec);font-size:11px">(' + (_en ? "click a row above to switch run" : "haz clic en una fila para cambiar la run") + ')</span>' +
+      '</div>' +
+      '<div id="ae-compare-img-sel" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px"></div>' +
+      '<div id="ae-compare-progression" style="display:flex;gap:8px;align-items:flex-end;overflow-x:auto;padding-bottom:4px">' +
+        '<span style="color:var(--sec);font-size:12px">' + (_en ? "Loading…" : "Cargando…") + '</span>' +
+      '</div>';
+
+    return html;
+  }
+
+  // ── Render current tab ───────────────────────────────────────────
+  var tabContent = "";
+  if (node.data._aeTab === "configure") tabContent = renderConfigure();
+  else if (node.data._aeTab === "explore") tabContent = renderExplore();
+  else if (node.data._aeTab === "compare") tabContent = renderCompare();
+
+  mBody.innerHTML =
+    '<div style="padding:14px;overflow-y:auto;height:100%">' +
+      tabBar() +
+      '<div id="ae-tab-content">' + tabContent + '</div>' +
+    '</div>';
+
+  // Training status area — only shown in configure tab
+  if (node.data._aeTab === "configure") {
+    var statusBlock;
+    if (node.data._aeTraining) {
+      statusBlock =
+        '<div style="margin-top:16px;padding:14px;background:var(--tinted);border-radius:10px">' +
+          // Overall progress
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+            '<span style="font-size:12px;font-weight:600;color:var(--ink)">' + T("ae-training") + '</span>' +
+            '<span id="ae-pct-text" style="font-size:11px;color:var(--sec)">0%</span>' +
+          '</div>' +
+          '<div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:10px">' +
+            '<div id="ae-progress-bar" style="background:var(--accent);height:6px;border-radius:4px;width:0%;transition:width .4s"></div>' +
+          '</div>' +
+          // Epoch row
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+            '<span id="ae-epoch-label" style="font-size:12px;font-weight:600;color:var(--ink)">Epoch 0 / —</span>' +
+            '<span id="ae-eta-label"   style="font-size:11px;color:var(--sec)">ETA —</span>' +
+          '</div>' +
+          '<div style="background:var(--border);border-radius:4px;height:4px;margin-bottom:10px">' +
+            '<div id="ae-epoch-bar" style="background:#4a90d9;height:4px;border-radius:4px;width:0%;transition:width .4s"></div>' +
+          '</div>' +
+          // Status text
+          '<div id="ae-status-text" style="font-size:11px;color:var(--sec);margin-bottom:10px">…</div>' +
+          // Loss chart
+          '<canvas id="ae-loss-chart" height="100" style="width:100%;border-radius:6px"></canvas>' +
+        '</div>';
+    } else if (runs.length) {
+      // CNN-style run cards
+      statusBlock =
+        '<div style="margin-top:16px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--sec);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">' +
+            (_en ? 'Previous runs' : 'Runs anteriores') +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:6px">' +
+          runs.map(function(r, i) {
+            var isBest = r.best;
+            var arch = (r.input_dim||'?') + '→' + (r.h1||'?') + '→' + (r.h2||'?') + (r.h3 ? '→'+r.h3 : '') + '→' + (r.bottleneck||'?');
+            return '<div style="padding:10px 12px;border-radius:8px;border:1.5px solid ' +
+              (isBest ? 'var(--accent)' : 'var(--border)') + ';background:' +
+              (isBest ? 'var(--tinted)' : 'var(--card)') + '">' +
+              // Header row: name (editable) + MSE
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+                '<span style="font-size:11px;font-weight:700;color:var(--sec)">#' + (i+1) + '</span>' +
+                '<span class="ae-run-name" data-run-i="' + i + '" style="font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;flex:1" title="' +
+                  (_en ? 'Click to rename' : 'Clic para renombrar') + '">' +
+                  (r.name || ('Run ' + (i+1))) +
+                '</span>' +
+                (isBest ? '<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--tinted);padding:2px 7px;border-radius:99px">★ ' +
+                  (_en ? 'Best' : 'Mejor') + '</span>' : '') +
+                '<span style="font-size:12px;font-weight:700;color:' + (isBest?'var(--accent)':'var(--ink)') + '">' +
+                  'MSE ' + (r.mse_test != null ? r.mse_test.toFixed(5) : '—') +
+                '</span>' +
+              '</div>' +
+              // Params summary
+              '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--sec)">' +
+                '<span>BN <b>' + (r.bottleneck||'?') + '</b></span>' +
+                '<span>' + (_en?'Arch':'Arq') + ' <b style="font-family:monospace">' + arch + '</b></span>' +
+                '<span>' + (_en?'Epochs':'Épocas') + ' <b>' + (r.epochs||'?') + '</b></span>' +
+                '<span>LR <b>' + (r.lr||'?') + '</b></span>' +
+                '<span>Batch <b>' + (r.batch_size||'?') + '</b></span>' +
+                '<span>Loss <b>' + (r.loss_fn||'?').toUpperCase() + '</b></span>' +
+              '</div>' +
+            '</div>';
+          }).join("") +
+          '</div>' +
+        '</div>';
+    } else {
+      statusBlock = '<div style="margin-top:16px;font-size:12px;color:var(--sec)">' + T("ae-configure-first") + '</div>';
+    }
+    document.getElementById("ae-tab-content").insertAdjacentHTML("beforeend", statusBlock);
+  }
+
+  // Footer buttons — Train only shown on Configure tab; New run always shown if runs exist
+  var isTraining  = !!node.data._aeTraining;
+  var onConfigure = (node.data._aeTab === "configure" || !node.data._aeTab);
+  mFoot.innerHTML =
+    (onConfigure
+      ? '<button class="btn btn-black" id="btn-ae-train" style="flex:1" ' + (isTraining ? "disabled" : "") + '>' +
+          (isTraining ? T("ae-training") : T("ae-train-btn")) +
+        '</button>'
+      : '') +
+    (runs.length && !isTraining
+      ? '<button class="btn btn-ghost" id="btn-ae-newrun">' + T("ae-new-run") + '</button>'
+      : '') +
+    (isTraining ? '<button class="btn btn-ghost" id="btn-ae-cancel">' + T("ae-cancel") + '</button>' : '');
+
+  _anim();
+
+  // ── Wire tab clicks ──────────────────────────────────────────────
+  document.querySelectorAll("[data-tab]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      node.data._aeTab = btn.dataset.tab;
+      renderAutoencoder(node);
+    });
+  });
+
+  // ── Wire pills (configure tab) ───────────────────────────────────
+  if (node.data._aeTab === "configure") {
+    // Lock pills if runs already exist AND user hasn't clicked "Nueva run"
+    var hasRuns  = runs.length > 0 && !node.data._aeTraining;
+    var unlocked = !!node.data._aeUnlocked;   // set by "Nueva run" button
+    var locked   = hasRuns && !unlocked;
+
+    if (locked) {
+      ["ae-bn-grp","ae-lr-grp","ae-loss-grp","ae-batch-grp","ae-hidden-grp"].forEach(function(grpId) {
+        var el = document.getElementById(grpId);
+        if (el) { el.style.opacity = "0.45"; el.style.pointerEvents = "none"; }
+      });
+      var epochSlider = document.getElementById("ae-epochs-slider");
+      var epochNum    = document.getElementById("ae-epochs-num");
+      if (epochSlider) { epochSlider.disabled = true; epochSlider.style.opacity = "0.45"; }
+      if (epochNum)    { epochNum.disabled    = true; epochNum.style.opacity    = "0.45"; }
+    } else {
+      wirePills("ae-bn-grp", function(v) {
+        bottleneck = parseInt(v);
+        document.getElementById("ae-arch-diagram").innerHTML = archDiagram(bottleneck);
+      });
+      wirePills("ae-lr-grp",     function(v) { lr = v; });
+      wirePills("ae-loss-grp",   function(v) { lossFn = v; });
+      wirePills("ae-batch-grp",  function(v) { batchSize = parseInt(v); });
+      wirePills("ae-hidden-grp", function(v) {
+        hiddenMode = v;
+        document.getElementById("ae-arch-diagram").innerHTML = archDiagram(bottleneck);
+      });
+
+      // Epoch slider sync
+      var slider = document.getElementById("ae-epochs-slider");
+      var numIn  = document.getElementById("ae-epochs-num");
+      if (slider && numIn) {
+        slider.addEventListener("input", function() { numIn.value = slider.value; epochs = parseInt(slider.value); });
+        numIn.addEventListener("input",  function() { slider.value = numIn.value; epochs = parseInt(numIn.value); });
+      }
+    }
+
+    // Run name click-to-rename (inline edit)
+    document.querySelectorAll(".ae-run-name").forEach(function(el) {
+      el.addEventListener("click", function() {
+        var ri  = parseInt(el.dataset.runI);
+        var old = runs[ri] ? (runs[ri].name || ("Run " + (ri+1))) : ("Run " + (ri+1));
+        var inp = document.createElement("input");
+        inp.value = old;
+        inp.style.cssText = "font-size:12px;font-weight:700;color:var(--ink);border:1.5px solid var(--accent);border-radius:5px;padding:2px 6px;width:140px;background:var(--card)";
+        el.replaceWith(inp);
+        inp.focus(); inp.select();
+        function commit() {
+          var newName = inp.value.trim() || old;
+          if (runs[ri]) runs[ri].name = newName;
+          // Persist to server
+          fetch("/api/ae_rename_run", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node: String(node.id), run_idx: ri, name: newName })
+          });
+          renderAutoencoder(node);
+        }
+        inp.addEventListener("blur",  commit);
+        inp.addEventListener("keydown", function(e) { if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { inp.value = old; inp.blur(); } });
+      });
+    });
+  }
+
+  // ── Wire explore tab interactions ────────────────────────────────
+  if (node.data._aeTab === "explore" && runs.length) {
+    // Thumbnail selection
+    var thumbRow = document.getElementById("ae-thumb-row");
+    if (thumbRow) {
+      thumbRow.querySelectorAll("img[data-idx]").forEach(function(img) {
+        img.addEventListener("click", function() {
+          thumbRow.querySelectorAll("img[data-idx]").forEach(function(t) {
+            t.style.borderColor = "var(--border)";
+          });
+          img.style.borderColor = "var(--accent)";
+          node.data._aeSelectedImg = parseInt(img.dataset.idx);
+          _aeReconstruct(node, activeRunIdx);
+        });
+      });
+    }
+    // Run selector (data-run buttons)
+    document.querySelectorAll("[data-run]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        activeRunIdx = parseInt(btn.dataset.run);
+        node.data.aeActiveRunIdx = activeRunIdx;
+        node.data._aeSelectedImg = 0;
+        renderAutoencoder(node);
+      });
+    });
+    // Noise slider
+    var noiseSlider = document.getElementById("ae-noise-slider");
+    if (noiseSlider) {
+      noiseSlider.addEventListener("input", function() {
+        var v = parseFloat(noiseSlider.value);
+        node.data._aeNoise = v;
+        document.getElementById("ae-noise-val").textContent = v.toFixed(2);
+        _aeReconstruct(node, activeRunIdx);
+      });
+    }
+    // Trigger initial reconstruction (loads original, bottleneck heatmap, reconstructed)
+    _aeReconstruct(node, activeRunIdx);
+  }
+
+  // ── Wire compare tab ─────────────────────────────────────────────
+  if (node.data._aeTab === "compare" && runs.length) {
+    // Row click — switch active run
+    document.querySelectorAll(".ae-run-row").forEach(function(row) {
+      row.addEventListener("click", function() {
+        activeRunIdx = parseInt(row.dataset.run);
+        node.data.aeActiveRunIdx = activeRunIdx;
+        _aeLoadCompare(node, activeRunIdx, 0);
+        // Highlight row
+        document.querySelectorAll(".ae-run-row").forEach(function(r) {
+          r.style.background = r === row ? "var(--tinted)" : "";
+        });
+      });
+    });
+    // Load progression for active run, first image
+    _aeLoadCompare(node, activeRunIdx, 0);
+  }
+
+  // ── Train button ─────────────────────────────────────────────────
+  var trainBtn = document.getElementById("btn-ae-train");
+  if (trainBtn) {
+    trainBtn.addEventListener("click", function() {
+      // Collect current config
+      var bnVal     = parseInt(getPill("ae-bn-grp")     || bottleneck);
+      var lrVal     = getPill("ae-lr-grp")              || lr;
+      var lossVal   = getPill("ae-loss-grp")            || lossFn;
+      var epVal     = parseInt(document.getElementById("ae-epochs-num")?.value || epochs);
+      var batchVal  = parseInt(getPill("ae-batch-grp")  || batchSize);
+      var hiddenVal = getPill("ae-hidden-grp")          || hiddenMode;
+
+      node.data.aeCfg = { bottleneck: bnVal, epochs: epVal, lr: lrVal, loss_fn: lossVal,
+                          batch_size: batchVal, hidden_mode: hiddenVal };
+      node.data._aeTraining  = true;
+      node.data._aeUnlocked  = false;  // re-lock config once training starts
+      node.data._aeEpochStatus = { epoch: 0, total: epVal, pct: 0 };  // seed for instant display
+      // Re-render immediately so the progress bars appear before the first poll
+      renderAutoencoder(node);
+
+      var imgDataNodeId = preNode && preNode.data ? preNode.data.imgDataNodeId : null;
+      fetch("/api/ae_train", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          node: String(node.id),
+          img_data_node: imgDataNodeId ? String(imgDataNodeId) : null,
+          cfg: { bottleneck: bnVal, epochs: epVal, lr: parseFloat(lrVal), loss_fn: lossVal,
+                 batch_size: batchVal, hidden_mode: hiddenVal }
+        })
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) {
+          toast("Error: " + d.error);
+          node.data._aeTraining = false;
+          renderAutoencoder(node);
+        } else {
+          _aePoll(node, d.job_id || String(node.id));
+        }
+      }).catch(function(e) {
+        toast("Error: " + e.message);
+        node.data._aeTraining = false;
+        renderAutoencoder(node);
+      });
+    });
+  }
+
+  // New run button — switch to Configure tab and unlock pills
+  var newRunBtn = document.getElementById("btn-ae-newrun");
+  if (newRunBtn) {
+    newRunBtn.addEventListener("click", function() {
+      node.data._aeTab      = "configure";
+      node.data._aeUnlocked = true;   // allow changing config for next run
+      renderAutoencoder(node);
+    });
+  }
+
+  // Cancel button
+  var cancelBtn = document.getElementById("btn-ae-cancel");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", function() {
+      fetch("/api/ae_cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node: String(node.id) })
+      });
+      node.data._aeTraining = false;
+      renderAutoencoder(node);
+    });
+  }
+}
+
+// ── AE polling ───────────────────────────────────────────────────────────────
+var _aePollTimers = {};
+function _aePoll(node, jobId) {
+  if (_aePollTimers[node.id]) clearInterval(_aePollTimers[node.id]);
+  var lossData   = [];
+  var epochTimes = [];   // ms timestamps per completed epoch for ETA
+  var lastEpoch  = 0;
+
+  _aePollTimers[node.id] = setInterval(async function() {
+    try {
+      var r = await fetch("/api/ae_poll?node=" + encodeURIComponent(String(node.id)));
+      var d = await r.json();
+      var _en2 = lang === "en";
+
+      // ── Overall progress bar ────────────────────────────────────
+      var pb = document.getElementById("ae-progress-bar");
+      var pt = document.getElementById("ae-pct-text");
+      var st = document.getElementById("ae-status-text");
+      if (pb && d.progress != null) { pb.style.width = d.progress + "%"; }
+      if (pt && d.progress != null) { pt.textContent = d.progress + "%"; }
+      if (st && d.status)           { st.textContent = d.status; }
+
+      // ── Per-epoch progress bar + ETA ────────────────────────────
+      if (d.log && d.log.length) {
+        lossData = d.log.map(function(l) { return l.loss; });
+        _aeDrawLossChart(lossData);
+
+        var completedEpochs = d.log.length;
+        var totalEpochs     = d.epochs || completedEpochs;
+
+        // Track timing for ETA
+        if (completedEpochs > lastEpoch) {
+          epochTimes.push(Date.now());
+          lastEpoch = completedEpochs;
+        }
+
+        var epochPct = Math.round(completedEpochs / totalEpochs * 100);
+        var epBar = document.getElementById("ae-epoch-bar");
+        var epLbl = document.getElementById("ae-epoch-label");
+        var etaLbl = document.getElementById("ae-eta-label");
+        if (epBar) epBar.style.width = epochPct + "%";
+        if (epLbl) epLbl.textContent = "Epoch " + completedEpochs + " / " + totalEpochs;
+
+        // ETA: average ms per epoch × remaining epochs
+        if (etaLbl && epochTimes.length >= 2) {
+          var elapsed  = epochTimes[epochTimes.length-1] - epochTimes[0];
+          var msPerEp  = elapsed / (epochTimes.length - 1);
+          var remaining = (totalEpochs - completedEpochs) * msPerEp;
+          var etaSec   = Math.round(remaining / 1000);
+          var etaStr   = etaSec > 60
+            ? Math.floor(etaSec/60) + "m " + (etaSec%60) + "s"
+            : etaSec + "s";
+          etaLbl.textContent = "ETA " + etaStr;
+        } else if (etaLbl && completedEpochs === totalEpochs) {
+          etaLbl.textContent = _en2 ? "Done" : "Listo";
+        }
+      }
+
+      // ── Done ────────────────────────────────────────────────────
+      if (d.done) {
+        clearInterval(_aePollTimers[node.id]);
+        node.data._aeTraining = false;
+        node.data._aeUnlocked = false;  // lock config again after run completes
+
+        if (d.error) {
+          toast((_en2 ? "Training error: " : "Error entrenamiento: ") + d.error);
+        } else {
+          // Store run client-side — use all fields from the poller payload
+          node.data.aeRuns = node.data.aeRuns || [];
+          var runIdx = node.data.aeRuns.length;
+          node.data.aeRuns.push({
+            run_idx:          runIdx,
+            name:             "Run " + (runIdx + 1),
+            bottleneck:       d.bottleneck,
+            epochs:           d.epochs,
+            lr:               d.lr,
+            loss_fn:          d.loss_fn,
+            hidden_mode:      d.hidden_mode,
+            batch_size:       d.batch_size,
+            mse_test:         d.mse_test,
+            h1:               d.h1,
+            h2:               d.h2,
+            h3:               d.h3 || null,
+            input_dim:        d.input_dim,
+            is_color:         d.is_color,
+            dataset_name:     d.dataset_name,
+            log:              d.log || [],
+            sample_originals: d.sample_originals,
+            sample_recons:    d.sample_recons,
+            latent_vectors:   d.latent_vectors,
+            best:             false,
+          });
+          // Mark best run
+          var bestMse = Math.min.apply(null, node.data.aeRuns.map(function(r) { return r.mse_test || Infinity; }));
+          node.data.aeRuns.forEach(function(r) { r.best = (r.mse_test === bestMse); });
+          node.data.aeActiveRunIdx = node.data.aeRuns.length - 1;
+          node.data._aeTab = "explore";
+          setNB(node.id, "MSE " + (d.mse_test != null ? d.mse_test.toFixed(4) : "?"), "badge-green");
+          setOK(node.id, true);
+        }
+        renderAutoencoder(node);
+      }
+    } catch(e) { /* ignore transient poll errors */ }
+  }, 800);
+}
+
+function _aeDrawLossChart(lossData) {
+  var canvas = document.getElementById("ae-loss-chart");
+  if (!canvas || !lossData.length) return;
+  var ctx = canvas.getContext("2d");
+  var W = canvas.offsetWidth || 300; var H = 120;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+  var minL = Math.min.apply(null, lossData);
+  var maxL = Math.max.apply(null, lossData);
+  var range = maxL - minL || 1;
+  var pad = 20;
+  // Grid
+  ctx.strokeStyle = "#e5e7eb"; ctx.lineWidth = 1;
+  for (var g = 0; g < 4; g++) {
+    var gy = pad + (H - 2*pad) * g / 3;
+    ctx.beginPath(); ctx.moveTo(pad, gy); ctx.lineTo(W - pad, gy); ctx.stroke();
+  }
+  // Line
+  ctx.strokeStyle = "var(--accent, #19e68c)"; ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.beginPath();
+  lossData.forEach(function(v, i) {
+    var x = pad + (W - 2*pad) * i / Math.max(lossData.length - 1, 1);
+    var y = pad + (H - 2*pad) * (1 - (v - minL) / range);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  // Last point label
+  ctx.fillStyle = "#19e68c"; ctx.font = "11px sans-serif";
+  var lx = pad + (W - 2*pad); var lv = lossData[lossData.length - 1];
+  var ly = pad + (H - 2*pad) * (1 - (lv - minL) / range);
+  ctx.fillText(lv.toFixed(4), Math.min(lx - 40, W - 60), Math.max(ly - 6, 14));
+}
+
+async function _aeReconstruct(node, runIdx) {
+  var imgIdx   = node.data._aeSelectedImg || 0;
+  var noiseVal = node.data._aeNoise != null ? node.data._aeNoise : 0;
+
+  var origEl   = document.getElementById("ae-img-original");
+  var bnEl     = document.getElementById("ae-img-bottleneck");
+  var bnDimEl  = document.getElementById("ae-bn-dim");
+  var reconEl  = document.getElementById("ae-img-reconstructed");
+  var latentEl = document.getElementById("ae-latent-display");
+
+  if (reconEl) reconEl.innerHTML = '<span style="color:var(--sec);font-size:12px">…</span>';
+  if (bnEl)    bnEl.innerHTML    = '<span style="color:var(--sec);font-size:12px">…</span>';
+
+  try {
+    var r = await fetch("/api/ae_reconstruct", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node: String(node.id), run_idx: runIdx, img_idx: imgIdx, noise: noiseVal })
+    });
+    var d = await r.json();
+    if (d.error) return;
+
+    var imgStyle = 'style="width:100px;height:100px;image-rendering:pixelated;border-radius:6px"';
+
+    // Update original from API (ensures correct image for this run)
+    if (origEl && d.original) {
+      origEl.innerHTML = '<img src="data:image/png;base64,' + d.original + '" ' + imgStyle + '>';
+    }
+
+    // Reconstructed
+    if (reconEl && d.reconstructed) {
+      reconEl.innerHTML = '<img src="data:image/png;base64,' + d.reconstructed + '" ' + imgStyle + '>';
+    }
+
+    // Bottleneck heatmap — visualize latent vector as colored grid
+    if (bnEl && d.latent_vector) {
+      var lv = d.latent_vector;
+      var side = Math.ceil(Math.sqrt(lv.length));
+      var canvas = document.createElement("canvas");
+      canvas.width = side; canvas.height = side;
+      var ctx = canvas.getContext("2d");
+      var maxAbs = Math.max.apply(null, lv.map(Math.abs)) || 1;
+      for (var idx = 0; idx < side * side; idx++) {
+        var v = idx < lv.length ? lv[idx] / maxAbs : 0;
+        var x = idx % side; var y = Math.floor(idx / side);
+        var r255 = v > 0 ? Math.round(v * 255) : 0;
+        var g255 = Math.round((1 - Math.abs(v)) * 180);
+        var b255 = v < 0 ? Math.round(-v * 255) : 0;
+        ctx.fillStyle = 'rgb(' + r255 + ',' + g255 + ',' + b255 + ')';
+        ctx.fillRect(x, y, 1, 1);
+      }
+      // Scale up via CSS
+      canvas.style.cssText = "width:100px;height:100px;image-rendering:pixelated;border-radius:6px";
+      bnEl.innerHTML = "";
+      bnEl.appendChild(canvas);
+      if (bnDimEl) bnDimEl.textContent = d.latent_dim + "D";
+    }
+
+    // Latent vector chips (first 16)
+    if (latentEl && d.latent_vector) {
+      var vec = d.latent_vector.slice(0, 16);
+      var _en2 = lang === "en";
+      latentEl.innerHTML =
+        '<div style="font-size:11px;font-weight:600;color:var(--sec);margin-bottom:6px">' +
+          T("ae-latent-vector") + ' (' + d.latent_dim + 'D)' +
+          (noiseVal > 0 ? ' <span style="color:#f59e0b">+ noise ' + noiseVal.toFixed(2) + '</span>' : '') +
+          ' — ' + (_en2 ? "first 16 values" : "primeros 16 valores") +
+        '</div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
+          vec.map(function(v) {
+            var norm = Math.min(Math.abs(v) / 3, 1);
+            var col = v >= 0
+              ? ("rgba(25,230,140," + (0.15 + norm * 0.75) + ")")
+              : ("rgba(239,68,68,"  + (0.15 + norm * 0.75) + ")");
+            return '<div style="padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;' +
+              'background:' + col + ';color:var(--ink)">' + v.toFixed(2) + '</div>';
+          }).join("") +
+        '</div>';
+    }
+  } catch(e) { /* ignore network errors */ }
+}
+
+async function _aeLoadCompare(node, runIdx, imgIdx) {
+  var selEl  = document.getElementById("ae-compare-img-sel");
+  var progEl = document.getElementById("ae-compare-progression");
+  if (!progEl) return;
+  progEl.innerHTML = '<span style="color:var(--sec);font-size:12px">' + (lang==="en"?"Loading…":"Cargando…") + '</span>';
+
+  try {
+    var r = await fetch("/api/ae_run_data?node=" + encodeURIComponent(String(node.id)) +
+      "&run_idx=" + runIdx + "&img_idx=" + imgIdx);
+    var d = await r.json();
+    if (d.error || !d.progression_imgs) return;
+
+    // Image selector thumbnails
+    if (selEl) {
+      var thumbHtml = '';
+      (d.sample_originals || []).forEach(function(b64, i) {
+        thumbHtml += '<img src="data:image/png;base64,' + b64 + '" data-cidx="' + i + '" ' +
+          'style="width:40px;height:40px;border-radius:5px;cursor:pointer;image-rendering:pixelated;' +
+          'border:2px solid ' + (i === imgIdx ? "var(--accent)" : "var(--border)") + '">';
+      });
+      selEl.innerHTML = thumbHtml;
+      selEl.querySelectorAll("img[data-cidx]").forEach(function(img) {
+        img.addEventListener("click", function() {
+          selEl.querySelectorAll("img[data-cidx]").forEach(function(t) { t.style.borderColor = "var(--border)"; });
+          img.style.borderColor = "var(--accent)";
+          _aeLoadCompare(node, runIdx, parseInt(img.dataset.cidx));
+        });
+      });
+    }
+
+    // Progression strip: each image is a step through the network
+    var stepLabels = [lang==="en"?"Input":"Entrada"];
+    for (var si = 1; si < d.progression_imgs.length - 1; si++) {
+      stepLabels.push("Enc/Dec " + si);
+    }
+    stepLabels.push(lang==="en"?"Output":"Salida");
+
+    var progHtml = '';
+    d.progression_imgs.forEach(function(b64, si) {
+      var isFirst = si === 0;
+      var isLast  = si === d.progression_imgs.length - 1;
+      var border  = isFirst ? "var(--accent)" : isLast ? "#19e68c" : "var(--border)";
+      progHtml +=
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">' +
+          '<img src="data:image/png;base64,' + b64 + '" style="width:80px;height:80px;' +
+            'border-radius:8px;image-rendering:pixelated;border:2px solid ' + border + '">' +
+          '<span style="font-size:10px;color:var(--sec)">' + (stepLabels[si] || "") + '</span>' +
+        '</div>' +
+        (si < d.progression_imgs.length - 1
+          ? '<div style="font-size:18px;color:var(--border);align-self:center;margin-bottom:18px">→</div>'
+          : '');
+    });
+    progEl.innerHTML = progHtml;
+  } catch(e) { progEl.innerHTML = '<span style="color:var(--sec);font-size:12px">Error</span>'; }
 }
 
 // ── Shared time formatter (used by renderCNN and renderCNNEval) ───────────────

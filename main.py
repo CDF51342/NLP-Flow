@@ -1,4 +1,4 @@
-"""NLP Flow 4 — Native window launcher"""
+"""NLP Flow — Native window launcher"""
 import threading, time, os, queue as _queue_mod
 import webview
 from server import app, PORT, cleanup_hf_cache, _DIALOG_REQ, _DIALOG_RES
