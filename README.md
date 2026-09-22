@@ -60,7 +60,7 @@ NLP-flow/
 **Requirements:** Python 3.10 or higher.
 
 ```bash
-git clone https://github.com/CDF51342/NLP-flow.git
+git clone https://github.com/CDF51342/NLP-Flow.git
 cd NLP-flow
 pip install -r requirements.txt
 ```
@@ -132,7 +132,7 @@ To cite this software in academic work, use the **"Cite this repository"** butto
   author  = {Díez-Fenoy, Carlos},
   title   = {NLP Flow},
   year    = {2026},
-  url     = {https://github.com/CDF51342/NLP-flow},
+  url     = {https://github.com/CDF51342/NLP-Flow},
   license = {MIT}
 }
 ```
