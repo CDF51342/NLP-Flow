@@ -3129,6 +3129,84 @@ def plot_nlp():
         plt.tight_layout()
         return jsonify({"img": fig_b64(fig)})
 
+    # ── 6. TF-IDF vs BoW comparison ───────────────────────────────────────────
+    if plot_type == "tfidf_comparison":
+        from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+        import numpy as np
+
+        if not texts:
+            return jsonify({"error": "No hay corpus cargado" if es else "No corpus loaded"}), 400
+
+        # Compute BoW top-N
+        cv = CountVectorizer(max_features=5000)
+        cv.fit(texts)
+        bow_matrix = cv.transform(texts)
+        bow_totals = np.asarray(bow_matrix.sum(axis=0)).flatten()
+        bow_vocab  = cv.get_feature_names_out()
+        bow_pairs  = sorted(zip(bow_vocab, bow_totals), key=lambda x: x[1], reverse=True)[:top_n]
+        bow_words  = [p[0] for p in bow_pairs]
+        bow_counts = [p[1] for p in bow_pairs]
+
+        # Compute TF-IDF top-N (same vocab base for fair comparison)
+        tv = TfidfVectorizer(max_features=5000)
+        tv.fit(texts)
+        tfidf_matrix = tv.transform(texts)
+        tfidf_means  = np.asarray(tfidf_matrix.mean(axis=0)).flatten()
+        tfidf_vocab  = tv.get_feature_names_out()
+        tfidf_pairs  = sorted(zip(tfidf_vocab, tfidf_means), key=lambda x: x[1], reverse=True)[:top_n]
+        tfidf_words  = [p[0] for p in tfidf_pairs]
+        tfidf_scores = [p[1] for p in tfidf_pairs]
+
+        # Determine which words change ranking: in top-N of BoW but not in top-N of TF-IDF (or vice versa)
+        bow_set   = set(bow_words)
+        tfidf_set = set(tfidf_words)
+        changed   = bow_set.symmetric_difference(tfidf_set)
+
+        COLOR_BOW     = "#4A90D9"   # blue  — stable BoW bars
+        COLOR_TFIDF   = "#2ecc71"   # green — stable TF-IDF bars
+        COLOR_CHANGED = "#e05c5c"   # red   — ranking change (both panels)
+
+        def bar_colors(words, changed_set, default_color):
+            return [COLOR_CHANGED if w in changed_set else default_color for w in words]
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, max(5, top_n * 0.32)))
+        fig.patch.set_facecolor(LIGHT)
+
+        # BoW panel — blue stable, red changed
+        style_ax(ax1)
+        colors1 = bar_colors(list(reversed(bow_words)), changed, COLOR_BOW)
+        ax1.barh(list(reversed(bow_words)), list(reversed(bow_counts)), color=colors1, height=0.65)
+        ax1.set_xlabel("Frecuencia" if es else "Frequency", color=INK, fontsize=11)
+        ax1.set_title(f"BoW — Top {top_n} {'palabras' if es else 'words'}",
+                      color=INK, fontsize=13, fontweight="bold", pad=10)
+
+        # TF-IDF panel — green stable, red changed
+        style_ax(ax2)
+        colors2 = bar_colors(list(reversed(tfidf_words)), changed, COLOR_TFIDF)
+        ax2.barh(list(reversed(tfidf_words)), list(reversed(tfidf_scores)), color=colors2, height=0.65)
+        ax2.set_xlabel("TF-IDF score", color=INK, fontsize=11)
+        ax2.set_title(f"TF-IDF — Top {top_n} {'palabras' if es else 'words'}",
+                      color=INK, fontsize=13, fontweight="bold", pad=10)
+
+        # Legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor=COLOR_BOW,     label="Estable en BoW" if es else "Stable in BoW"),
+            Patch(facecolor=COLOR_TFIDF,   label="Estable en TF-IDF" if es else "Stable in TF-IDF"),
+            Patch(facecolor=COLOR_CHANGED, label="Cambia de ranking" if es else "Ranking change"),
+        ]
+        fig.legend(handles=legend_elements, loc="lower center", ncol=3,
+                   fontsize=10, framealpha=0, bbox_to_anchor=(0.5, -0.03))
+
+        fig.suptitle(
+            "Comparativa BoW vs TF-IDF — Las barras en rojo indican palabras cuyo ranking cambia significativamente"
+            if es else
+            "BoW vs TF-IDF comparison — Red bars indicate words whose ranking changes significantly",
+            color=INK, fontsize=12, fontweight="bold", y=1.01
+        )
+        plt.tight_layout()
+        return jsonify({"img": fig_b64(fig)})
+
     return jsonify({"error": f"Tipo de gráfica desconocido: {plot_type}" if es else f"Unknown plot type: {plot_type}"}), 400
 
 # ── SSE progress stream ───────────────────────────────────────────────────────

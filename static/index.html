@@ -46,15 +46,10 @@
       <div class="sb-group-label" data-i18n="group-data">📋 Datos</div>
       <div class="palette-item" data-type="data" draggable="true">📂 Datos</div>
       <div class="palette-item" data-type="data_image" draggable="true">📷 Datos Imagen</div>
+      <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
+      <div class="sb-group-label" data-i18n="group-analysis">🔍 Análisis</div>
       <div class="palette-item" data-type="inspect" draggable="true">🔬 Análisis</div>
       <div class="palette-item" data-type="plots" draggable="true">📊 Plots</div>
-      <div class="palette-item" data-type="preprocess" draggable="true">🔧 Preprocesado</div>
-      <div class="sb-group-label" data-i18n="group-vision">🖼️ Visión</div>
-      <div class="palette-item" data-type="cnn" draggable="true">🧠 CNN Clasificación</div>
-      <div class="palette-item" data-type="autoencoder" draggable="true">🔄 Autoencoder</div>
-
-      <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
-      <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
       <div class="palette-item" data-type="model_eval" draggable="true">📋 Evaluación</div>
       <div class="sb-group-label" data-i18n="group-session">💾 Sesión</div>
       <div class="palette-item" data-type="save_model" draggable="true">💾 Guardar</div>
@@ -63,11 +58,16 @@
       <div class="palette-item" data-type="training" draggable="true">🧠 Entrenamiento NLP</div>
       <div class="palette-item" data-type="topicmodel" draggable="true">🗂️ Topic Model</div>
       <div class="palette-item" data-type="classify" draggable="true">🎯 Clasificar NLP</div>
+      <div class="sb-group-label" data-i18n="group-vision">🖼️ Visión</div>
+      <div class="palette-item" data-type="cnn" draggable="true">🧠 CNN Clasificación</div>
+      <div class="palette-item" data-type="autoencoder" draggable="true">🔄 Autoencoder</div>
       <div class="sb-group-label" data-i18n="group-rag">🔍 RAG</div>
       <div class="palette-item" data-type="rag_chunk" draggable="true">✂️ Chunking</div>
       <div class="palette-item" data-type="rag_embed" draggable="true">🧬 Embeddings</div>
       <div class="palette-item" data-type="rag_retrieve" draggable="true">🔎 Retriever</div>
       <div class="palette-item" data-type="rag_llm" draggable="true">🤖 LLM (RAG)</div>
+      <div class="sb-group-label" data-i18n="group-models">🤖 Modelos</div>
+      <div class="palette-item" data-type="linreg" draggable="true">📉 Regresión Lineal</div>
     </div>
     <div class="sb-section">
       <div class="sb-label" data-i18n="canvas">Canvas</div>
@@ -350,7 +350,7 @@ var I18N = {
     "menu-exp-report":"📋 Reporte (.txt)","menu-exp-canvas":"🗺 Exportar canvas (.json)",
     "menu-imp-canvas":"📥 Importar canvas (.json)",
     // Sidebar groups
-    "group-data":"📋 Datos","group-models":"🤖 Modelos",
+    "group-data":"📋 Datos","group-analysis":"🔍 Análisis","group-models":"🤖 Modelos",
     "group-vision":"🖼️ Visión",
     "group-session":"💾 Sesión","group-nlp":"🗂️ NLP",
     // Save block
@@ -705,7 +705,7 @@ var I18N = {
     "menu-exp-report":"📋 Report (.txt)","menu-exp-canvas":"🗺 Export canvas (.json)",
     "menu-imp-canvas":"📥 Import canvas (.json)",
     // Sidebar groups
-    "group-data":"📋 Data","group-models":"🤖 Models",
+    "group-data":"📋 Data","group-analysis":"🔍 Analysis","group-models":"🤖 Models",
     "group-vision":"🖼️ Vision",
     "group-session":"💾 Session","group-nlp":"🗂️ NLP",
     // Save block
@@ -5383,6 +5383,7 @@ async function renderNlpPlots(node) {
   var NLP_PLOT_TYPES = [
     { id:"doc_length",        label:"📏 " + (_en?"Document length"    :"Longitud de documentos"), desc:_en?"Distribution of words per document"         :"Distribución del nº de palabras por documento" },
     { id:"top_words",         label:"🔤 " + (_en?"Frequent words"     :"Palabras frecuentes"),    desc:_en?"Top N most common words in the corpus"        :"Top N palabras más comunes del corpus" },
+    { id:"tfidf_comparison",  label:"⚖️ " + (_en?"BoW vs TF-IDF"     :"BoW vs TF-IDF"),          desc:_en?"BoW=blue · TF-IDF=green · Red = ranking change" :"BoW=azul · TF-IDF=verde · Rojo = cambia de ranking" },
     { id:"class_dist",        label:"📊 " + (_en?"Class distribution" :"Distribución de clases"), desc:_en?"Number of documents per category"             :"Cuántos documentos hay por categoría",   needsClass: true },
     { id:"length_by_class",   label:"📐 " + (_en?"Length by class"    :"Longitud por clase"),     desc:_en?"Average document length per category"         :"Longitud media de docs por categoría",   needsClass: true },
     { id:"wordcloud_by_class",label:"☁️ " + (_en?"Wordcloud by class" :"Wordcloud por clase"),    desc:_en?"Word cloud separated by category"             :"Nube de palabras separada por categoría",needsClass: true },
@@ -5514,7 +5515,7 @@ async function renderNlpPlots(node) {
   // Show/hide top-n control depending on type
   function updateControls() {
     var topNWrap = document.getElementById("plt-topn-wrap");
-    if (topNWrap) topNWrap.style.display = selType === "top_words" ? "" : "none";
+    if (topNWrap) topNWrap.style.display = (selType === "top_words" || selType === "tfidf_comparison") ? "" : "none";
   }
   updateControls();
 
