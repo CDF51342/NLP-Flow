@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="/static/icon-nlpflow.png" type="image/png">
 <link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -6270,7 +6271,20 @@ async function renderData(node) {
   fi.onchange = function(e) { handleCSV(e.target.files[0], node); };
 
   var inf = await fetch("/api/dataset_info").then(function(r) { return r.json(); });
-  if (inf.loaded) { node.data.loaded = true; showDsInfo(inf, node); }
+  if (inf.loaded) {
+    node.data.loaded = true;
+    // Restore config controls so user can reconfigure on reopen
+    var headers = inf.columns && inf.columns.length
+      ? (typeof inf.columns[0] === "string" ? inf.columns : inf.columns.map(function(c){ return c.name||c; }))
+      : [];
+    var sampleRows = inf.rows || inf.samples || [];
+    if (headers.length) {
+      var savedMode = node.data.nlp_mode === false ? "tab" : (node.data.nlp_mode === true ? "nlp" : (_guessTabular(headers, sampleRows) ? "tab" : "nlp"));
+      document.getElementById("dz").textContent = "📄 " + (inf.name || "dataset.csv");
+      _renderCsvCfg(headers, savedMode, sampleRows, node);
+    }
+    showDsInfo(inf, node);
+  }
 }
 
 // Heurística de detección automática: ¿el CSV parece tabular o NLP?
@@ -6290,9 +6304,15 @@ function _guessTabular(headers, sampleRows) {
 }
 
 // Renderiza los controles de configuración CSV según el modo
-function _renderCsvCfg(headers, mode, sampleRows) {
+function _renderCsvCfg(headers, mode, sampleRows, node) {
   var opts  = headers.map(function(h){ return '<option value="'+h+'">'+h+'</option>'; }).join("");
   var optsN = '<option value="">— None —</option>' + opts;
+
+  // Auto-detect hint: if dataset looks mostly textual, recommend NLP
+  var autoIsNlp = !_guessTabular(headers, sampleRows);
+  var autoHint = autoIsNlp && mode === "nlp"
+    ? '<div style="font-size:11px;color:var(--accent);margin-top:4px">💡 ' + (lang==="en"?"Mostly text detected — NLP recommended":"Dataset mayoritariamente textual — se recomienda NLP") + '</div>'
+    : "";
 
   var modeToggle =
     '<div class="fg" style="margin-bottom:8px">' +
@@ -6301,6 +6321,7 @@ function _renderCsvCfg(headers, mode, sampleRows) {
         '<button class="btn '+(mode==="nlp"?"btn-black":"btn-sec")+'" id="csv-mode-nlp" style="flex:1">📝 NLP / ' + (lang==="en"?"Text":"Texto") + '</button>' +
         '<button class="btn '+(mode==="tab"?"btn-black":"btn-sec")+'" id="csv-mode-tab" style="flex:1">📊 Tabular</button>' +
       '</div>' +
+      autoHint +
     '</div>';
 
   var nlpFields =
@@ -6315,6 +6336,7 @@ function _renderCsvCfg(headers, mode, sampleRows) {
           '<option value="topic_model">Topic Model</option>' +
         '</select>' +
       '</div>' +
+      '<div id="csv-task-warn" style="display:none;font-size:11px;color:#ef4444;margin-top:4px"></div>' +
     '</div>';
 
   var tabFields =
@@ -6332,31 +6354,64 @@ function _renderCsvCfg(headers, mode, sampleRows) {
 
   document.getElementById("csv-cfg").innerHTML =
     modeToggle + nlpFields + tabFields +
-    '<button class="btn btn-black" id="btn-csv" style="margin-top:8px">Upload &amp; load</button>';
+    '<button class="btn btn-black" id="btn-csv" style="margin-top:8px">' + (lang==="en"?"Upload &amp; load":"Subir y cargar") + '</button>';
   document.getElementById("csv-cfg").style.display = "block";
 
   // Toggle mode buttons
-  document.getElementById("csv-mode-nlp").onclick = function() {
-    _renderCsvCfg(headers, "nlp", sampleRows);
-  };
-  document.getElementById("csv-mode-tab").onclick = function() {
-    _renderCsvCfg(headers, "tab", sampleRows);
-  };
+  document.getElementById("csv-mode-nlp").onclick = function() { _renderCsvCfg(headers, "nlp", sampleRows, node); };
+  document.getElementById("csv-mode-tab").onclick = function() { _renderCsvCfg(headers, "tab", sampleRows, node); };
 
   // Pre-seleccionar columna de texto más probable (la más larga en promedio)
   if (mode === "nlp") {
-    var best = headers[0], bestAvg = 0;
-    headers.forEach(function(h) {
-      var avg = sampleRows.reduce(function(s,r){ return s + (r[h]||"").length; }, 0) / (sampleRows.length||1);
-      if (avg > bestAvg) { bestAvg = avg; best = h; }
-    });
-    document.getElementById("csv-tc").value = best;
+    var best = (node && node.data && node.data.textCol) || headers[0];
+    if (!node || !node.data || !node.data.textCol) {
+      var bestAvg = 0;
+      headers.forEach(function(h) {
+        var avg = sampleRows.reduce(function(s,r){ return s + (String(r[h]||"")).length; }, 0) / (sampleRows.length||1);
+        if (avg > bestAvg) { bestAvg = avg; best = h; }
+      });
+    }
+    var tcEl = document.getElementById("csv-tc");
+    if (tcEl) tcEl.value = best;
+    // Restore saved label and task
+    var lcEl   = document.getElementById("csv-lc");
+    var taskEl = document.getElementById("csv-task");
+    if (lcEl   && node && node.data && node.data.labelCol  !== undefined) lcEl.value   = node.data.labelCol || "";
+    if (taskEl && node && node.data && node.data.task) {
+      if (taskEl.querySelector('option[value="'+node.data.task+'"]')) taskEl.value = node.data.task;
+    }
+    // Wire up label→task constraint
+    function _updateTaskConstraint() {
+      var lc = document.getElementById("csv-lc");
+      var tk = document.getElementById("csv-task");
+      var warn = document.getElementById("csv-task-warn");
+      if (!lc || !tk || !warn) return;
+      var noLabel = !lc.value || lc.value === "";
+      if (noLabel && tk.value === "classification") {
+        tk.value = "topic_model";
+      }
+      var classOpt = tk.querySelector('option[value="classification"]');
+      if (classOpt) classOpt.disabled = noLabel;
+      warn.style.display = noLabel ? "" : "none";
+      warn.textContent   = noLabel ? (lang==="en"
+        ? "⚠ Classification requires a label column. Select a label or switch to Topic Model."
+        : "⚠ Clasificación requiere columna de etiqueta. Selecciona una etiqueta o usa Topic Model.")
+        : "";
+    }
+    var lcEl2 = document.getElementById("csv-lc");
+    if (lcEl2) lcEl2.addEventListener("change", _updateTaskConstraint);
+    _updateTaskConstraint();
   }
 
   // Pre-seleccionar target como última columna (convención habitual)
   if (mode === "tab") {
     var tgt = document.getElementById("csv-target");
-    if (tgt && headers.length) tgt.value = headers[headers.length - 1];
+    var savedTarget = node && node.data && node.data.targetCol;
+    if (tgt) tgt.value = savedTarget || (headers.length ? headers[headers.length - 1] : "");
+    var tabTask = document.getElementById("csv-tab-task");
+    if (tabTask && node && node.data && node.data.task && (node.data.task === "regression" || node.data.task === "classification")) {
+      tabTask.value = node.data.task;
+    }
   }
 }
 
@@ -6376,7 +6431,7 @@ async function handleCSV(file, node) {
 
   var autoMode = _guessTabular(headers, sampleRows) ? "tab" : "nlp";
   document.getElementById("dz").textContent = "📄 " + file.name;
-  _renderCsvCfg(headers, autoMode, sampleRows);
+  _renderCsvCfg(headers, autoMode, sampleRows, node);
 
   // El botón Upload lo reasignamos cada vez que se re-renderiza cfg,
   // así que usamos delegación en el contenedor
@@ -9756,6 +9811,8 @@ function formatClassReport(txt) {
 // TOPIC MODEL modal
 // ═══════════════════════════════════════════
 async function renderTopicModel(node) {
+  // Ensure modal body has enough height so the sticky footer is always visible
+  mBody.style.minHeight = "340px";
   var ALGO_DESC = {
     lda: T("tm-algo-desc-lda"),
     nmf: T("tm-algo-desc-nmf"),
@@ -9802,8 +9859,8 @@ async function renderTopicModel(node) {
             '<div class="rrow"><input type="range" id="tm-topw" min="5" max="30" value="15">' +
               '<input type="number" class="inp rinp" id="tm-twv" value="15" min="5" max="30"></div></div>' +
           '<div class="fg"><div class="fl">' + T("tm-iter-lbl") + ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-iter-hint") + '</span></div>' +
-            '<div class="rrow"><input type="range" id="tm-iter" min="50" max="2000" step="10" value="200">' +
-              '<input type="number" class="inp rinp" id="tm-iterv" value="200" min="50" max="2000" step="10"></div></div>' +
+            '<div class="rrow"><input type="range" id="tm-iter" min="10" max="300" step="10" value="100">' +
+              '<input type="number" class="inp rinp" id="tm-iterv" value="100" min="10" max="300" step="10"></div></div>' +
         '</div>' +
 
         // ── Advanced parameters (collapsible) ──────────────────────────────
@@ -9831,19 +9888,7 @@ async function renderTopicModel(node) {
               '<label class="plug-toggle"><input type="checkbox" id="tm-stopwords"><span class="plug-slider"></span></label>' +
             '</div>' +
 
-            // alpha (LDA only)
-            '<div id="tm-alpha-wrap" class="fg"><div class="fl">' + T("tm-alpha-lbl") +
-              ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-lda-only") + '</span>' +
-              ' <span style="font-size:10px;color:var(--sec)">' + T("tm-alpha-hint") + '</span>' +
-              ' <b id="tm-alpha-val">auto</b></div>' +
-              '<div class="rrow"><input type="range" id="tm-alpha" min="0" max="13" step="1" value="0" oninput="document.getElementById(\'tm-alpha-val\').textContent=[\'auto\',\'0.001\',\'0.01\',\'0.05\',\'0.1\',\'0.2\',\'0.3\',\'0.5\',\'0.7\',\'1.0\',\'2.0\',\'5.0\',\'10.0\',\'symmetric\'][parseInt(this.value)]"></div></div>' +
 
-            // beta (LDA only)
-            '<div id="tm-beta-wrap" class="fg"><div class="fl">' + T("tm-beta-lbl") +
-              ' <span style="font-size:10px;color:var(--sec);font-weight:400">' + T("tm-lda-only") + '</span>' +
-              ' <span style="font-size:10px;color:var(--sec)">' + T("tm-beta-hint") + '</span>' +
-              ' <b id="tm-beta-val">auto</b></div>' +
-              '<div class="rrow"><input type="range" id="tm-beta" min="0" max="10" step="1" value="0" oninput="document.getElementById(\'tm-beta-val\').textContent=[\'auto\',\'0.001\',\'0.01\',\'0.05\',\'0.1\',\'0.2\',\'0.3\',\'0.5\',\'1.0\',\'2.0\',\'5.0\'][parseInt(this.value)]"></div></div>' +
 
           '</div>' +
         '</div>' +
@@ -9862,13 +9907,17 @@ async function renderTopicModel(node) {
         '<div class="fl" style="margin-bottom:6px">' + T("tm-metrics-lbl") + '</div>' +
         '<div id="tm-metrics"></div>' +
         '<hr class="sep">' +
-        chartWrap("tm-charts", T("tm-words-lbl")) +
+        '<div class="chart-wrap-hdr">' +
+          '<span class="fl" style="margin-bottom:0">' + T("tm-words-lbl") + '</span>' +
+          '<button class="btn btn-ghost btn-sm" id="btn-tm-expand-chart">⛶ ' + (lang==="en"?"Expand":"Expandir") + '</button>' +
+        '</div>' +
+        '<div id="tm-charts" style="margin-top:8px"></div>' +
         '<hr class="sep">' +
         '<div class="chart-wrap-hdr">' +
           '<span class="fl" style="margin-bottom:0">' + T("tm-save-wordclouds") + '</span>' +
           '<button class="btn btn-ghost btn-sm" id="btn-tm-wc-popup">⛶ ' + T("tm-wc-btn") + '</button>' +
         '</div>' +
-        '<div id="tm-wc-preview" style="min-height:60px;margin-top:6px"><div class="loading" style="font-size:12px">' + T("tm-ready") + '</div></div>' +
+        '<div id="tm-wc-preview" style="min-height:40px;margin-top:6px"><div class="loading" style="font-size:12px">' + T("tm-ready") + '</div></div>' +
 
       '</div>' +
     '</div></div>';
@@ -9891,20 +9940,7 @@ async function renderTopicModel(node) {
   syncSliderInput("tm-mindf","tm-mindfv", function(v){return parseInt(v);});
   syncSliderInput("tm-maxdf","tm-maxdfv", function(v){return parseFloat(v).toFixed(2);});
 
-  // Show/hide alpha & beta only for LDA
-  function _updateLdaOnlyFields() {
-    var algo = document.querySelector('input[name="tm-algo"]:checked');
-    var isLda = algo && algo.value === "lda";
-    ["tm-alpha-wrap","tm-beta-wrap"].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.style.opacity = isLda ? "1" : "0.4";
-      if (el) el.style.pointerEvents = isLda ? "" : "none";
-    });
-  }
-  document.querySelectorAll('input[name="tm-algo"]').forEach(function(r) {
-    r.addEventListener("change", _updateLdaOnlyFields);
-  });
-  _updateLdaOnlyFields();
+
 
   // ─── Plug toggle: etiquetado IA ────────────────────────────────────────────
   var labelToggle = document.getElementById("tm-label-toggle");
@@ -9952,16 +9988,18 @@ async function renderTopicModel(node) {
 
   // ─── Run ───────────────────────────────────────────────────────────────────
   document.getElementById("btn-tm").onclick = async function() {
+    var btnTm = document.getElementById("btn-tm");
+    if (btnTm.disabled) return;
     var bar = document.getElementById("tm-bar"), lbl = document.getElementById("tm-lbl"), log = document.getElementById("tm-log");
     bar.style.width = "0%"; bar.classList.remove("done"); lbl.textContent = lang==="en"?"Starting…":"Iniciando…"; log.textContent = "";
     document.getElementById("tm-res").style.display = "none";
+    // Disable run button while training
+    btnTm.disabled = true;
+    btnTm.textContent = lang==="en"?"Training…":"Entrenando…";
+    btnTm.style.opacity = "0.55";
 
     var algo = document.querySelector('input[name="tm-algo"]:checked').value;
     // Alpha & Beta: map slider index to value string
-    var _alphaMap = ["auto","0.001","0.01","0.05","0.1","0.2","0.3","0.5","0.7","1.0","2.0","5.0","10.0","symmetric"];
-    var _betaMap  = ["auto","0.001","0.01","0.05","0.1","0.2","0.3","0.5","1.0","2.0","5.0"];
-    var _alphaIdx = parseInt((document.getElementById("tm-alpha")||{value:"0"}).value||0);
-    var _betaIdx  = parseInt((document.getElementById("tm-beta") ||{value:"0"}).value||0);
     var payload = {
       algorithm:   algo,
       n_topics:    parseInt(document.getElementById("tm-ntv").value, 10),
@@ -9970,14 +10008,16 @@ async function renderTopicModel(node) {
       max_iter:    parseInt(document.getElementById("tm-iterv").value, 10),
       min_df:      parseInt((document.getElementById("tm-mindfv")||{value:"2"}).value||2, 10),
       max_df:      parseFloat((document.getElementById("tm-maxdfv")||{value:"1.0"}).value||1.0),
-      stop_words:  (document.getElementById("tm-stopwords")||{checked:false}).checked ? "auto" : null,
-      doc_topic_prior: _alphaMap[_alphaIdx] || "auto",
-      topic_word_prior: _betaMap[_betaIdx]  || "auto"
+      stop_words:  (document.getElementById("tm-stopwords")||{checked:false}).checked ? "auto" : null
     };
 
     var resp = await fetch("/api/topic_model", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
     var j    = await resp.json();
-    if (j.error) { toast(j.error); return; }
+    if (j.error) {
+      toast(j.error);
+      btnTm.disabled = false; btnTm.textContent = T("tm-run-btn"); btnTm.style.opacity = "";
+      return;
+    }
 
     // Activar tracking background para que sobreviva al cerrar el modal
     _tmActiveNodeId = node.id;
@@ -9987,6 +10027,9 @@ async function renderTopicModel(node) {
     startProgress(function() {
       _tmActiveNodeId = null; _tmStartTime = null;
       if (_tmBgTimer) { clearInterval(_tmBgTimer); _tmBgTimer = null; }
+      // Re-enable button once done
+      var btn = document.getElementById("btn-tm");
+      if (btn) { btn.disabled = false; btn.textContent = T("tm-run-btn"); btn.style.opacity = ""; }
       showTopicResults(node);
       setTimeout(function() {
         var res = document.getElementById("tm-res");
@@ -10015,27 +10058,156 @@ async function renderTopicModel(node) {
 }
 
 async function showTopicResults(node) {
+  var _en = lang === "en";
   var area = document.getElementById("tm-res"); if (!area) return;
   area.style.display = "block";
+  // Wait one animation frame so the DOM is painted and canvas has real dimensions
+  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 50); }); });
 
   var charts = document.getElementById("tm-charts");
   if (charts) charts.innerHTML = '<div class="loading">'+T("tm-loading-chart")+'</div>';
 
-  var [plotResp, trResp] = await Promise.all([
-    fetch("/api/plot_results").then(function(r) { return r.json(); }),
-    fetch("/api/train_results").then(function(r) { return r.json(); })
-  ]);
+  // Retry loop — give the server up to ~5s to commit results
+  var plotResp, trResp;
+  var _delays = [300, 800, 1200, 1500, 2000];
+  for (var _retry = 0; _retry < _delays.length; _retry++) {
+    var results = await Promise.all([
+      fetch("/api/plot_results").then(function(r) { return r.json(); }).catch(function(){ return {}; }),
+      fetch("/api/train_results").then(function(r) { return r.json(); }).catch(function(){ return {}; })
+    ]);
+    plotResp = results[0]; trResp = results[1];
+    if ((plotResp.chart_data && plotResp.chart_data.length) || (trResp.results && trResp.results.topics && trResp.results.topics.length)) break;
+    if (_retry < _delays.length - 1) await new Promise(function(r){ setTimeout(r, _delays[_retry]); });
+  }
 
-  if (plotResp.error) {
-    if (charts) charts.innerHTML = '<div class="loading">' + plotResp.error + '</div>';
+  if (plotResp.error && !plotResp.topics && !plotResp.chart_data && !(trResp.results && trResp.results.topics)) {
+    if (charts) charts.innerHTML = '<div class="loading">' + (plotResp.error || (_en?"No results yet.":"Sin resultados.")) + '</div>';
     return;
   }
-  if (plotResp.img && charts) {
+  // ─── Interactive Chart.js plot for topic model ───────────────────────────
+  // chart_data comes from the new _plot_topics; fall back to building it from topics in train_results
+  var chartData = plotResp.chart_data || [];
+  if (!chartData.length && trResp.results && trResp.results.topics) {
+    var TM_PAL0 = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"];
+    var _tls = (trResp.results.topic_labels) || {};
+    chartData = trResp.results.topics.map(function(tp) {
+      var lbl = _tls[String(tp.id)] || "";
+      return {
+        id:        tp.id,
+        label:     (lang==="en"?"Topic ":"Tópico ") + (tp.id+1) + (lbl ? " — "+lbl : ""),
+        words:     tp.words  || [],
+        weights:   tp.weights || [],
+        doc_count: tp.doc_count != null ? tp.doc_count : 0,
+        color:     TM_PAL0[tp.id % TM_PAL0.length]
+      };
+    });
+  }
+  if (charts && !chartData.length) {
+    charts.innerHTML = '<div style="color:var(--sec);font-size:13px;padding:12px">' + (_en?"Run Topic Model to see charts.":"Ejecuta el Topic Model para ver gráficas.") + '</div>';
+  }
+  if (charts && chartData.length) {
+    var TM_PALETTE = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"];
+    var tmActiveIdx = 0;
+    var tmWordsChart = null;
+    var tmDocChart   = null;
+
+    // build selector buttons + compact words chart only
+    var btnHtml = chartData.map(function(tp, i) {
+      var lbl = tp.label.length > 22 ? tp.label.slice(0,20)+"…" : tp.label;
+      return '<button class="tm-plt-btn' + (i===0?' active':'') + '" data-idx="'+i+'" style="padding:3px 9px;border-radius:14px;border:1.5px solid '+(i===0?'var(--accent)':'var(--border)')+';background:'+(i===0?'var(--accent)':'var(--card)')+';color:'+(i===0?'#fff':'var(--sec)')+';font-size:11px;cursor:pointer;font-weight:600">' + lbl + '</button>';
+    }).join("");
+
+    charts.innerHTML =
+      '<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">' + btnHtml + '</div>' +
+      '<div style="font-size:11px;color:var(--sec);margin-bottom:4px">' + (_en?"Top words — click a topic to switch":"Palabras clave — clic en tópico para cambiar") + '</div>' +
+      '<canvas id="tm-words-chart" height="140"></canvas>';
+
+    // Get canvas context AFTER injecting innerHTML
+    var wCtx = document.getElementById("tm-words-chart") ? document.getElementById("tm-words-chart").getContext("2d") : null;
+    var dCtx = null; // doc chart lives in the HTML report
+
+    function renderTmWordsChart(idx) {
+      var tp  = chartData[idx];
+      var lbl = tp.words.slice().reverse();
+      var dat = tp.weights.slice().reverse();
+      if (tmWordsChart) tmWordsChart.destroy();
+      // Re-acquire context in case canvas was replaced
+      var cvs = document.getElementById("tm-words-chart");
+      if (!cvs) return;
+      wCtx = cvs.getContext("2d");
+      tmWordsChart = new Chart(wCtx, {
+        type: "bar",
+        data: {
+          labels: lbl,
+          datasets: [{ label: tp.label, data: dat,
+            backgroundColor: (TM_PALETTE[tp.id % TM_PALETTE.length]) + "cc",
+            borderColor:      TM_PALETTE[tp.id % TM_PALETTE.length],
+            borderWidth: 1, borderRadius: 4 }]
+        },
+        options: {
+          indexAxis: "y", responsive: true, animation: { duration: 300 },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: function(c) { return " " + c.parsed.x.toFixed(4); } } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "var(--sec)", font: { size: 11 } } },
+            y: { grid: { display: false }, ticks: { color: "var(--ink)", font: { size: 12 } } }
+          }
+        }
+      });
+    }
+
+    renderTmWordsChart(0);
+    // Force Chart.js to recalculate size after section becomes visible
+    requestAnimationFrame(function() {
+      if (tmWordsChart) tmWordsChart.resize();
+    });
+
+    // Expand button — export words canvas with white background then open fullscreen
+    var expandBtn = document.getElementById("btn-tm-expand-chart");
+    if (expandBtn) {
+      expandBtn.onclick = function() {
+        var cvs = document.getElementById("tm-words-chart");
+        if (!cvs) return;
+        var tmp = document.createElement("canvas");
+        tmp.width = cvs.width; tmp.height = cvs.height;
+        var tCtx = tmp.getContext("2d");
+        tCtx.fillStyle = "#ffffff";
+        tCtx.fillRect(0, 0, tmp.width, tmp.height);
+        tCtx.drawImage(cvs, 0, 0);
+        expandImg(tmp.toDataURL("image/png"));
+      };
+    }
+
+    charts.querySelectorAll(".tm-plt-btn").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        tmActiveIdx = idx;
+        charts.querySelectorAll(".tm-plt-btn").forEach(function(b, j) {
+          var active = j === idx;
+          b.classList.toggle("active", active);
+          b.style.background   = active ? "var(--accent)" : "var(--card)";
+          b.style.color        = active ? "#fff" : "var(--sec)";
+          b.style.borderColor  = active ? "var(--accent)" : "var(--border)";
+        });
+        renderTmWordsChart(idx);
+      });
+    });
+  } else if (plotResp.img && charts) {
+    // fallback to static image if no chart_data
     charts.innerHTML = '<img src="data:image/png;base64,' + plotResp.img + '" class="dash-img" style="cursor:zoom-in" onclick="expandImg(this.src)">';
   }
 
   var res         = trResp.results || {};
-  var topics      = res.topics     || plotResp.topics || [];
+  var topics      = res.topics || plotResp.topics || [];
+  // sync doc_count from chartData into topics if missing (e.g. old run)
+  if (topics.length && chartData.length) {
+    topics.forEach(function(tp) {
+      var cd = chartData.find(function(d){ return d.id === tp.id; });
+      if (cd && tp.doc_count == null) tp.doc_count = cd.doc_count;
+    });
+  }
   var perp        = res.perplexity != null ? res.perplexity : null;
   var cvArr       = res.coherence_cv    || res.coherence || [];
   var cnArr       = res.coherence_cnpmi || [];
@@ -10044,7 +10216,7 @@ async function showTopicResults(node) {
   var topicDiv    = (res.topic_diversity !== null && res.topic_diversity !== undefined && res.topic_diversity !== "")
                     ? parseFloat(res.topic_diversity).toFixed(3) : "—";
 
-  if (!topics.length) return;
+  if (!topics.length && !chartData.length) return;
 
   // ─── Metrics ─────────────────────────────────────────────────────────────
   var mEl = document.getElementById("tm-metrics");
@@ -10052,6 +10224,7 @@ async function showTopicResults(node) {
     var avgCv   = cvArr.length   ? (cvArr.reduce(function(a,b){return a+b;},0)  / cvArr.length).toFixed(3)  : "—";
     var avgCnpm = cnArr.length   ? (cnArr.reduce(function(a,b){return a+b;},0)  / cnArr.length).toFixed(3)  : "—";
     var algoLabel = { lda:"LDA", nmf:"NMF", lsa:"LSA" }[algo] || algo.toUpperCase();
+    var TM_PAL = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"];
     mEl.innerHTML =
       '<div class="mgrid">' +
         '<div class="mcard mcard-hi"><div class="mval">' + algoLabel + '</div><div class="mlbl">Algoritmo</div></div>' +
@@ -10061,26 +10234,33 @@ async function showTopicResults(node) {
         '<div class="mcard mcard-hi"><div class="mval" style="font-size:20px">' + avgCnpm + '</div><div class="mlbl">C_NPMI <span style="color:var(--ter)">(↑ mejor)</span></div></div>' +
         '<div class="mcard mcard-hi"><div class="mval" style="font-size:20px">' + topicDiv + '</div><div class="mlbl">' + T("tm-diversity") + ' <span style="color:var(--ter)">' + T("tm-diversity-hint") + '</span></div></div>' +
       '</div>' +
-      // Per-topic coherence table
+      // Per-topic coherence table with doc_count
       (function() {
         var hasLabels = Object.keys(topicLabels).length > 0;
+        var totalDocs = topics.reduce(function(acc, tp){ return acc + (tp.doc_count||0); }, 0);
         var cols = hasLabels
-          ? 'grid-template-columns:1fr 140px 100px 100px 1fr'
-          : 'grid-template-columns:1fr 120px 120px 1fr';
+          ? 'grid-template-columns:1fr 130px 80px 70px 70px 1fr'
+          : 'grid-template-columns:1fr 80px 70px 70px 1fr';
         var hdr = hasLabels
-          ? '<span>Tópico</span><span style="color:var(--accent)">🔌 Etiqueta IA</span><span>C_V</span><span>C_NPMI</span><span>Palabras clave</span>'
-          : '<span>Tópico</span><span>C_V</span><span>C_NPMI</span><span>Palabras clave</span>';
+          ? '<span>Tópico</span><span style="color:var(--accent)">🔌 Etiqueta IA</span><span>' + (_en?"Docs":"Docs") + '</span><span>C_V</span><span>C_NPMI</span><span>Palabras clave</span>'
+          : '<span>Tópico</span><span>' + (_en?"Docs":"Docs") + '</span><span>C_V</span><span>C_NPMI</span><span>Palabras clave</span>';
         var rows = topics.map(function(tp, i) {
           var cv   = cvArr[i]  != null ? cvArr[i].toFixed(3)  : "—";
           var cnpm = cnArr[i]  != null ? cnArr[i].toFixed(3)  : "—";
           var cvf  = cvArr[i]  != null ? parseFloat(cvArr[i])  : 0;
           var barW = Math.max(0, Math.min(100, Math.round((cvf + 1) * 50)));
+          var dc   = tp.doc_count != null ? tp.doc_count : 0;
+          var pct  = totalDocs > 0 ? (100 * dc / totalDocs).toFixed(0) : "0";
+          var color = TM_PAL[tp.id % TM_PAL.length];
           var labelCell = hasLabels
             ? '<span style="font-weight:700;color:var(--accent);font-size:12px">' + (topicLabels[String(tp.id)] || '—') + '</span>'
             : '';
+          var docCell = '<span style="font-weight:700;color:' + color + '">' + dc +
+            '<span style="font-size:10px;color:var(--sec);font-weight:400"> (' + pct + '%)</span></span>';
           return '<div class="crep-row" style="' + cols + '">' +
             '<span class="crep-lbl">' + T("tm-topic-n") + ' ' + (tp.id+1) + '</span>' +
             labelCell +
+            docCell +
             '<span class="crep-f1col">' + cv + '<div class="crep-f1bar"><div style="width:'+barW+'%;background:var(--accent)"></div></div></span>' +
             '<span>' + cnpm + '</span>' +
             '<span style="font-size:11px;color:var(--sec)">' + tp.words.slice(0,5).join(", ") + '…</span>' +
@@ -10103,15 +10283,22 @@ async function showTopicResults(node) {
     previewEl.innerHTML =
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
         topics.map(function(tp) {
-          return '<span class="badge badge-info" style="cursor:default">Topic '+(tp.id+1)+': '+tp.words.slice(0,3).join(", ")+'…</span>';
+          return '<span class="badge badge-info" data-tid="'+tp.id+'" style="cursor:pointer;transition:opacity .15s" title="'+(lang==="en"?"Open word cloud":"Abrir nube de palabras")+'">'+
+            (lang==="en"?"Topic":"Tópico")+' '+(tp.id+1)+': '+tp.words.slice(0,3).join(", ")+'…</span>';
         }).join("") +
       '</div>' +
       '<div style="font-size:11px;color:var(--ter);margin-top:6px">' + T("tm-wc-hint") + '</div>';
+    // Each badge opens the popup at that topic
+    previewEl.querySelectorAll(".badge[data-tid]").forEach(function(badge) {
+      badge.addEventListener("click", function() {
+        openTopicsWCPopup(topics, parseInt(badge.getAttribute("data-tid"), 10));
+      });
+    });
   }
 
   var wcPopupBtn = document.getElementById("btn-tm-wc-popup");
   if (wcPopupBtn) {
-    wcPopupBtn.onclick = function() { openTopicsWCPopup(topics); };
+    wcPopupBtn.onclick = function() { openTopicsWCPopup(topics, 0); };
   }
 
   var algLabel = { lda:"LDA", nmf:"NMF", lsa:"LSA" }[algo] || algo;
@@ -10121,19 +10308,26 @@ async function showTopicResults(node) {
 }
 
 // ─── Topic Word Cloud popup — ampliado con navegación ────────────────────────
-function openTopicsWCPopup(topics) {
+var _wcPopupNav = null;  // fn(tid) — set while popup is open, null when closed
+
+function openTopicsWCPopup(topics, startIdx) {
+  // If popup already open, just navigate — no new overlay
+  if (_wcPopupNav) { _wcPopupNav(startIdx != null ? startIdx : 0); return; }
+
   var cur = 0;
   var wcCache = {};   // tid → base64 data URL
 
+  var WC_PAL = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"];
   var overlay = document.createElement("div");
-  overlay.className = "zoom-overlay";
+  overlay.className = "zoom-overlay zoom-overlay--no-anim";
   overlay.innerHTML =
-    '<div class="zoom-box" style="width:min(1080px,calc(100vw - 24px));max-height:calc(100vh - 24px)">' +
+    '<div class="zoom-box" style="width:min(1160px,calc(100vw - 24px));max-height:calc(100vh - 24px)">' +
       '<button class="zoom-close" id="twc-close">✕</button>' +
       '<div style="display:flex;align-items:center;gap:10px;width:100%">' +
         '<div style="font-size:14px;font-weight:700;color:#fff" id="twc-title">Tópico 1</div>' +
         '<div style="font-size:12px;color:rgba(255,255,255,.5)" id="twc-words"></div>' +
         '<div style="flex:1"></div>' +
+        '<div style="font-size:12px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.1);border-radius:8px;padding:3px 10px" id="twc-doccount"></div>' +
         '<div class="zoom-controls">' +
           '<button class="zoom-btn" id="twc-out">−</button>' +
           '<span class="zoom-pct" id="twc-pct">100%</span>' +
@@ -10141,11 +10335,17 @@ function openTopicsWCPopup(topics) {
           '<button class="zoom-btn" id="twc-reset">↺</button>' +
         '</div>' +
       '</div>' +
-      '<div class="zoom-stage" id="twc-stage" style="width:100%;flex:1;min-height:340px;max-height:calc(100vh - 260px)">' +
-        '<div class="zoom-img-wrap" id="twc-wrap">' +
-          '<img class="zoom-img" id="twc-img">' +
+      '<div style="display:flex;gap:16px;width:100%;flex:1;min-height:340px;max-height:calc(100vh - 260px)">' +
+        '<div class="zoom-stage" id="twc-stage" style="flex:1;position:relative">' +
+          '<div class="zoom-img-wrap" id="twc-wrap">' +
+            '<img class="zoom-img" id="twc-img">' +
+          '</div>' +
+          '<div class="loading" id="twc-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:13px;background:rgba(0,0,0,.3);border-radius:12px">' + (lang==="en"?"Generating cloud…":"Generando nube…") + '</div>' +
         '</div>' +
-        '<div class="loading" id="twc-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:13px;background:rgba(0,0,0,.3);border-radius:12px">' + (lang==="en"?"Generating cloud…":"Generando nube…") + '</div>' +
+        '<div style="width:260px;flex-shrink:0;background:rgba(255,255,255,.06);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px">' +
+          '<div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:600;text-transform:uppercase;letter-spacing:.05em">' + (lang==="en"?"Top words":"Palabras clave") + '</div>' +
+          '<canvas id="twc-bar-chart" style="flex:1"></canvas>' +
+        '</div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;width:100%">' +
         '<button class="zoom-arrow" id="twc-prev">&#8249;</button>' +
@@ -10155,14 +10355,17 @@ function openTopicsWCPopup(topics) {
     '</div>';
   document.body.appendChild(overlay);
 
-  var stage   = overlay.querySelector("#twc-stage");
-  var wrap    = overlay.querySelector("#twc-wrap");
-  var img     = overlay.querySelector("#twc-img");
-  var loading = overlay.querySelector("#twc-loading");
-  var titleEl = overlay.querySelector("#twc-title");
-  var wordsEl = overlay.querySelector("#twc-words");
-  var pctEl   = overlay.querySelector("#twc-pct");
-  var thumbsEl= overlay.querySelector("#twc-thumbs");
+  var stage      = overlay.querySelector("#twc-stage");
+  var wrap       = overlay.querySelector("#twc-wrap");
+  var img        = overlay.querySelector("#twc-img");
+  var loading    = overlay.querySelector("#twc-loading");
+  var titleEl    = overlay.querySelector("#twc-title");
+  var wordsEl    = overlay.querySelector("#twc-words");
+  var pctEl      = overlay.querySelector("#twc-pct");
+  var docCountEl = overlay.querySelector("#twc-doccount");
+  var thumbsEl   = overlay.querySelector("#twc-thumbs");
+  var barCanvas  = overlay.querySelector("#twc-bar-chart");
+  var barChart   = null;
 
   // Zoom / pan state
   var zoom = 1, panX = 0, panY = 0, panning3 = false, px0 = 0, py0 = 0, tx0 = 0, ty0 = 0;
@@ -10195,25 +10398,70 @@ function openTopicsWCPopup(topics) {
     thumbsEl.appendChild(t);
   });
 
+  function renderBarChart(tp) {
+    if (!barCanvas) return;
+    var words   = (tp.words   || []).slice(0, 10).slice().reverse();
+    var weights = (tp.weights || []).slice(0, 10).slice().reverse();
+    var color   = WC_PAL[tp.id % WC_PAL.length];
+    if (barChart) barChart.destroy();
+    barChart = new Chart(barCanvas, {
+      type: "bar",
+      data: {
+        labels: words,
+        datasets: [{ data: weights,
+          backgroundColor: color + "bb", borderColor: color,
+          borderWidth: 1, borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: "y", responsive: true, maintainAspectRatio: false,
+        animation: { duration: 250 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function(c){ return " "+c.parsed.x.toFixed(4); }}}
+        },
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,.1)" }, ticks: { color: "rgba(255,255,255,.6)", font: { size: 10 } } },
+          y: { grid: { display: false }, ticks: { color: "#fff", font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  function _showImg(src) {
+    img.style.transition = "opacity 180ms ease";
+    img.style.opacity = "0";
+    img.src = src;
+    img.style.display = "";
+    loading.style.display = "none";
+    requestAnimationFrame(function() { requestAnimationFrame(function() { img.style.opacity = "1"; }); });
+    resetVw();
+  }
+
   async function loadTopic(tid) {
     cur = tid;
     var tp = topics[tid];
     titleEl.textContent = T("tm-topic-n") + " " + (tid+1);
     wordsEl.textContent = tp.words.slice(0,6).join(", ") + "…";
+    // doc_count pill
+    var dc = tp.doc_count != null ? tp.doc_count : null;
+    if (docCountEl) {
+      docCountEl.textContent = dc != null ? dc + " docs" : "";
+      docCountEl.style.display = dc != null ? "" : "none";
+    }
     // Update thumb active state
     thumbsEl.querySelectorAll(".zt").forEach(function(t,i){ t.classList.toggle("active", topics[i] && topics[i].id===tid); });
-    // Show image or loading
+    // Render bar chart
+    renderBarChart(tp);
+    // Cached — just fade in, no loading spinner
     if (wcCache[tid]) {
-      loading.style.display = "none";
-      img.style.display     = "";
-      img.src = wcCache[tid];
-      resetVw();
-      // Update thumb with actual image
+      _showImg(wcCache[tid]);
       var thumb = document.getElementById("twc-thumb-"+tid);
-      if (thumb) { thumb.innerHTML = '<img src="'+wcCache[tid]+'" style="width:100%;height:100%;object-fit:cover">'; }
+      if (thumb && !thumb.querySelector("img")) {
+        thumb.innerHTML = '<img src="'+wcCache[tid]+'" style="width:100%;height:100%;object-fit:cover">';
+      }
       return;
     }
-    img.style.display     = "none";
+    // Not cached — show spinner over existing image (don't hide it yet)
     loading.style.display = "flex";
     loading.textContent   = T("tm-wc-generating") + " " + (tid+1) + "…";
     var words   = tp.words   || [];
@@ -10228,10 +10476,7 @@ function openTopicsWCPopup(topics) {
         var src = "data:image/png;base64," + d2.img;
         wcCache[tid] = src;
         if (cur === tid) {
-          loading.style.display = "none";
-          img.style.display     = "";
-          img.src = src;
-          resetVw();
+          _showImg(src);
           var thumb = document.getElementById("twc-thumb-"+tid);
           if (thumb) { thumb.innerHTML = '<img src="'+src+'" style="width:100%;height:100%;object-fit:cover">'; }
         }
@@ -10248,8 +10493,9 @@ function openTopicsWCPopup(topics) {
   overlay.querySelector("#twc-prev").onclick = function() { navigate(-1); };
   overlay.querySelector("#twc-next").onclick = function() { navigate(1);  };
 
-  overlay.querySelector("#twc-close").onclick = function() { overlay.remove(); };
-  overlay.onclick = function(e) { if(e.target === overlay) overlay.remove(); };
+  function _closePopup() { overlay.remove(); _wcPopupNav = null; }
+  overlay.querySelector("#twc-close").onclick = _closePopup;
+  overlay.onclick = function(e) { if (e.target === overlay) _closePopup(); };
 
   function onKey(e) {
     if (e.key==="ArrowLeft")  { navigate(-1); e.preventDefault(); }
@@ -10257,11 +10503,14 @@ function openTopicsWCPopup(topics) {
     if (e.key==="+"||e.key==="=") { zoom=Math.min(6,zoom*1.2); applyTf(); }
     if (e.key==="-") { zoom=Math.max(0.2,zoom/1.2); applyTf(); }
     if (e.key==="0") { resetVw(); }
-    if (e.key==="Escape") { overlay.remove(); window.removeEventListener("keydown",onKey); }
+    if (e.key==="Escape") { _closePopup(); window.removeEventListener("keydown",onKey); }
   }
   window.addEventListener("keydown", onKey);
 
-  loadTopic(0);
+  // Expose navigation so re-clicks on badges don't reopen the overlay
+  _wcPopupNav = loadTopic;
+
+  loadTopic(startIdx != null ? startIdx : 0);
 }
 
 // ═══════════════════════════════════════════

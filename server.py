@@ -3132,7 +3132,6 @@ def plot_nlp():
     # ── 6. TF-IDF vs BoW comparison ───────────────────────────────────────────
     if plot_type == "tfidf_comparison":
         from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-        import numpy as np
 
         if not texts:
             return jsonify({"error": "No hay corpus cargado" if es else "No corpus loaded"}), 400
@@ -3432,25 +3431,19 @@ def _plot_topics(res):
     topics=res.get("topics",[])
     if not topics: return jsonify({"error":"No topics"}),400
     topic_labels = res.get("topic_labels", {})
-    n=len(topics)
-    cols=min(n,4); rows=max(1,(n+cols-1)//cols)
-    fig,axes=plt.subplots(rows,cols,figsize=(4.5*cols,4.5*rows))
-    fig.patch.set_facecolor(LIGHT)
-    axes_flat=np.array(axes).flatten() if n>1 else [axes]
-    for idx,(ax,tp) in enumerate(zip(axes_flat,topics)):
-        style_ax(ax)
-        words=tp["words"][:10]; weights=tp["weights"][:10]
-        color=PALETTE[idx % len(PALETTE)]
-        ax.barh(list(reversed(words)),list(reversed(weights)),
-                color=color,edgecolor="none",alpha=0.85)
+    # Return structured data for Chart.js interactive rendering in the frontend
+    chart_data = []
+    for tp in topics:
         lbl = topic_labels.get(str(tp["id"]), "")
-        title = f"Topic {tp['id']+1}" + (f" — {lbl}" if lbl else "")
-        ax.set_title(title, color=INK, fontsize=13, fontweight="bold")
-        ax.tick_params(axis="y",labelsize=10)
-    # hide unused subplots
-    for ax in axes_flat[n:]: ax.set_visible(False)
-    plt.tight_layout(pad=2)
-    return jsonify({"img":fig_b64(fig),"topics":topics})
+        label = f"Topic {tp['id']+1}" + (f" — {lbl}" if lbl else "")
+        chart_data.append({
+            "id":        tp["id"],
+            "label":     label,
+            "words":     tp["words"][:10],
+            "weights":   [round(float(w), 4) for w in tp["weights"][:10]],
+            "doc_count": tp.get("doc_count", 0),
+        })
+    return jsonify({"topics": topics, "chart_data": chart_data, "topic_labels": topic_labels})
 
 # ── Topic model ───────────────────────────────────────────────────────────────
 _topic_thread = None
@@ -3568,20 +3561,18 @@ def topic_model():
     user_max_iter = min(int(body.get("max_iter", 0)), 2000)  # 0 = auto, máx 2000
 
     # ── Advanced vectorizer params ───────────────────────────────────────────
-    min_df     = max(1, int(body.get("min_df", 2)))
+    min_df     = max(1, int(body.get("min_df", 2)))   # sklearn requires int >= 1
     max_df     = float(body.get("max_df", 1.0))
     max_df     = max(0.05, min(1.0, max_df))   # clamp to [0.05, 1.0]
     stop_words_opt = body.get("stop_words", None)  # None | "auto" | "english" | "spanish"
 
-    # ── LDA priors ───────────────────────────────────────────────────────────
+    # ── LDA priors — capped at 1.0 (sklearn Interval constraint) ─────────────
     _ALPHA_MAP = {"auto": None, "symmetric": "symmetric",
                   "0.001": 0.001, "0.01": 0.01, "0.05": 0.05, "0.1": 0.1,
-                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "0.7": 0.7,
-                  "1.0": 1.0, "2.0": 2.0, "5.0": 5.0, "10.0": 10.0}
+                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "0.7": 0.7, "1.0": 1.0}
     _BETA_MAP  = {"auto": None,
                   "0.001": 0.001, "0.01": 0.01, "0.05": 0.05, "0.1": 0.1,
-                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "1.0": 1.0,
-                  "2.0": 2.0, "5.0": 5.0}
+                  "0.2": 0.2, "0.3": 0.3, "0.5": 0.5, "1.0": 1.0}
     raw_alpha  = str(body.get("doc_topic_prior",  "auto"))
     raw_beta   = str(body.get("topic_word_prior", "auto"))
     lda_alpha  = _ALPHA_MAP.get(raw_alpha, None)   # None → sklearn default ("auto")
@@ -3633,11 +3624,11 @@ def topic_model():
                     n_iter = 300
                 print(f"[LDA] n_docs={n_docs}, n_topics={n_topics}, max_iter={n_iter}", flush=True)
 
-                # ── Iterative fit with per-iteration progress + ETA + C_V optimisation ──
+                # ── Iterative fit with per-iteration progress + ETA ──────────────────
                 _lda_iter_times  = []
                 _lda_converged   = False
                 _lda_prev_perp   = None
-                _lda_min_iter    = max(50, n_iter // 4)
+                _lda_min_iter    = n_iter  # no early stopping — run all iterations
 
                 _lda_kwargs = dict(n_components=n_topics, random_state=42,
                                    max_iter=1, learning_method="batch",
@@ -3676,14 +3667,9 @@ def topic_model():
 
                     # Progress: iter range mapped 20→58%
                     _pct = 20 + int(38 * _it / n_iter)
-                    _msg = f"LDA iter {_it}/{n_iter} · perp {_perp_now:.1f} · ETA {_eta_str}{_converged_str}"
+                    _msg = f"LDA iter {_it}/{n_iter} · perp {_perp_now:.1f} · ETA {_eta_str}"
                     push_progress(_pct, _msg)
                     print(f"[LDA] {_msg}", flush=True)
-
-                    if _lda_converged:
-                        print(f"[LDA] convergencia en iter {_it} (mín={_lda_min_iter})", flush=True)
-                        push_progress(58, (f"LDA converged at iter {_it}/{n_iter} ✓") if not _es else (f"LDA convergido en iter {_it}/{n_iter} ✓"))
-                        break
 
                 model            = lda_partial
                 components       = model.components_
@@ -3724,10 +3710,7 @@ def topic_model():
                     push_progress(_pct, _msg)
                     print(f"[NMF] {_msg}", flush=True)
 
-                    if _nmf_model_tmp.n_iter_ < _nmf_done:
-                        _nmf_converged = True
-                        push_progress(58, f"NMF converged at iter {_nmf_done}/{nmf_iter} ✓" if not _es else f"NMF convergido en iter {_nmf_done}/{nmf_iter} ✓")
-                        print(f"[NMF] convergencia alcanzada", flush=True)
+                    # No early stopping — always run full iterations
 
                 model = _nmf_model_tmp
                 W     = _W_tmp
@@ -3764,6 +3747,34 @@ def topic_model():
                 for i, c in enumerate(components)
             ]
             doc_topics = doc_topic_matrix.argmax(axis=1).tolist()
+
+            # ── Count documents per dominant topic ────────────────────────
+            doc_counts = [0] * len(topics)
+            for t_idx in doc_topics:
+                if 0 <= t_idx < len(doc_counts):
+                    doc_counts[t_idx] += 1
+            for i, tp in enumerate(topics):
+                tp["doc_count"] = doc_counts[i]
+
+            # ── Top-5 most representative docs per topic ──────────────────
+            raw_texts  = S.get("texts", [])
+            proc_texts = S.get("processed_texts") or raw_texts
+            for i, tp in enumerate(topics):
+                # score = probability of this topic for each document
+                scores = doc_topic_matrix[:, i]
+                top_idxs = scores.argsort()[-5:][::-1]
+                rep_docs = []
+                for d_idx in top_idxs:
+                    txt = raw_texts[d_idx] if d_idx < len(raw_texts) else ""
+                    preview = txt[:200].replace("\n", " ").strip()
+                    if len(txt) > 200:
+                        preview += "…"
+                    rep_docs.append({
+                        "idx":   int(d_idx),
+                        "score": round(float(scores[d_idx]), 4),
+                        "text":  preview
+                    })
+                tp["top_docs"] = rep_docs
 
             push_progress(75, "Calculando coherencia C_V…" if _es else "Computing C_V coherence…")
             time.sleep(0.05)
@@ -5940,12 +5951,18 @@ def export_topic_bundle():
                 "coherence_cnpmi": "Coherencia C_NPMI (media)",
                 "top_words": "Palabras clave",
                 "wc_section": "Nubes de palabras",
-                "bar_section": "Gráfica de palabras clave",
+                "bar_section": "Gráfica interactiva de palabras clave",
+                "doc_dist_section": "Distribución de documentos por tópico",
                 "topics_section": "Resumen de tópicos",
+                "rep_docs_section": "Documentos más representativos por tópico",
+                "rep_docs_score": "Relevancia",
                 "label_col": "Etiqueta IA",
+                "doc_count_col": "Documentos",
                 "generated": "Generado con NLP Flow",
                 "topic": "Tópico",
                 "none": "(ninguno)",
+                "click_hint": "Haz clic en un tópico para ver sus palabras clave",
+                "weight_axis": "Peso (importancia de la palabra en el tópico)",
             },
             "en": {
                 "title": "Topic Model Report",
@@ -5959,36 +5976,44 @@ def export_topic_bundle():
                 "coherence_cnpmi": "Coherence C_NPMI (avg)",
                 "top_words": "Top words",
                 "wc_section": "Word clouds",
-                "bar_section": "Top-words chart",
+                "bar_section": "Interactive top-words chart",
+                "doc_dist_section": "Document distribution per topic",
                 "topics_section": "Topics summary",
+                "rep_docs_section": "Most representative documents per topic",
+                "rep_docs_score": "Relevance",
                 "label_col": "AI label",
+                "doc_count_col": "Documents",
                 "generated": "Generated with NLP Flow",
                 "topic": "Topic",
                 "none": "(none)",
+                "click_hint": "Click a topic to see its top words",
+                "weight_axis": "Weight (word importance in topic)",
             },
         }[lang]
 
         steps_str = ", ".join(active_steps) if active_steps else _.get("none")
 
-        # embed images as base64
+        # embed word cloud images as base64
         def img_b64(png_bytes):
             return "data:image/png;base64," + base64.b64encode(png_bytes).decode()
 
-        wc_imgs   = [(tp, img_b64(make_wc_png(tp))) for tp in topics]
-        bar_bytes = make_bar_chart()
-        bar_img   = img_b64(bar_bytes)
+        wc_imgs = [(tp, img_b64(make_wc_png(tp))) for tp in topics]
 
+        # build table rows with doc_count column
         topic_rows = ""
         for i, tp in enumerate(topics):
-            lbl  = safe_lbl(tp["id"]) or "—"
-            cv   = cv_scores[i] if i < len(cv_scores) else "—"
-            cnpm = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+            lbl   = safe_lbl(tp["id"]) or "—"
+            cv    = cv_scores[i] if i < len(cv_scores) else "—"
+            cnpm  = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+            dc    = tp.get("doc_count", 0)
+            pct   = round(100 * dc / max(n_docs, 1), 1)
             words_str = ", ".join(tp["words"][:10])
             topic_rows += f"""
-            <tr>
+            <tr onclick="showTopicWords({i})" style="cursor:pointer">
               <td><strong>{_['topic']} {tp['id']+1}</strong></td>
               <td>{_html.escape(lbl)}</td>
               <td>{words_str}</td>
+              <td style="text-align:right;font-weight:600;color:var(--accent)">{dc} <span style="font-size:.75rem;color:var(--sec)">({pct}%)</span></td>
               <td>{cv}</td>
               <td>{cnpm}</td>
             </tr>"""
@@ -6006,12 +6031,40 @@ def export_topic_bundle():
         cv_avg   = avg(cv_scores) if cv_scores else "—"
         cnpm_avg = avg(cnpmi_scores) if cnpmi_scores else "—"
 
+        # build Chart.js data for the interactive bar chart (top words per topic)
+        palette_hex = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"]
+        chart_datasets = []
+        all_words_union = []
+        for tp in topics:
+            for w in tp["words"][:10]:
+                if w not in all_words_union:
+                    all_words_union.append(w)
+        # we render one bar-chart per topic, selectable via buttons
+        topics_js = json.dumps([
+            {
+                "id":        tp["id"],
+                "label":     topic_title(tp["id"], lang),
+                "words":     tp["words"][:10],
+                "weights":   [round(float(w), 4) for w in tp["weights"][:10]],
+                "doc_count": tp.get("doc_count", 0),
+                "color":     palette_hex[tp["id"] % len(palette_hex)],
+                "top_docs":  tp.get("top_docs", []),
+            }
+            for tp in topics
+        ], ensure_ascii=False)
+
+        # doc distribution data for doughnut
+        doc_dist_labels = json.dumps([topic_title(tp["id"], lang) for tp in topics], ensure_ascii=False)
+        doc_dist_counts = json.dumps([tp.get("doc_count", 0) for tp in topics])
+        doc_dist_colors = json.dumps([palette_hex[tp["id"] % len(palette_hex)] for tp in topics])
+
         return f"""<!DOCTYPE html>
 <html lang="{lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_['title']} — {_html.escape(dataset_name)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {{
     --bg:#f4f4f8; --card:#ffffff; --accent:#6c63ff;
@@ -6020,11 +6073,11 @@ def export_topic_bundle():
   }}
   * {{ box-sizing:border-box; margin:0; padding:0; }}
   body {{ font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--ink); padding:32px 16px; }}
-  .container {{ max-width:960px; margin:0 auto; }}
+  .container {{ max-width:1040px; margin:0 auto; }}
   h1 {{ font-size:2rem; color:var(--accent); margin-bottom:6px; }}
   h2 {{ font-size:1.25rem; color:var(--ink); margin:32px 0 14px; border-left:4px solid var(--accent); padding-left:10px; }}
   .subtitle {{ color:var(--sec); font-size:.95rem; margin-bottom:28px; }}
-  .meta-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-bottom:8px; }}
+  .meta-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:14px; margin-bottom:8px; }}
   .meta-card {{ background:var(--card); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); }}
   .meta-card .val {{ font-size:1.4rem; font-weight:700; color:var(--accent); }}
   .meta-card .lbl {{ font-size:.78rem; color:var(--sec); margin-top:3px; }}
@@ -6037,7 +6090,32 @@ def export_topic_bundle():
   .wc-card {{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }}
   .wc-card img {{ width:100%; display:block; }}
   .wc-title {{ padding:10px 14px; font-weight:600; font-size:.9rem; color:var(--ink); background:var(--bg); }}
-  .bar-wrap img {{ width:100%; border-radius:var(--radius); box-shadow:var(--shadow); }}
+  .chart-card {{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; }}
+  .topic-btns {{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }}
+  .topic-btn {{ padding:5px 12px; border-radius:20px; border:1.5px solid var(--border); background:var(--bg);
+                color:var(--sec); font-size:12px; cursor:pointer; font-weight:600; transition:all .15s; }}
+  .topic-btn.active {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+  .chart-hint {{ font-size:11px; color:var(--sec); margin-bottom:8px; }}
+  .dist-panel {{ display:grid; grid-template-columns:1fr 260px; gap:28px; align-items:start; }}
+  .dist-left  {{ display:flex; flex-direction:column; gap:12px; }}
+  .dist-pie-wrap {{ display:flex; flex-direction:column; align-items:center; gap:8px; }}
+  .dist-pie-wrap canvas {{ max-width:220px; }}
+  .dist-search {{ width:100%; padding:7px 12px; border:1.5px solid var(--border); border-radius:8px;
+                  font-size:13px; color:var(--ink); background:var(--bg); outline:none; box-sizing:border-box; }}
+  .dist-search:focus {{ border-color:var(--accent); }}
+  .dist-topic-list {{ display:flex; flex-direction:column; gap:6px; max-height:320px; overflow-y:auto; }}
+  .dist-topic-item {{ padding:8px 12px; border-radius:8px; border:1.5px solid var(--border); cursor:pointer;
+                      font-size:13px; transition:all .15s; background:var(--card); }}
+  .dist-topic-item:hover {{ border-color:var(--accent); background:#f0efff; }}
+  .dist-topic-item.active {{ border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700;
+                              box-shadow:0 2px 8px var(--accent)44; }}
+  .dist-docs-panel {{ background:var(--bg); border-radius:var(--radius); padding:14px 16px; min-height:200px; }}
+  .dist-docs-title {{ font-weight:700; font-size:.9rem; margin-bottom:10px; color:var(--ink); }}
+  .rep-doc {{ border-left:3px solid var(--border); padding:6px 10px; margin-bottom:6px; font-size:.82rem;
+              color:var(--ink); line-height:1.5; position:relative; }}
+  .rep-doc:last-child {{ margin-bottom:0; }}
+  .rep-doc-score {{ font-size:.72rem; color:var(--sec); float:right; }}
+  @media(max-width:700px){{ .dist-panel{{ grid-template-columns:1fr; }} }}
   footer {{ margin-top:48px; text-align:center; color:var(--sec); font-size:.8rem; }}
 </style>
 </head>
@@ -6060,19 +6138,194 @@ def export_topic_bundle():
   <table>
     <thead><tr>
       <th>{_['topic']}</th><th>{_['label_col']}</th>
-      <th>{_['top_words']}</th><th>C_V</th><th>C_NPMI</th>
+      <th>{_['top_words']}</th><th>{_['doc_count_col']}</th><th>C_V</th><th>C_NPMI</th>
     </tr></thead>
     <tbody>{topic_rows}</tbody>
   </table>
 
   <h2>{_['bar_section']}</h2>
-  <div class="bar-wrap"><img src="{bar_img}" alt="bar chart"></div>
+  <div class="chart-card">
+    <div class="chart-hint">{_['click_hint']}</div>
+    <div class="topic-btns" id="topic-btns"></div>
+    <div style="font-size:11px;color:var(--sec);margin-bottom:4px">{_['weight_axis']}</div>
+    <canvas id="wordsChart" height="120"></canvas>
+  </div>
+
+  <h2>{_['doc_dist_section']}</h2>
+  <div class="chart-card">
+    <div class="dist-panel">
+      <div class="dist-left">
+        <input class="dist-search" id="dist-search" placeholder="{_['click_hint'][:30]}…" type="text">
+        <div class="dist-topic-list" id="dist-topic-list"></div>
+        <div class="dist-docs-panel" id="dist-docs-panel">
+          <div style="color:var(--sec);font-size:13px">{_['click_hint']}</div>
+        </div>
+      </div>
+      <div class="dist-pie-wrap">
+        <canvas id="docDistChart"></canvas>
+      </div>
+    </div>
+  </div>
 
   <h2>{_['wc_section']}</h2>
   <div class="wc-grid">{wc_cards}</div>
 
   <footer>{_['generated']} · {dataset_name}</footer>
 </div>
+<script>
+(function() {{
+  var TOPICS = {topics_js};
+  var activeIdx = 0;
+  var wordsChart = null;
+
+  // ── Topic selector buttons (top-words chart) ──────────────────────────
+  var btnsEl = document.getElementById("topic-btns");
+  TOPICS.forEach(function(tp, i) {{
+    var btn = document.createElement("button");
+    btn.className = "topic-btn" + (i===0?" active":"");
+    btn.textContent = tp.label.length > 28 ? tp.label.slice(0,26)+"…" : tp.label;
+    btn.onclick = function() {{
+      activeIdx = i;
+      btnsEl.querySelectorAll(".topic-btn").forEach(function(b,j) {{
+        b.classList.toggle("active", j===i);
+      }});
+      renderWordsChart(i);
+      selectDistTopic(i);
+    }};
+    btnsEl.appendChild(btn);
+  }});
+
+  // ── Top-words horizontal bar chart ────────────────────────────────────
+  var wCtx = document.getElementById("wordsChart").getContext("2d");
+  function renderWordsChart(idx) {{
+    var tp = TOPICS[idx];
+    var labels = tp.words.slice().reverse();
+    var data   = tp.weights.slice().reverse();
+    if (wordsChart) wordsChart.destroy();
+    wordsChart = new Chart(wCtx, {{
+      type:"bar",
+      data:{{ labels:labels, datasets:[{{ label:tp.label, data:data,
+        backgroundColor:tp.color+"cc", borderColor:tp.color, borderWidth:1, borderRadius:5 }}] }},
+      options:{{
+        indexAxis:"y", responsive:true, animation:{{duration:300}},
+        plugins:{{ legend:{{display:false}},
+          tooltip:{{callbacks:{{label:function(c){{return " {_['weight_axis']}: "+c.parsed.x.toFixed(4);}}}}}}
+        }},
+        scales:{{
+          x:{{title:{{display:true,text:"{_['weight_axis']}",color:"#4a4a6a",font:{{size:11}}}},
+              grid:{{color:"#e0e0f0"}},ticks:{{color:"#4a4a6a"}}}},
+          y:{{grid:{{display:false}},ticks:{{color:"#1a1a2e",font:{{size:13}}}}}}
+        }}
+      }}
+    }});
+  }}
+  renderWordsChart(0);
+
+  // ── Pie chart — document distribution ────────────────────────────────
+  var dCtx = document.getElementById("docDistChart").getContext("2d");
+  var distLabels = {doc_dist_labels};
+  var distCounts = {doc_dist_counts};
+  var distColors = {doc_dist_colors};
+  var totalDocs  = distCounts.reduce(function(a,b){{return a+b;}},0);
+
+  var pieChart = new Chart(dCtx, {{
+    type:"pie",
+    data:{{
+      labels:distLabels,
+      datasets:[{{ data:distCounts,
+        backgroundColor:distColors.map(function(c){{return c+"cc";}}),
+        borderColor:distColors, borderWidth:2 }}]
+    }},
+    options:{{
+      responsive:true,
+      plugins:{{
+        legend:{{display:false}},
+        tooltip:{{callbacks:{{label:function(c){{
+          var pct=totalDocs>0?(100*c.parsed/totalDocs).toFixed(1):"0.0";
+          return " "+c.parsed+" docs ("+pct+"%)";
+        }}}}}}
+      }},
+      onClick:function(evt,els){{
+        if (els.length) selectDistTopic(els[0].index);
+      }}
+    }}
+  }});
+
+  // ── Right panel: search + topic list + docs ───────────────────────────
+  var searchEl   = document.getElementById("dist-search");
+  var topicList  = document.getElementById("dist-topic-list");
+  var docsPanel  = document.getElementById("dist-docs-panel");
+  var activeDistIdx = -1;
+
+  function buildTopicList(filter) {{
+    topicList.innerHTML = "";
+    TOPICS.forEach(function(tp, i) {{
+      if (filter && tp.label.toLowerCase().indexOf(filter.toLowerCase()) === -1) return;
+      var pct = totalDocs>0 ? (100*(distCounts[i])/totalDocs).toFixed(1) : "0.0";
+      var item = document.createElement("div");
+      item.className = "dist-topic-item" + (i===activeDistIdx?" active":"");
+      item.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span style="display:flex;align-items:center;gap:7px">' +
+            '<span style="width:10px;height:10px;border-radius:50%;background:'+distColors[i]+';flex-shrink:0;display:inline-block"></span>' +
+            tp.label +
+          '</span>' +
+          '<span style="font-size:11px;color:'+(i===activeDistIdx?'#fff':'var(--sec)')+'">'+distCounts[i]+' ('+pct+'%)</span>' +
+        '</div>';
+      item.onclick = function(){{ selectDistTopic(i); }};
+      topicList.appendChild(item);
+    }});
+  }}
+
+  function selectDistTopic(idx) {{
+    activeDistIdx = idx;
+    var tp = TOPICS[idx];
+    // highlight pie slice — explode selected slice
+    var offsets = distCounts.map(function(_,i){{ return i===idx ? 12 : 0; }});
+    pieChart.data.datasets[0].offset = offsets;
+    pieChart.data.datasets[0].borderWidth = distCounts.map(function(_,i){{ return i===idx ? 3 : 1; }});
+    pieChart.update("none");
+    // update topic list highlight
+    buildTopicList(searchEl ? searchEl.value : "");
+    // render docs panel
+    var docs = tp.top_docs || [];
+    var seen = {{}};
+    var unique = docs.filter(function(d){{
+      if (seen[d.idx]) return false;
+      seen[d.idx] = true;
+      return true;
+    }});
+    docsPanel.innerHTML =
+      '<div class="dist-docs-title" style="border-left:4px solid '+tp.color+';padding-left:8px">' +
+        tp.label + ' &nbsp;<span style="font-size:.78rem;font-weight:400;color:var(--sec)">'+distCounts[idx]+' docs</span>' +
+      '</div>' +
+      (unique.length ? unique.map(function(d) {{
+        return '<div class="rep-doc">' +
+          '<span class="rep-doc-score">{_['rep_docs_score']}: '+d.score.toFixed(3)+'</span>' +
+          (d.text || '—') +
+        '</div>';
+      }}).join("") : '<div style="color:var(--sec);font-size:13px">{_['none']}</div>');
+    // also sync top-words button
+    var btn = btnsEl.querySelectorAll(".topic-btn")[idx];
+    if (btn) {{
+      btnsEl.querySelectorAll(".topic-btn").forEach(function(b,j){{b.classList.toggle("active",j===idx);}});
+      renderWordsChart(idx);
+    }}
+  }}
+
+  if (searchEl) {{
+    searchEl.addEventListener("input", function(){{ buildTopicList(searchEl.value); }});
+  }}
+  buildTopicList("");
+  selectDistTopic(0);
+
+}})();
+
+function showTopicWords(idx) {{
+  document.querySelectorAll(".topic-btn")[idx] && document.querySelectorAll(".topic-btn")[idx].click();
+  document.getElementById("wordsChart").scrollIntoView({{behavior:"smooth",block:"center"}});
+}}
+</script>
 </body>
 </html>"""
 
@@ -6106,10 +6359,11 @@ def export_topic_bundle():
                 "coherence_cnpmi_avg": avg(cnpmi_scores),
                 "topics": [
                     {
-                        "id":      tp["id"],
-                        "label":   safe_lbl(tp["id"]),
-                        "words":   tp["words"][:15],
-                        "weights": tp.get("weights", [])[:15],
+                        "id":        tp["id"],
+                        "label":     safe_lbl(tp["id"]),
+                        "words":     tp["words"][:15],
+                        "weights":   tp.get("weights", [])[:15],
+                        "doc_count": tp.get("doc_count", 0),
                         "coherence_cv":    cv_scores[i] if i < len(cv_scores) else None,
                         "coherence_cnpmi": cnpmi_scores[i] if i < len(cnpmi_scores) else None,
                     }
@@ -6246,10 +6500,17 @@ def _build_topic_html(lang="es"):
             perplexity="Perplejidad ↓", coherence_cv="C_V media ↑",
             coherence_cnpmi="C_NPMI media ↑", topic_div="Topic Diversity ↑",
             top_words="Palabras clave", wc_section="Nubes de palabras",
-            bar_section="Palabras clave por tópico", topics_section="Resumen de tópicos",
-            label_col="Etiqueta IA", generated="Generado con NLP Flow",
+            bar_section="Gráfica interactiva de palabras clave",
+            doc_dist_section="Distribución de documentos por tópico",
+            topics_section="Resumen de tópicos",
+            rep_docs_section="Documentos más representativos por tópico",
+            rep_docs_score="Relevancia",
+            label_col="Etiqueta IA", doc_count_col="Documentos",
+            generated="Generado con NLP Flow",
             topic="Tópico", none="(ninguno)",
             td_explain="Fracción de palabras únicas entre todos los tópicos (1=máxima diversidad)",
+            click_hint="Haz clic en un tópico para ver sus palabras clave",
+            weight_axis="Peso (importancia de la palabra en el tópico)",
         ),
         "en": dict(
             title="Topic Model Report", dataset="Dataset", algorithm="Algorithm",
@@ -6257,10 +6518,17 @@ def _build_topic_html(lang="es"):
             perplexity="Perplexity ↓", coherence_cv="C_V avg ↑",
             coherence_cnpmi="C_NPMI avg ↑", topic_div="Topic Diversity ↑",
             top_words="Top words", wc_section="Word clouds",
-            bar_section="Top words per topic", topics_section="Topics summary",
-            label_col="AI label", generated="Generated with NLP Flow",
+            bar_section="Interactive top-words chart",
+            doc_dist_section="Document distribution per topic",
+            topics_section="Topics summary",
+            rep_docs_section="Most representative documents per topic",
+            rep_docs_score="Relevance",
+            label_col="AI label", doc_count_col="Documents",
+            generated="Generated with NLP Flow",
             topic="Topic", none="(none)",
             td_explain="Fraction of unique words across all topics (1=maximum diversity)",
+            click_hint="Click a topic to see its top words",
+            weight_axis="Weight (word importance in topic)",
         ),
     }[lang]
 
@@ -6269,24 +6537,47 @@ def _build_topic_html(lang="es"):
     cv_avg    = str(avg(cv_scores))    if cv_scores    else "—"
     cnpm_avg  = str(avg(cnpmi_scores)) if cnpmi_scores else "—"
 
+    palette_hex = ["#6c63ff","#43b89c","#f7a440","#e05c7a","#54a0ff","#00d2d3","#ff9f43","#c44dff"]
+
     topic_rows = ""
     for i, tp in enumerate(topics):
-        lbl       = safe_lbl(tp["id"]) or "—"
-        cv_val    = cv_scores[i]    if i < len(cv_scores)    else "—"
-        cnpm_val  = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+        lbl      = safe_lbl(tp["id"]) or "—"
+        cv_val   = cv_scores[i]    if i < len(cv_scores)    else "—"
+        cnpm_val = cnpmi_scores[i] if i < len(cnpmi_scores) else "—"
+        dc       = tp.get("doc_count", 0)
+        pct      = round(100 * dc / max(n_docs, 1), 1)
         words_str = ", ".join(tp["words"][:10])
         topic_rows += (
-            f"<tr><td><strong>{_['topic']} {tp['id']+1}</strong></td>"
+            f'<tr onclick="showTopicWords({i})" style="cursor:pointer">'
+            f"<td><strong>{_['topic']} {tp['id']+1}</strong></td>"
             f"<td>{_html.escape(lbl)}</td><td>{words_str}</td>"
+            f'<td style="text-align:right;font-weight:600;color:#6c63ff">{dc} '
+            f'<span style="font-size:.75rem;color:#4a4a6a">({pct}%)</span></td>'
             f"<td>{cv_val}</td><td>{cnpm_val}</td></tr>"
         )
 
-    wc_cards  = "".join(
+    wc_cards = "".join(
         f'<div class="wc-card"><div class="wc-title">{_html.escape(topic_title_h(tp["id"]))}</div>'
         f'<img src="{make_wc_b64(tp)}" alt="{_html.escape(topic_title_h(tp["id"]))}"></div>'
         for tp in topics
     )
-    bar_img   = make_bar_b64()
+
+    topics_js = json.dumps([
+        {
+            "id":        tp["id"],
+            "label":     topic_title_h(tp["id"]),
+            "words":     tp["words"][:10],
+            "weights":   [round(float(w), 4) for w in tp["weights"][:10]],
+            "doc_count": tp.get("doc_count", 0),
+            "color":     palette_hex[tp["id"] % len(palette_hex)],
+            "top_docs":  tp.get("top_docs", []),
+        }
+        for tp in topics
+    ], ensure_ascii=False)
+
+    doc_dist_labels = json.dumps([topic_title_h(tp["id"]) for tp in topics], ensure_ascii=False)
+    doc_dist_counts = json.dumps([tp.get("doc_count", 0) for tp in topics])
+    doc_dist_colors = json.dumps([palette_hex[tp["id"] % len(palette_hex)] for tp in topics])
 
     html_out = f"""<!DOCTYPE html>
 <html lang="{lang}">
@@ -6294,11 +6585,12 @@ def _build_topic_html(lang="es"):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_['title']} — {_html.escape(dataset_name)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root{{--bg:#f4f4f8;--card:#fff;--accent:#6c63ff;--ink:#1a1a2e;--sec:#4a4a6a;--border:#e0e0f0;--r:12px;--sh:0 2px 12px rgba(0,0,0,.08);}}
   *{{box-sizing:border-box;margin:0;padding:0;}}
   body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px 16px;}}
-  .wrap{{max-width:980px;margin:0 auto;}}
+  .wrap{{max-width:1040px;margin:0 auto;}}
   h1{{font-size:2rem;color:var(--accent);margin-bottom:4px;}}
   h2{{font-size:1.2rem;color:var(--ink);margin:32px 0 12px;border-left:4px solid var(--accent);padding-left:10px;}}
   .sub{{color:var(--sec);font-size:.93rem;margin-bottom:26px;}}
@@ -6314,7 +6606,27 @@ def _build_topic_html(lang="es"):
   .wc-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}}
   .wc-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;}}
   .wc-card img{{width:100%;display:block;}}.wc-title{{padding:9px 13px;font-weight:600;font-size:.88rem;}}
-  .bar-wrap img{{width:100%;border-radius:var(--r);box-shadow:var(--sh);}}
+  .chart-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:20px;}}
+  .topic-btns{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}}
+  .topic-btn{{padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--bg);color:var(--sec);font-size:12px;cursor:pointer;font-weight:600;transition:all .15s;}}
+  .topic-btn.active{{background:var(--accent);color:#fff;border-color:var(--accent);}}
+  .chart-hint{{font-size:11px;color:var(--sec);margin-bottom:8px;}}
+  .dist-panel{{display:grid;grid-template-columns:1fr 260px;gap:28px;align-items:start;}}
+  .dist-left{{display:flex;flex-direction:column;gap:12px;}}
+  .dist-pie-wrap{{display:flex;flex-direction:column;align-items:center;gap:8px;}}
+  .dist-pie-wrap canvas{{max-width:220px;}}
+  .dist-search{{width:100%;padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;}}
+  .dist-search:focus{{border-color:var(--accent);}}
+  .dist-topic-list{{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;}}
+  .dist-topic-item{{padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;font-size:13px;transition:all .15s;background:var(--card);}}
+  .dist-topic-item:hover{{border-color:var(--accent);background:#f0efff;}}
+  .dist-topic-item.active{{border-color:var(--accent);background:var(--accent);color:#fff;font-weight:700;box-shadow:0 2px 8px var(--accent)44;}}
+  .dist-docs-panel{{background:var(--bg);border-radius:var(--r);padding:14px 16px;min-height:180px;}}
+  .dist-docs-title{{font-weight:700;font-size:.9rem;margin-bottom:10px;color:var(--ink);}}
+  .rep-doc{{border-left:3px solid var(--border);padding:6px 10px;margin-bottom:6px;font-size:.82rem;color:var(--ink);line-height:1.5;}}
+  .rep-doc:last-child{{margin-bottom:0;}}
+  .rep-doc-score{{font-size:.72rem;color:var(--sec);float:right;}}
+  @media(max-width:700px){{.dist-panel{{grid-template-columns:1fr;}}}}
   footer{{margin-top:48px;text-align:center;color:var(--sec);font-size:.78rem;}}
 </style>
 </head>
@@ -6330,24 +6642,165 @@ def _build_topic_html(lang="es"):
     <div class="mcard"><div class="val">{perp_str}</div><div class="lbl">{_['perplexity']}</div></div>
     <div class="mcard"><div class="val">{cv_avg}</div><div class="lbl">{_['coherence_cv']}</div></div>
     <div class="mcard"><div class="val">{cnpm_avg}</div><div class="lbl">{_['coherence_cnpmi']}</div></div>
-    <div class="mcard"><div class="val">{td}</div><div class="lbl">{_['topic_div']}</div><div class="tip">{_['td_explain']}</div></div>
+    <div class="mcard"><div class="val">{td}</div><div class="lbl">{_['topic_div']}</div></div>
     <div class="mcard" style="grid-column:1/-1"><div class="val" style="font-size:.95rem">{_html.escape(steps_str)}</div><div class="lbl">{_['prepro']}</div></div>
   </div>
 
   <h2>{_['topics_section']}</h2>
   <table>
-    <thead><tr><th>{_['topic']}</th><th>{_['label_col']}</th><th>{_['top_words']}</th><th>C_V</th><th>C_NPMI</th></tr></thead>
+    <thead><tr>
+      <th>{_['topic']}</th><th>{_['label_col']}</th><th>{_['top_words']}</th>
+      <th>{_['doc_count_col']}</th><th>C_V</th><th>C_NPMI</th>
+    </tr></thead>
     <tbody>{topic_rows}</tbody>
   </table>
 
   <h2>{_['bar_section']}</h2>
-  <div class="bar-wrap"><img src="{bar_img}" alt="bar chart"></div>
+  <div class="chart-card">
+    <div class="chart-hint">{_['click_hint']}</div>
+    <div class="topic-btns" id="topic-btns"></div>
+    <div style="font-size:11px;color:var(--sec);margin-bottom:4px">{_['weight_axis']}</div>
+    <canvas id="wordsChart" height="120"></canvas>
+  </div>
+
+  <h2>{_['doc_dist_section']}</h2>
+  <div class="chart-card">
+    <div class="dist-panel">
+      <div class="dist-left">
+        <input class="dist-search" id="dist-search" placeholder="{_['click_hint'][:30]}…" type="text">
+        <div class="dist-topic-list" id="dist-topic-list"></div>
+        <div class="dist-docs-panel" id="dist-docs-panel">
+          <div style="color:var(--sec);font-size:13px">{_['click_hint']}</div>
+        </div>
+      </div>
+      <div class="dist-pie-wrap">
+        <canvas id="docDistChart"></canvas>
+      </div>
+    </div>
+  </div>
 
   <h2>{_['wc_section']}</h2>
   <div class="wc-grid">{wc_cards}</div>
 
   <footer>{_['generated']} · {_html.escape(dataset_name)}</footer>
 </div>
+<script>
+(function() {{
+  var TOPICS = {topics_js};
+  var activeIdx = 0;
+  var wordsChart = null;
+
+  var btnsEl = document.getElementById("topic-btns");
+  TOPICS.forEach(function(tp, i) {{
+    var btn = document.createElement("button");
+    btn.className = "topic-btn" + (i===0?" active":"");
+    btn.textContent = tp.label.length > 28 ? tp.label.slice(0,26)+"…" : tp.label;
+    btn.onclick = function() {{
+      activeIdx = i;
+      btnsEl.querySelectorAll(".topic-btn").forEach(function(b,j) {{b.classList.toggle("active",j===i);}});
+      renderWordsChart(i);
+      selectDistTopic(i);
+    }};
+    btnsEl.appendChild(btn);
+  }});
+
+  var wCtx = document.getElementById("wordsChart").getContext("2d");
+  function renderWordsChart(idx) {{
+    var tp = TOPICS[idx];
+    if (wordsChart) wordsChart.destroy();
+    wordsChart = new Chart(wCtx, {{
+      type:"bar",
+      data:{{labels:tp.words.slice().reverse(),datasets:[{{label:tp.label,data:tp.weights.slice().reverse(),
+        backgroundColor:tp.color+"cc",borderColor:tp.color,borderWidth:1,borderRadius:5}}]}},
+      options:{{indexAxis:"y",responsive:true,animation:{{duration:300}},
+        plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:function(c){{return " {_['weight_axis']}: "+c.parsed.x.toFixed(4);}}}}}}
+        }},
+        scales:{{
+          x:{{title:{{display:true,text:"{_['weight_axis']}",color:"#4a4a6a",font:{{size:11}}}},grid:{{color:"#e0e0f0"}},ticks:{{color:"#4a4a6a"}}}},
+          y:{{grid:{{display:false}},ticks:{{color:"#1a1a2e",font:{{size:13}}}}}}
+        }}
+      }}
+    }});
+  }}
+  renderWordsChart(0);
+
+  var dCtx = document.getElementById("docDistChart").getContext("2d");
+  var distLabels = {doc_dist_labels};
+  var distCounts = {doc_dist_counts};
+  var distColors = {doc_dist_colors};
+  var totalDocs  = distCounts.reduce(function(a,b){{return a+b;}},0);
+
+  var pieChart = new Chart(dCtx, {{
+    type:"pie",
+    data:{{labels:distLabels,datasets:[{{data:distCounts,
+      backgroundColor:distColors.map(function(c){{return c+"cc";}}),borderColor:distColors,borderWidth:2}}]}},
+    options:{{responsive:true,
+      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:function(c){{
+        var pct=totalDocs>0?(100*c.parsed/totalDocs).toFixed(1):"0.0";
+        return " "+c.parsed+" docs ("+pct+"%)";
+      }}}}}}}},
+      onClick:function(evt,els){{if(els.length) selectDistTopic(els[0].index);}}
+    }}
+  }});
+
+  var searchEl  = document.getElementById("dist-search");
+  var topicList = document.getElementById("dist-topic-list");
+  var docsPanel = document.getElementById("dist-docs-panel");
+  var activeDistIdx = -1;
+
+  function buildTopicList(filter) {{
+    topicList.innerHTML = "";
+    TOPICS.forEach(function(tp,i) {{
+      if (filter && tp.label.toLowerCase().indexOf(filter.toLowerCase())===-1) return;
+      var pct = totalDocs>0?(100*distCounts[i]/totalDocs).toFixed(1):"0.0";
+      var item = document.createElement("div");
+      item.className = "dist-topic-item"+(i===activeDistIdx?" active":"");
+      item.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center">'+
+          '<span style="display:flex;align-items:center;gap:7px">'+
+            '<span style="width:10px;height:10px;border-radius:50%;background:'+distColors[i]+';flex-shrink:0;display:inline-block"></span>'+
+            tp.label+
+          '</span>'+
+          '<span style="font-size:11px;color:'+(i===activeDistIdx?'#fff':'var(--sec)')+'">'+distCounts[i]+' ('+pct+'%)</span>'+
+        '</div>';
+      item.onclick = function(){{selectDistTopic(i);}};
+      topicList.appendChild(item);
+    }});
+  }}
+
+  function selectDistTopic(idx) {{
+    activeDistIdx = idx;
+    var tp = TOPICS[idx];
+    // highlight pie slice — explode selected slice
+    var offsets = distCounts.map(function(_,i){{return i===idx?12:0;}});
+    pieChart.data.datasets[0].offset = offsets;
+    pieChart.data.datasets[0].borderWidth = distCounts.map(function(_,i){{return i===idx?3:1;}});
+    pieChart.update("none");
+    buildTopicList(searchEl ? searchEl.value : "");
+    var docs = tp.top_docs || [];
+    var seen = {{}};
+    var unique = docs.filter(function(d){{if(seen[d.idx])return false;seen[d.idx]=true;return true;}});
+    docsPanel.innerHTML =
+      '<div class="dist-docs-title" style="border-left:4px solid '+tp.color+';padding-left:8px">'+
+        tp.label+' &nbsp;<span style="font-size:.78rem;font-weight:400;color:var(--sec)">'+distCounts[idx]+' docs</span>'+
+      '</div>'+
+      (unique.length ? unique.map(function(d){{
+        return '<div class="rep-doc"><span class="rep-doc-score">{_['rep_docs_score']}: '+d.score.toFixed(3)+'</span>'+(d.text||'—')+'</div>';
+      }}).join("") : '<div style="color:var(--sec);font-size:13px">{_['none']}</div>');
+    btnsEl.querySelectorAll(".topic-btn").forEach(function(b,j){{b.classList.toggle("active",j===idx);}});
+    renderWordsChart(idx);
+  }}
+
+  if (searchEl) searchEl.addEventListener("input",function(){{buildTopicList(searchEl.value);}});
+  buildTopicList("");
+  selectDistTopic(0);
+}})();
+
+function showTopicWords(idx) {{
+  document.querySelectorAll(".topic-btn")[idx] && document.querySelectorAll(".topic-btn")[idx].click();
+  document.getElementById("wordsChart").scrollIntoView({{behavior:"smooth",block:"center"}});
+}}
+</script>
 </body>
 </html>"""
     return html_out, None
@@ -8632,8 +9085,8 @@ def rag_generate():
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         fut_no  = ex.submit(_call_hf, msgs_no_rag,   "sin-RAG")
         fut_yes = ex.submit(_call_hf, msgs_with_rag, "con-RAG")
-        resp_no  = fut_no.result(timeout=90)
-        resp_yes = fut_yes.result(timeout=90)
+        resp_no  = fut_no.result(timeout=180)
+        resp_yes = fut_yes.result(timeout=180)
 
     error = None
     if resp_no.startswith("__ERROR__:") and resp_yes.startswith("__ERROR__:"):
