@@ -1,9 +1,17 @@
 """NLP Flow — Native window launcher"""
-import threading, time, os, queue as _queue_mod
+import threading, time, os, sys, queue as _queue_mod
 import webview
 from server import app, PORT, cleanup_hf_cache, _DIALOG_REQ, _DIALOG_RES
 
-ICON = os.path.join(os.path.dirname(__file__), "static", "icon-nlpflow.png")
+def get_plaform_icon():
+    if sys.platform == "win32":
+        return os.path.join(os.path.dirname(__file__), "static", "icon-nlpflow.ico")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.dirname(__file__), "static", "icon-nlpflow.png")
+    else:
+        return os.path.join(os.path.dirname(__file__), "static", "icon-nlpflow.png")
+
+ICON = get_plaform_icon()
 
 def start_server():
     app.run(port=PORT, debug=False, use_reloader=False, threaded=True)

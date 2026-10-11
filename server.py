@@ -11528,7 +11528,8 @@ def ae_report():
             f'<td style="text-align:right">{r.get("mse_test",0):.5f}</td>'
             f'<td><div style="display:flex;gap:4px;align-items:center">{preview_best}</div></td>'
             f'<td><div style="display:flex;gap:4px;align-items:center">{preview_worst}</div></td>'
-            f'<td style="color:#16a34a;font-size:12px">{'ver →' if not en else 'view →'}</td>'
+            f'<td style="color:#16a34a;font-size:12px">'
+            f'{"ver →" if not en else "view →"}</td>'
             f'</tr>'
         )
 
