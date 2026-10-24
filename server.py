@@ -90,6 +90,22 @@ _PLOT_LABELS = {
     }
 }
 
+_EXTRA_STOP_EN = {
+    # contracciones sin apóstrofo
+    "im","ive","ill","id","youre","youve","youll","youd","hes","shes","its","were",
+    "theyre","theyve","theyll","weve","thats","whats","lets","theres","heres",
+    "dont","doesnt","didnt","cant","couldnt","wont","wouldnt","shouldnt","isnt",
+    "arent","wasnt","werent","havent","hasnt","hadnt","aint",
+    # restos de partir en el apóstrofo (don't -> don, t)
+    "don","ll","ve","re","ain","won","didn","isn","doesn","couldn","wouldn",
+    # informal
+    "gonna","gotta","wanna","gimme","lemme","cuz","cos","til","tho","em",
+    "yeah","yea","yeh","yep","yup","nah","nope","ya","yo","aight","alright","ok","okay",
+    # interjecciones
+    "oh","ooh","ohh","ah","ahh","aah","uh","huh","hey","ha","haha","mm","mmm","hmm",
+    "woah","whoa","woo","ayy","ay","ayo","na","la","da","ba","doo","dum",
+}
+
 def PL():
     """Return the current plot-label dict for the active UI language."""
     return _PLOT_LABELS.get(_UI_LANG, _PLOT_LABELS["es"])
@@ -138,6 +154,7 @@ try:
     try:
         STOP_EN = set(stopwords.words("english"))
         STOP_ES = set(stopwords.words("spanish"))
+        STOP_EN |= _EXTRA_STOP_EN
     except LookupError:
         nltk.download("stopwords", quiet=True)
         STOP_EN = set(stopwords.words("english"))
@@ -392,11 +409,22 @@ def _smart_stem(t):
     stemmer = STEMMER_ES if (STEMMER_ES and es_hits >= max(1, len(words) * 0.05)) else STEMMER_EN
     return ' '.join(stemmer.stem(w) for w in words)
 
+
+def _remove_stopwords_en(t):
+    """Remove stopwords EN"""
+    out = []
+    for w in t.split():
+        key = re.sub(r"[^\w]", "", w.lower().replace("’", "").replace("'", ""))
+        if key and key not in STOP_EN:
+            out.append(w)
+    return ' '.join(out)
+
+
 STEPS = {
     "lowercase":      lambda t: t.lower(),
     "punctuation":    _remove_punctuation,
     "numbers":        lambda t: re.sub(r'\d+', '', t),
-    "stopwords_en":   lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_EN),
+    "stopwords_en":   _remove_stopwords_en,
     "stopwords_es":   lambda t: ' '.join(w for w in t.split() if w.lower() not in STOP_ES),
     "stemming":       _smart_stem,
     "lemmatization":  lambda t: _LEMMATIZE_FN(t) if _LEMMATIZE_FN else t,
@@ -3601,9 +3629,11 @@ def topic_model():
             # Resolve stop_words: "auto" → use corpus language, else explicit or None
             _sw = None
             if stop_words_opt == "auto":
-                _sw = "english" if corpus_lang == "en" else None  # sklearn only has english built-in
-            elif stop_words_opt in ("english", "spanish"):
-                _sw = stop_words_opt if stop_words_opt == "english" else None
+                _sw = sorted(STOP_EN) if corpus_lang == "en" else sorted(STOP_ES)
+            elif stop_words_opt == "english":
+                _sw = sorted(STOP_EN)
+            elif stop_words_opt == "spanish":
+                _sw = sorted(STOP_ES)
 
             tokenized = [t.lower().split() for t in proc]
 
