@@ -3809,11 +3809,11 @@ def topic_model():
             push_progress(75, "Calculando coherencia C_V…" if _es else "Computing C_V coherence…")
             time.sleep(0.05)
             topic_word_lists = [tp["words"][:10] for tp in topics]
-            cv_scores   = _coherence_cv(topic_word_lists, tokenized, top_n=10)
+            cv_scores   = _coherence_cv(topic_word_lists, tokenized, top_n=top_n_words)
 
             push_progress(88, "Calculando coherencia C_NPMI…" if _es else "Computing C_NPMI coherence…")
             time.sleep(0.05)
-            cnpmi_scores = _coherence_cnpmi(topic_word_lists, tokenized, top_n=10)
+            cnpmi_scores = _coherence_cnpmi(topic_word_lists, tokenized, top_n=top_n_words)
 
             # ── Weak labeling (if requested) ──────────────────────────────
             label_result = None
@@ -8680,6 +8680,352 @@ except ImportError:
     _HFClient     = None
     _HF_AVAILABLE = False
 
+# ── Embeddings locales: all-MiniLM-L6-v2 en torch puro (sin sentence-transformers) ──
+# Los pesos se guardan en ~/.nlp-flow/models, fuera de la cache de HF (que la app borra al cerrar).
+import pathlib as _ml_pl
+import math as _ml_math
+import unicodedata as _ml_ud
+
+_ML_REPO    = "sentence-transformers/all-MiniLM-L6-v2"
+_ML_DIR     = _ml_pl.Path.home() / ".nlp-flow" / "models" / "all-MiniLM-L6-v2"
+_ML_MAX_LEN = 256
+_ml_embedder = None
+_ml_lock     = threading.Lock()
+
+
+def _ml_have(name):
+    p = _ML_DIR / name
+    return p.exists() and p.stat().st_size > 0
+
+
+def _ml_download(name, progress=None):
+    from huggingface_hub import hf_hub_download
+    if progress:
+        progress(f"Descargando {name} del modelo de embeddings (solo la primera vez)…")
+    _ML_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        return hf_hub_download(repo_id=_ML_REPO, filename=name, local_dir=str(_ML_DIR), token=False)
+    except Exception:
+        tok = os.environ.get("HF_TOKEN", "").strip()
+        if not tok:
+            raise
+        return hf_hub_download(repo_id=_ML_REPO, filename=name, local_dir=str(_ML_DIR), token=tok)
+
+
+def _ml_ensure_files(progress=None):
+    paths = {}
+    for name in ("config.json", "vocab.txt", "tokenizer_config.json"):
+        if not _ml_have(name):
+            _ml_download(name, progress)
+        paths[name] = str(_ML_DIR / name)
+    order = ["pytorch_model.bin"]
+    try:
+        import safetensors  # noqa: F401
+        order = ["model.safetensors", "pytorch_model.bin"]
+    except ImportError:
+        pass
+    for name in order:  # si ya hay pesos descargados, no se toca la red
+        if _ml_have(name):
+            paths["weights"], paths["weights_name"] = str(_ML_DIR / name), name
+            return paths
+    last = None
+    for name in order:
+        try:
+            _ml_download(name, progress)
+            paths["weights"], paths["weights_name"] = str(_ML_DIR / name), name
+            return paths
+        except Exception as e:  # noqa: BLE001
+            last = e
+    raise last
+
+
+class _MLWordPiece:
+    def __init__(self, vocab_path, lower=True):
+        self.vocab = {}
+        with open(vocab_path, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                self.vocab[line.rstrip("\n")] = i
+        self.lower = lower
+        self.cls, self.sep, self.unk, self.pad = (self.vocab[t] for t in ("[CLS]", "[SEP]", "[UNK]", "[PAD]"))
+
+    @staticmethod
+    def _is_punct(ch):
+        cp = ord(ch)
+        if 33 <= cp <= 47 or 58 <= cp <= 64 or 91 <= cp <= 96 or 123 <= cp <= 126:
+            return True
+        return _ml_ud.category(ch).startswith("P")
+
+    @staticmethod
+    def _is_cjk(cp):
+        return (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or 0x20000 <= cp <= 0x2A6DF
+                or 0xF900 <= cp <= 0xFAFF or 0x2F800 <= cp <= 0x2FA1F)
+
+    def _clean(self, text):
+        out = []
+        for ch in text:
+            cp = ord(ch)
+            if cp == 0 or cp == 0xFFFD:
+                continue
+            if ch in "\t\n\r":
+                out.append(" ")
+            elif _ml_ud.category(ch) in ("Cc", "Cf"):
+                continue
+            elif ch.isspace():
+                out.append(" ")
+            elif self._is_cjk(cp):
+                out.append(f" {ch} ")
+            else:
+                out.append(ch)
+        return "".join(out)
+
+    def basic(self, text):
+        out = []
+        for tok in self._clean(text).split():
+            if self.lower:
+                tok = tok.lower()
+                tok = "".join(c for c in _ml_ud.normalize("NFD", tok) if _ml_ud.category(c) != "Mn")
+            cur = []
+            for ch in tok:
+                if self._is_punct(ch):
+                    if cur:
+                        out.append("".join(cur))
+                        cur = []
+                    out.append(ch)
+                else:
+                    cur.append(ch)
+            if cur:
+                out.append("".join(cur))
+        return out
+
+    def wordpiece(self, tok):
+        if len(tok) > 100:
+            return ["[UNK]"]
+        pieces, start = [], 0
+        while start < len(tok):
+            end, cur = len(tok), None
+            while start < end:
+                sub = tok[start:end]
+                if start > 0:
+                    sub = "##" + sub
+                if sub in self.vocab:
+                    cur = sub
+                    break
+                end -= 1
+            if cur is None:
+                return ["[UNK]"]
+            pieces.append(cur)
+            start = end
+        return pieces
+
+    def encode(self, text, max_len=_ML_MAX_LEN):
+        toks = []
+        for w in self.basic(text):
+            toks.extend(self.wordpiece(w))
+        toks = toks[: max_len - 2]
+        return [self.cls] + [self.vocab[t] for t in toks] + [self.sep]
+
+
+def _ml_build_model(c):
+    """Construye el BERT con los mismos nombres de capas que el checkpoint. torch se importa aqui."""
+    import torch as _t
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+
+    class _Emb(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            h = c["hidden_size"]
+            self.word_embeddings = _nn.Embedding(c["vocab_size"], h)
+            self.position_embeddings = _nn.Embedding(c["max_position_embeddings"], h)
+            self.token_type_embeddings = _nn.Embedding(c["type_vocab_size"], h)
+            self.LayerNorm = _nn.LayerNorm(h, eps=c["layer_norm_eps"])
+
+        def forward(self, ids):
+            pos = _t.arange(ids.shape[1], device=ids.device).unsqueeze(0)
+            x = (self.word_embeddings(ids) + self.position_embeddings(pos)
+                 + self.token_type_embeddings(_t.zeros_like(ids)))
+            return self.LayerNorm(x)
+
+    class _QKV(_nn.Module):
+        def __init__(self, h):
+            super().__init__()
+            self.query, self.key, self.value = _nn.Linear(h, h), _nn.Linear(h, h), _nn.Linear(h, h)
+
+    class _DenseNorm(_nn.Module):
+        def __init__(self, h_in, h_out, eps):
+            super().__init__()
+            self.dense = _nn.Linear(h_in, h_out)
+            self.LayerNorm = _nn.LayerNorm(h_out, eps=eps)
+
+    class _Dense(_nn.Module):
+        def __init__(self, h_in, h_out):
+            super().__init__()
+            self.dense = _nn.Linear(h_in, h_out)
+
+    class _Attn(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            h = c["hidden_size"]
+            self.nh = c["num_attention_heads"]
+            setattr(self, "self", _QKV(h))  # el checkpoint usa la clave "self"
+            self.output = _DenseNorm(h, h, c["layer_norm_eps"])
+
+        def forward(self, x, mask):
+            B, T, H = x.shape
+            d = H // self.nh
+            qkv = getattr(self, "self")
+            sp = lambda z: z.view(B, T, self.nh, d).transpose(1, 2)  # noqa: E731
+            q, k, v = sp(qkv.query(x)), sp(qkv.key(x)), sp(qkv.value(x))
+            scores = q @ k.transpose(-1, -2) / _ml_math.sqrt(d) + mask
+            ctx = (scores.softmax(-1) @ v).transpose(1, 2).reshape(B, T, H)
+            return self.output.LayerNorm(self.output.dense(ctx) + x)
+
+    class _Layer(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            h, i, eps = c["hidden_size"], c["intermediate_size"], c["layer_norm_eps"]
+            self.attention = _Attn()
+            self.intermediate = _Dense(h, i)
+            self.output = _DenseNorm(i, h, eps)
+
+        def forward(self, x, mask):
+            a = self.attention(x, mask)
+            h = _F.gelu(self.intermediate.dense(a))
+            return self.output.LayerNorm(self.output.dense(h) + a)
+
+    class _Enc(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layer = _nn.ModuleList(_Layer() for _ in range(c["num_hidden_layers"]))
+
+    class _Bert(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embeddings = _Emb()
+            self.encoder = _Enc()
+
+        def forward(self, ids, attn):
+            mask = (1.0 - attn)[:, None, None, :] * -1e9
+            x = self.embeddings(ids)
+            for layer in self.encoder.layer:
+                x = layer(x, mask)
+            return x
+
+    return _Bert()
+
+
+class _MLEmbedder:
+    def __init__(self, paths):
+        import torch as _t
+        cfg = json.loads(_ml_pl.Path(paths["config.json"]).read_text())
+        tok_cfg = json.loads(_ml_pl.Path(paths["tokenizer_config.json"]).read_text())
+        self.tok = _MLWordPiece(paths["vocab.txt"], lower=tok_cfg.get("do_lower_case", True))
+        self.model = _ml_build_model(cfg)
+        w = paths["weights"]
+        if paths["weights_name"].endswith(".safetensors"):
+            from safetensors.torch import load_file
+            sd = load_file(w)
+        else:
+            sd = _t.load(w, map_location="cpu", weights_only=True)
+        fixed = {}
+        for k, v in sd.items():
+            k = k[5:] if k.startswith("bert.") else k
+            k = k.replace("LayerNorm.gamma", "LayerNorm.weight").replace("LayerNorm.beta", "LayerNorm.bias")
+            fixed[k] = v
+        missing, _unexp = self.model.load_state_dict(fixed, strict=False)
+        if missing:
+            raise RuntimeError(f"faltan {len(missing)} tensores en el modelo de embeddings, p. ej. {missing[:3]}")
+        self.model.eval()
+        self.dim = cfg["hidden_size"]
+
+    def encode(self, texts, batch_size=32):
+        import torch as _t
+        import torch.nn.functional as _F
+        out = []
+        with _t.no_grad():
+            for i in range(0, len(texts), batch_size):
+                enc = [self.tok.encode(t) for t in texts[i:i + batch_size]]
+                L = max(len(e) for e in enc)
+                ids = _t.zeros(len(enc), L, dtype=_t.long)  # [PAD] = 0
+                m = _t.zeros(len(enc), L)
+                for j, e in enumerate(enc):
+                    ids[j, :len(e)] = _t.tensor(e)
+                    m[j, :len(e)] = 1.0
+                h = self.model(ids, m)
+                pooled = (h * m.unsqueeze(-1)).sum(1) / m.sum(1, keepdim=True).clamp(min=1e-9)
+                out.append(_F.normalize(pooled, p=2, dim=1).numpy())
+        return np.vstack(out).astype(np.float32)
+
+
+def _get_embedder(progress=None):
+    """Devuelve el modelo listo; si aun se esta preparando, espera. Si falla, la siguiente llamada reintenta."""
+    global _ml_embedder
+    with _ml_lock:
+        if _ml_embedder is None:
+            _ml_embedder = _MLEmbedder(_ml_ensure_files(progress))
+    return _ml_embedder
+
+
+def _preload_embedder_async():
+    def _run():
+        try:
+            print("[embed] preparando el modelo de embeddings…", flush=True)
+            _get_embedder()
+            print("[embed] modelo de embeddings listo", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[embed] no se pudo preparar ahora ({e}). Se reintentara al usarlo.", flush=True)
+    # threading.Thread(target=_preload_embedder_async_target if False else _run, daemon=True).start()
+    threading.Thread(target=_run, daemon=True).start()
+
+
+# ── Caché de embeddings en disco ──────────────────────────────────────────────
+# Clave = hash del modelo + el texto de cada fragmento. Si cambia cualquier fragmento, otra clave.
+_EMB_CACHE_DIR  = _ml_pl.Path.home() / ".nlp-flow" / "cache" / "embeddings"
+_EMB_CACHE_KEEP = 10   # ficheros que se conservan (unos 8 MB cada uno con 5000 fragmentos)
+
+
+def _emb_cache_key(texts):
+    import hashlib
+    h = hashlib.sha1()
+    h.update(_ML_REPO.encode())
+    h.update(str(_ML_MAX_LEN).encode())
+    for t in texts:
+        h.update(t.encode("utf-8", "ignore"))
+        h.update(b"\x00")
+    return h.hexdigest()[:24]
+
+
+def _emb_cache_load(key, n):
+    p = _EMB_CACHE_DIR / f"{key}.npz"
+    try:
+        if p.exists():
+            m = np.load(p)["emb"]
+            if m.ndim == 2 and m.shape[0] == n and np.isfinite(m).all():
+                os.utime(p, None)   # marca como usado recientemente
+                return m.astype(np.float32)
+    except Exception as e:  # noqa: BLE001
+        print(f"[embed] caché ilegible, se recalcula ({e})", flush=True)
+    return None
+
+
+def _emb_cache_save(key, matrix):
+    try:
+        _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = _EMB_CACHE_DIR / f"{key}.tmp.npz"
+        np.savez(tmp, emb=matrix)
+        os.replace(tmp, _EMB_CACHE_DIR / f"{key}.npz")   # escritura atómica
+        files = sorted(_EMB_CACHE_DIR.glob("*.npz"), key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[_EMB_CACHE_KEEP:]:
+            try:
+                f.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as e:  # noqa: BLE001
+        print(f"[embed] no se pudo guardar la caché ({e})", flush=True)
+
+
+_preload_embedder_async()   # al arrancar la app: descarga (si falta) y carga el modelo
+
 def _rag_slot(node_id: str) -> dict:
     if node_id not in _RAG:
         _RAG[node_id] = {}
@@ -8832,39 +9178,45 @@ def rag_embed():
 
     def _worker():
         try:
-            if not _HF_AVAILABLE:
-                _push_rag(0, "huggingface_hub no está instalado.")
-                _push_rag(-1, "ERROR")
-                return
-
-            client = _HFClient()
-
             texts = [c["text"] for c in chunks_to_embed]
             total = len(texts)
-            all_embs = []
-            processed = 0
-            _push_rag(1, f"Iniciando — {total} chunks…")
+            key   = _emb_cache_key(texts)
 
-            for i in range(0, total, _EMBED_BATCH):
-                if _rag_cancel_flag[0]:
-                    _push_rag(-2, f"Cancelado tras {processed}/{total} chunks")
-                    return
-                batch = texts[i: i + _EMBED_BATCH]
-                emb   = client.feature_extraction(batch, model=_EMBED_MODEL)
-                all_embs.append(np.asarray(emb, dtype=np.float32))
-                processed += len(batch)
-                pct = int(processed / total * 95) + 2
-                _push_rag(pct, f"Batch {i // _EMBED_BATCH + 1} — {processed}/{total} chunks")
+            _push_rag(1, "Buscando embeddings guardados…")
+            matrix = _emb_cache_load(key, total)
+            from_cache = matrix is not None
 
-            matrix = np.vstack(all_embs)
+            if from_cache:
+                _push_rag(95, f"Embeddings cargados de la caché ({total} chunks)")
+            else:
+                _push_rag(1, "Preparando el modelo de embeddings…")
+                model = _get_embedder(progress=lambda m: _push_rag(1, m))
+                all_embs = []
+                processed = 0
+                _push_rag(2, f"Iniciando — {total} chunks…")
+
+                for i in range(0, total, _EMBED_BATCH):
+                    if _rag_cancel_flag[0]:
+                        _push_rag(-2, f"Cancelado tras {processed}/{total} chunks")
+                        return
+                    batch = texts[i: i + _EMBED_BATCH]
+                    all_embs.append(model.encode(batch, batch_size=32))
+                    processed += len(batch)
+                    pct = int(processed / total * 95) + 2
+                    _push_rag(pct, f"Batch {i // _EMBED_BATCH + 1} — {processed}/{total} chunks")
+
+                matrix = np.vstack(all_embs)
+                _emb_cache_save(key, matrix)   # solo si terminó sin cancelar
+
             slot["embeddings"]      = matrix
             slot["embedded_chunks"] = chunks_to_embed
             slot["embed_cfg"]       = {
                 "model": _EMBED_MODEL, "dim": matrix.shape[1],
                 "n": matrix.shape[0], "capped": len(chunks) > max_chunks,
-                "total_chunks": len(chunks),
+                "total_chunks": len(chunks), "from_cache": from_cache,
             }
-            _push_rag(100, f"Listo — {matrix.shape[0]} embeddings de dim {matrix.shape[1]} ✓")
+            _push_rag(100, f"Listo — {matrix.shape[0]} embeddings de dim {matrix.shape[1]} ✓"
+                           + (" (de la caché)" if from_cache else ""))
 
         except Exception as e:
             _push_rag(-1, f"ERROR: {e}")
@@ -8926,18 +9278,16 @@ def rag_status():
 @app.route("/api/rag_retrieve", methods=["POST"])
 def rag_retrieve():
     """
-    Given a query string, embed it and return the top-k most similar chunks.
+    Embebe la consulta con el MISMO modelo local que los chunks y devuelve los top-k más parecidos.
     Body: { node_id, query, top_k }
-    Returns: { results: [{rank, score, doc_idx, chunk_idx, text}], query_embedding_dim }
     """
     body    = request.get_json(force=True, silent=True) or {}
     node_id = str(body.get("node_id", ""))
     query   = str(body.get("query", "")).strip()
-    top_k   = int(body.get("top_k", 5))
+    top_k   = max(1, int(body.get("top_k", 5)))
 
-    slot  = _RAG.get(node_id, {})
+    slot   = _RAG.get(node_id, {})
     embs   = slot.get("embeddings")
-    # Use embedded_chunks if available (may be a capped subset of all chunks)
     chunks = slot.get("embedded_chunks") or slot.get("chunks")
 
     if embs is None or chunks is None:
@@ -8945,22 +9295,12 @@ def rag_retrieve():
     if not query:
         return jsonify({"error": "Escribe una consulta."}), 400
 
-    if not _HF_AVAILABLE:
-        return jsonify({"error": "huggingface_hub no está instalado. Ejecuta: pip install huggingface_hub"}), 500
-
     try:
-        client = _HFClient()
-        q_emb  = np.asarray(
-            client.feature_extraction([query], model=_EMBED_MODEL),
-            dtype=np.float32
-        )
-        # feature_extraction returns (1, dim) or (dim,) depending on version
-        if q_emb.ndim == 2:
-            q_emb = q_emb[0]
+        q_emb = _get_embedder().encode([query])[0]
     except Exception as e:
         return jsonify({"error": f"Error al embeber la consulta: {e}"}), 500
 
-    scores = _cosine_matrix(q_emb, embs)
+    scores  = _cosine_matrix(q_emb, embs)
     top_idx = np.argsort(scores)[::-1][:top_k]
 
     results = []
@@ -9016,16 +9356,22 @@ def rag_generate():
     #     - Consistently available on HF serverless free tier, strong RAG quality.
     #   Override → set HF_LLM_MODEL in .env to use another model.
     #   Token   → set HF_TOKEN in .env for authenticated requests (higher rate limits).
-    hf_token   = os.environ.get("HF_TOKEN", "").strip()
-    llm_model  = os.environ.get("HF_LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+    import random
+    llm_model = os.environ.get("GROQ_MODEL", _GROQ_MODEL)
+    groq_key  = os.environ.get("GROQ_API_KEY", "").strip()
 
-    if not _HF_AVAILABLE:
-        return jsonify({"error": "huggingface_hub no está instalado. Ejecuta: pip install huggingface_hub"}), 500
+    if not _GROQ_AVAILABLE:
+        return jsonify({"error": "groq no está instalado. Ejecuta: pip install groq"}), 500
+    if not groq_key:
+        return jsonify({"error": "Falta GROQ_API_KEY en el archivo .env."}), 400
+    # gpt-oss razona antes de contestar y esos tokens cuentan: se reserva margen
+    if "gpt-oss" in llm_model:
+        max_tokens = max(max_tokens, 400)
 
     # ── Context budget ────────────────────────────────────────────────────────
     # Llama-3.1-8B-Instruct context window: 128k tokens (≈ 4 chars/token)
     # Reserve ~1000 tokens for system + question + response
-    MAX_CTX_CHARS = 12000   # conservative: ~3000 tokens, leaves plenty of headroom
+    MAX_CTX_CHARS = 4000   # conservative: ~3000 tokens, leaves plenty of headroom
 
     def _truncate_chunks(chunks: list, max_chars: int) -> list:
         """Keep as many chunks as fit within max_chars, truncating the last one if needed."""
@@ -9076,45 +9422,97 @@ def rag_generate():
     # ── Call HF in parallel (no-RAG and with-RAG simultaneously) ─────────────
     import traceback
 
-    def _call_hf(messages, label=""):
-        max_retries = 4
-        for attempt in range(1, max_retries + 1):
+    # def _call_hf(messages, label=""):
+    #     max_retries = 4
+    #     for attempt in range(1, max_retries + 1):
+    #         try:
+    #             print(f"[rag_generate] {label} intento {attempt} — modelo={llm_model}", flush=True)
+    #             client = _HFClient(model=llm_model, token=hf_token if hf_token else None)
+    #             resp   = client.chat_completion(
+    #                 messages=messages,
+    #                 max_tokens=max_tokens,
+    #                 temperature=0.3,
+    #             )
+    #             print(f"[rag_generate] {label} OK — {str(resp)[:120]}", flush=True)
+    #             return resp.choices[0].message.content.strip()
+    #         except Exception as e:
+    #             err_str = str(e)
+    #             tb = traceback.format_exc()
+    #             print(f"[rag_generate] {label} ERROR intento {attempt}:\n{tb}", flush=True)
+    #             # Cold start: HF returns "Model ... is currently loading" with estimated_time
+    #             if "loading" in err_str.lower() or "estimated_time" in err_str.lower():
+    #                 wait = min(20 * attempt, 60)
+    #                 print(f"[rag_generate] {label} modelo cargando — esperando {wait}s…", flush=True)
+    #                 time.sleep(wait)
+    #                 continue
+    #             # Rate limit or server error — short retry
+    #             if "503" in err_str or "429" in err_str or "502" in err_str:
+    #                 wait = 10 * attempt
+    #                 print(f"[rag_generate] {label} {err_str[:60]} — reintentando en {wait}s…", flush=True)
+    #                 time.sleep(wait)
+    #                 continue
+    #             # Any other error — fail immediately
+    #             return "__ERROR__:" + err_str
+    #     return "__ERROR__:El modelo tardó demasiado en cargar. Inténtalo de nuevo en unos segundos."
+
+    def _wait_from_error(e, attempt):
+        """Segundos a esperar tras un 429 o 5xx: lo que pida Groq, o una espera creciente."""
+        wait = None
+        try:
+            ra = e.response.headers.get("retry-after")
+            if ra:
+                wait = float(ra)
+        except Exception:
+            pass
+        if wait is None:
+            m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", str(e))
+            if m:
+                wait = int(m.group(1) or 0) * 60 + float(m.group(2))
+        if wait is None:
+            wait = 5 * attempt
+        # el azar evita que 50 clientes reintenten en el mismo segundo
+        return min(wait, 60) + random.uniform(0.5, 3.0)
+
+    def _call_groq(messages, label=""):
+        client   = _GroqClient(api_key=groq_key, max_retries=0)
+        deadline = time.time() + 240
+        max_attempts = 8
+        for attempt in range(1, max_attempts + 1):
             try:
                 print(f"[rag_generate] {label} intento {attempt} — modelo={llm_model}", flush=True)
-                client = _HFClient(model=llm_model, token=hf_token if hf_token else None)
-                resp   = client.chat_completion(
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                )
-                print(f"[rag_generate] {label} OK — {str(resp)[:120]}", flush=True)
-                return resp.choices[0].message.content.strip()
+                kwargs = dict(model=llm_model, messages=messages,
+                              max_tokens=max_tokens, temperature=0.3)
+                if "gpt-oss" in llm_model:
+                    kwargs["extra_body"] = {"reasoning_effort": "low"}
+                resp = client.chat.completions.create(**kwargs)
+                text = (resp.choices[0].message.content or "").strip()
+                if not text:
+                    return "__ERROR__:El modelo no devolvió texto (gastó los tokens razonando). Sube el máximo de tokens."
+                print(f"[rag_generate] {label} OK ({len(text)} chars)", flush=True)
+                return text
             except Exception as e:
-                err_str = str(e)
-                tb = traceback.format_exc()
-                print(f"[rag_generate] {label} ERROR intento {attempt}:\n{tb}", flush=True)
-                # Cold start: HF returns "Model ... is currently loading" with estimated_time
-                if "loading" in err_str.lower() or "estimated_time" in err_str.lower():
-                    wait = min(20 * attempt, 60)
-                    print(f"[rag_generate] {label} modelo cargando — esperando {wait}s…", flush=True)
+                code = getattr(e, "status_code", None)
+                print(f"[rag_generate] {label} error {code} intento {attempt}: {str(e)[:200]}", flush=True)
+                if code in (429, 500, 502, 503) and attempt < max_attempts:
+                    wait = _wait_from_error(e, attempt)
+                    if time.time() + wait > deadline:
+                        return "__ERROR__:Groq está saturado ahora mismo. Inténtalo de nuevo en un minuto."
+                    print(f"[rag_generate] {label} esperando {wait:.0f}s…", flush=True)
                     time.sleep(wait)
                     continue
-                # Rate limit or server error — short retry
-                if "503" in err_str or "429" in err_str or "502" in err_str:
-                    wait = 10 * attempt
-                    print(f"[rag_generate] {label} {err_str[:60]} — reintentando en {wait}s…", flush=True)
-                    time.sleep(wait)
-                    continue
-                # Any other error — fail immediately
-                return "__ERROR__:" + err_str
-        return "__ERROR__:El modelo tardó demasiado en cargar. Inténtalo de nuevo en unos segundos."
+                if code == 401:
+                    return "__ERROR__:La clave de Groq no es válida (401). Revisa GROQ_API_KEY en el .env."
+                return "__ERROR__:" + str(e)
+        return "__ERROR__:Groq sigue limitando las peticiones. Inténtalo de nuevo en un minuto."
 
     msgs_no_rag   = _fmt_prompt(with_context=False)
     msgs_with_rag = _fmt_prompt(with_context=True)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-        fut_no  = ex.submit(_call_hf, msgs_no_rag,   "sin-RAG")
-        fut_yes = ex.submit(_call_hf, msgs_with_rag, "con-RAG")
+        # fut_no  = ex.submit(_call_hf, msgs_no_rag,   "sin-RAG")
+        # fut_yes = ex.submit(_call_hf, msgs_with_rag, "con-RAG")
+        fut_no  = ex.submit(_call_groq, msgs_no_rag,   "sin-RAG")
+        fut_yes = ex.submit(_call_groq, msgs_with_rag, "con-RAG")
         resp_no  = fut_no.result(timeout=180)
         resp_yes = fut_yes.result(timeout=180)
 
